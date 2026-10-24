@@ -15,6 +15,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: windows/launcher/go.mod
+          cache-dependency-path: windows/launcher/go.sum
       - name: Build zip and exe
         run: GN_VERSION="$GITHUB_REF_NAME" GN_REPO="$GITHUB_REPOSITORY" windows/build.sh
       - name: Attach to the release

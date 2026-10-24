@@ -17,6 +17,7 @@ Start (the .exe)
 3. Close the window to stop.
 It keeps itself current: at each start it asks GitHub for the newest release and, if there is one,
 fetches it (about 15 MB) before opening. You never need a new .exe. No internet, no update.
+The newest copy, and the source, is at https://github.com/robaxelsen/gorgon-notes/releases/latest
 No console, no browser: the window is the program. What it did is written to
 C:\Users\<you>\AppData\Local\Gorgon Notes\gorgon-notes.log (open it in Notepad if something fails;
 an error also shows in a message box).
