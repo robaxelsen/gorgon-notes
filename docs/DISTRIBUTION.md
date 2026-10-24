@@ -1,0 +1,44 @@
+# Distribution plan: sharing Gorgon Notes with friends (Mac + Windows)
+
+**Status: proper releases on pause (decided 2026-10-24); a Windows test build exists (24 Oct) and works on a friend's PC (confirmed by the user the same evening).** `windows/build.sh` produces `dist/GorgonNotes-<date>.exe`, a single file to double-click (a Go program, `windows/launcher/`, cross-compiled from the Mac with no cgo; it embeds the zip below, unpacks it once into `%LOCALAPPDATA%\Gorgon Notes\app`, runs the server hidden and shows the UI in its own WebView2 window, the engine Windows ships with Edge), and `dist/GorgonNotes-<date>-windows.zip` as the fallback for hand-sharing with a friend: `server.py` + `static/` + `cache/` + the python.org **embeddable** Python (3.14.9 amd64, ~12 MB zip, no install on the friend's PC), started by `Gorgon Notes.bat` in a console window (`python\python.exe server.py --open`), with a `README.txt` (`windows/README-WINDOWS.txt`). Unsigned: the friend clicks through SmartScreen once. Built and smoke-tested on the Mac only; see ROADMAP → Next up for what to collect from the first Windows run. Step 1 below is therefore mostly done; resume from step 2 when releases are wanted.
+
+## Why a proper release is not possible yet
+- The project is not a git repo and has no license; there is nothing to clone or download.
+- `Gorgon Notes.app` is ad-hoc signed and starts `python3 server.py` from this repo's folder (path baked into `Info.plist` at build time). On another Mac it would not pass Gatekeeper and would not find the server.
+- `server.py` is stdlib-only Python and since 24 Oct picks its defaults per OS: `GAME_DIR` (`~/Library/Application Support/unity.Elder Game.Project Gorgon` on Mac, `%USERPROFILE%\AppData\LocalLow\Elder Game\Project Gorgon` on Windows, verified from a friend's in-game export panel), `PLAYER_LOG` (Mac `~/Library/Logs/Elder Game/Project Gorgon/Player.log`; Windows `<game dir>\Player.log`, Unity's default, not yet verified) and the running-game check (`pgrep -x "Project Gorgon"` on Mac; `tasklist` with any image containing "gorgon" on Windows, exact name not yet verified). `PG_DIR` / `PG_PLAYER_LOG` env overrides exist; `--open` launches the browser.
+- The repo is heavy for sharing: `design/` 123 MB (screenshots), `cache/` 21 MB (CDN data the server re-downloads itself). Both go in `.gitignore`, as do `capacity.json` (the player's own data), `__pycache__` and `dist/` (build output incl. the cached python zip).
+
+## Gatekeeper facts (verified 2026-10-24)
+- Since macOS 15.1 the right-click → Open bypass is gone; an unsigned or ad-hoc-signed app can only be launched via System Settings → Privacy & Security → "Open Anyway", and some 15.1 users reported even that failing. macOS 26 (Tahoe) keeps the "Open Anyway" route only. Sources: [OSNews](https://www.osnews.com/story/141055/bug-or-intentional-macos-15-1-completely-removes-ability-to-launch-unsigned-applications/), [iDownloadBlog](https://www.idownloadblog.com/apple-macos-sequoia-gatekeeper-change-install-unsigned-apps-mac/), [Tahoe Gatekeeper guide](https://macos-tahoe.com/blog/app-is-damaged-cant-be-opened-macos-tahoe-gatekeeper-quarantine-fix-2026/).
+- Proper distribution outside the App Store = Developer ID Application certificate + hardened runtime + notarization + stapling. Apple: [Signing your apps for Gatekeeper](https://developer-mdn.apple.com/developer-id/), [Distribute outside the Mac App Store](https://help.apple.com/xcode/mac/current/en.lproj/dev033e997ca.html).
+- Apple Developer Program: USD 99/year, approval takes about a day or two. There is no free Developer ID.
+
+## Windows facts (verified 2026-10-24)
+- An unsigned `.exe` shows the blue SmartScreen "Unknown publisher" screen; the user clicks "More info → Run anyway" once.
+- Signing options: Azure Artifact Signing (ex Trusted Signing) ~USD 10/month, but **individuals only in the US/Canada** (EU: organisations only); OV certificate USD 150–300/year. Even signed executables get SmartScreen warnings until reputation builds; EV no longer skips it. Sources: [Microsoft code-signing options](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options), [2026 SmartScreen write-up](https://codenote.net/en/posts/windows-desktop-app-code-signing-distribution-japan-2026/).
+- Decision for a friends group: do not sign the Windows build; document the one-time click in the README.
+
+## Target
+A GitHub repo `gorgon-notes` (name clear per `docs/NAMING.md`; public vs private undecided; license suggestion MIT) with a `release.yml` that on `git tag v*` attaches to a GitHub Release:
+- `Gorgon-Notes-<ver>.dmg`: the Swift app with the server bundled inside as a **PyInstaller** binary (`server.py` stays plain Python; PyInstaller is a build-time tool only, so the no-dependency convention holds). Developer ID-signed with hardened runtime + timestamp, notarized with `xcrun notarytool`, stapled. PyInstaller output needs the entitlements `com.apple.security.cs.allow-unsigned-executable-memory` and `com.apple.security.cs.disable-library-validation` to notarize. Signing/notarizing steps skip automatically while the secrets are missing, so the pipeline works before the Apple account exists.
+- `GorgonNotes-<ver>-windows.exe`: PyInstaller build on a Windows runner, unsigned; starts the server and opens the browser (tray icon later).
+- CI pattern references: [Federico Terzi](https://www.dev.to/federicoterzi/automatic-code-signing-and-notarization-for-macos-apps-using-github-actions-1ne8), [defn.io](https://defn.io/2023/09/22/distributing-mac-apps-with-github-actions/), [sign-and-notarize-gha](https://github.com/GuillaumeFalourd/sign-and-notarize-gha), [xcode-notarize action](https://github.com/GuillaumeFalourd/xcode-notarize).
+
+## What exists since 24 Oct (evening)
+- Git repo (`main`), `.gitignore` (player data, cache, dist, design artefacts, skill state), MIT `LICENSE`.
+- `.github/workflows/release.yml`: on tag `v*`, an Ubuntu runner runs `windows/build.sh` with `GN_VERSION=<tag>` and `GN_REPO=<owner>/<name>` and attaches `GorgonNotes.exe`, `GorgonNotes-windows.zip`, `version.txt` to a GitHub Release (fixed names, so `releases/latest/download/<name>` always resolves).
+- Self-update in the exe (`windows/launcher/main.go` `install()`, `version.go`): see README → Windows. The exe never replaces itself; only the zip contents (server, UI, cache, Python) move. A new exe is needed only if the launcher itself changes.
+- Still unsigned on both platforms; the Mac app is unchanged (runs `server.py` from this folder).
+
+## Steps (in order)
+1. **Portability pass** (no account needed): per-OS defaults for `GAME_DIR` and `PLAYER_LOG`; running-game check via `tasklist` on Windows; `run.bat` and `run.command` launchers; a startup line printing the game folder found (or "set PG_DIR") so a Windows friend can report the right path; `.gitignore`; README "Install" section for Mac and Windows.
+2. **Repo**: `git init`, `LICENSE`, first commit, push to GitHub (`gh` is not installed on this Mac: `brew install gh`, or create the repo on github.com and push).
+3. **Self-contained app**: `mac/build.sh` bundles a PyInstaller-built server into `Contents/MacOS` (or `Resources`) and `main.swift` launches it from the bundle instead of `GNServerDir`; `codesign --options runtime --timestamp --entitlements` with the two entitlements above; `hdiutil`/create-dmg for the `.dmg`.
+4. **CI**: `.github/workflows/release.yml` with macOS and Windows jobs; secrets `MACOS_CERTIFICATE` (base64 `.p12`), `MACOS_CERTIFICATE_PASSWORD`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, `APPLE_API_KEY` (App Store Connect API key `.p8`, for `notarytool --key`).
+5. **User**: enroll in the Apple Developer Program; after approval create a Developer ID Application certificate (Keychain Access CSR → developer portal, export `.p12` with private key) and an App Store Connect API key with Developer access; paste both as repo secrets.
+6. Tag `v0.1.0`, check the Release assets on a second Mac (Gatekeeper passes without prompts) and a Windows machine (SmartScreen one-time click), then share the link.
+
+## Open decisions
+- Public or private repo (private with friends as collaborators is fine for a small group).
+- License (suggested MIT; nothing was copied from glogger, which is GPL-3.0).
+- Whether to pay the USD 99/year; without it the Mac option is "clone and build it yourself" (`mac/build.sh install`, needs the Xcode command-line tools) or run `python3 server.py` in a browser.

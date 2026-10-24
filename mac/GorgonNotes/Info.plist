@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>Gorgon Notes</string>
+  <key>CFBundleDisplayName</key><string>Gorgon Notes</string>
+  <key>CFBundleIdentifier</key><string>local.gorgon-notes</string>
+  <key>CFBundleExecutable</key><string>GorgonNotes</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>0.1</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>LSMinimumSystemVersion</key><string>13.0</string>
+  <key>LSUIElement</key><true/>
+  <key>LSApplicationCategoryType</key><string>public.app-category.games</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>NSHumanReadableCopyright</key><string>Fan-made, not affiliated with Elder Game.</string>
+  <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
+  <key>GNPort</key><string>8787</string>
+  <key>GNServerDir</key><string>@SERVER_DIR@</string>
+  <key>GNPython</key><string>@PYTHON@</string>
+</dict>
+</plist>

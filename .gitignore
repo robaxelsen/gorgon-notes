@@ -1,0 +1,22 @@
+# Player's own data and local state
+capacity.json
+cache/
+tools/probe-state/
+
+# Build output
+dist/
+windows/launcher/payload.zip
+mac/build/
+__pycache__/
+
+# Design process artefacts (screenshots 100+ MB, reference sprites and icons from the game)
+design/shots/
+design/screenshots/
+design/research/
+design/archive/
+.taste-skill/
+.impeccable/
+
+# OS / editor
+.DS_Store
+*.swp

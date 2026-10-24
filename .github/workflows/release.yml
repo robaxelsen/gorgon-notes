@@ -1,0 +1,25 @@
+# On a tag like v0.1.0: build the Windows program and zip (windows/build.sh) and attach them to a
+# GitHub Release under fixed names, so GorgonNotes.exe on a friend's PC can fetch
+# https://github.com/<owner>/<repo>/releases/latest/download/version.txt and update itself.
+name: release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: windows/launcher/go.mod
+      - name: Build zip and exe
+        run: GN_VERSION="$GITHUB_REF_NAME" GN_REPO="$GITHUB_REPOSITORY" windows/build.sh
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "Gorgon Notes $GITHUB_REF_NAME" --generate-notes \
+            dist/GorgonNotes.exe dist/GorgonNotes-windows.zip dist/version.txt

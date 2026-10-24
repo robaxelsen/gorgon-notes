@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gorgon Notes</title>
+<meta name="description" content="Fan-made Project Gorgon companion: sessions, vendors, storage, character and the files behind them, with the age of every number and how to refresh it.">
+<script>
+  // Theme before first paint: ?theme= (this load only) > pgdash.theme > auto.
+  (function () {
+    var t = 'auto';
+    try { var s = localStorage.getItem('pgdash.theme'); if (s === 'dark' || s === 'daylight' || s === 'auto') t = s; } catch (e) {}
+    try { var q = new URLSearchParams(location.search).get('theme'); if (q === 'dark' || q === 'daylight' || q === 'auto') t = q; } catch (e) {}
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+<link rel="icon" id="favicon" href="data:,">
+</head>
+<body>
+<a class="sr" href="#main">Skip to content</a>
+
+<header class="shell" id="shell">
+  <a class="brand" style="color:var(--title)" href="#session" aria-label="Gorgon Notes, Session" data-brand-aria>
+    <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="3.25" y="3.25" width="25.5" height="25.5" rx="6" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M12 7h8l-4 5z" style="fill:var(--rust)"/></svg>
+    <span class="brand-name" data-app-name>Gorgon Notes</span>
+    <span class="brand-fan" data-fan-line></span>
+  </a>
+  <div class="scope">
+    <span class="who" id="who">…</span>
+    <label class="sr" for="charsel-shell">Character</label>
+    <select id="charsel-shell" hidden></select>
+    <span class="where" id="where"></span>
+  </div>
+  <div class="shell-right">
+    <a class="pill" id="healthpill" href="#margin"><span id="pill-shape"></span><span id="pill-text">Checking…</span></a>
+    <div class="seg" role="radiogroup" aria-label="Theme" id="themectl">
+      <button type="button" role="radio" data-v="auto">Auto</button>
+      <button type="button" role="radio" data-v="dark">Dark</button>
+      <button type="button" role="radio" data-v="daylight">Daylight</button>
+    </div>
+    <button type="button" class="btn" id="remindbtn" aria-haspopup="dialog" aria-expanded="false" aria-label="Reminders">
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 1.5a4 4 0 0 0-4 4v2.6L2.6 10.6c-.3.5 0 1.1.6 1.1h9.6c.6 0 .9-.6.6-1.1L12 8.1V5.5a4 4 0 0 0-4-4zM6.3 13a1.8 1.8 0 0 0 3.4 0z" fill="currentColor"/></svg>
+      <span class="rem-label">Reminders</span><span class="dot" id="remdot" hidden></span>
+    </button>
+  </div>
+</header>
+<div class="banner-down" id="banner-down" role="alert" hidden></div>
+
+<nav class="rail" aria-label="Views">
+  <div class="rail-items">
+    <a class="ri" href="#session" data-view="session">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6 2h12v2h-1v3.2c0 1.4-.8 2.7-2 3.4L13.6 12l1.4 1.4c1.2.7 2 2 2 3.4V20h1v2H6v-2h1v-3.2c0-1.4.8-2.7 2-3.4l1.4-1.4L9 10.6C7.8 9.9 7 8.6 7 7.2V4H6zm3 2v3.2c0 .7.4 1.4 1 1.7L12 10.6l2-1.7c.6-.3 1-1 1-1.7V4zm3 9.4-2 1.7c-.6.3-1 1-1 1.7V20h6v-3.2c0-.7-.4-1.4-1-1.7z"/></svg>
+      <span>Session</span><span class="mark" data-mark="session"></span>
+    </a>
+    <a class="ri" href="#combat" data-view="combat">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><g fill="currentColor"><path d="M3 2.5h3.2L17 13.3l-1.6 1.6L3 5.7z"/><path d="M21 2.5h-3.2L7 13.3l1.6 1.6L21 5.7z"/><path d="M5.2 13.6l5.2 5.2-1.5 1.5-5.2-5.2z"/><path d="M18.8 13.6l-5.2 5.2 1.5 1.5 5.2-5.2z"/><path d="M4 17.6l2.4 2.4L4.6 21.8 2.2 19.4z"/><path d="M20 17.6l-2.4 2.4 1.8 1.8 2.4-2.4z"/></g></svg>
+      <span>Combat</span><span class="mark" data-mark="combat"></span>
+    </a>
+    <a class="ri" href="#vendors" data-view="vendors">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9 2h6l-1.6 3.2C17 6.5 20 10.4 20 14.6 20 19 16.6 22 12 22s-8-3-8-7.4c0-4.2 3-8.1 6.6-9.4zm3 6.5c-.8 0-1.4.6-1.4 1.3v.4c-1.4.3-2.3 1.3-2.3 2.5 0 1.6 1.4 2.2 2.9 2.6 1 .3 1.3.5 1.3.9s-.4.7-1.2.7c-.7 0-1.4-.3-2-.8l-1 1.4c.6.5 1.4.9 2.3 1v.5h1.4v-.5c1.5-.3 2.4-1.3 2.4-2.6 0-1.7-1.4-2.3-2.9-2.7-1-.3-1.3-.4-1.3-.8 0-.3.3-.6 1-.6.6 0 1.2.2 1.7.6l.9-1.4c-.5-.4-1.1-.7-1.8-.8v-.4c0-.7-.6-1.3-1.4-1.3z"/></svg>
+      <span>Vendors</span><span class="mark" data-mark="vendors"></span>
+    </a>
+    <a class="ri" href="#storage" data-view="storage">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 9.5C4 6.5 6.5 4 9.5 4h5C17.5 4 20 6.5 20 9.5V11H4zM3 12.5h7.5V14a1.5 1.5 0 0 0 3 0v-1.5H21V19a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></svg>
+      <span>Storage</span><span class="mark" data-mark="storage"></span>
+    </a>
+    <a class="ri" href="#character" data-view="character">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2.5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9zM4 21c0-4.2 3.6-7.5 8-7.5s8 3.3 8 7.5v.5H4z"/></svg>
+      <span>Character</span><span class="mark" data-mark="character"></span>
+    </a>
+    <a class="ri" href="#files" data-view="files">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M6 2h8l5 5v15H6zm8 1.5V7h3.5zM9 11.5h7v1.2H9zm0 3.5h7v1.2H9z"/></svg>
+      <span>Files</span><span class="mark" data-mark="files"></span>
+    </a>
+  </div>
+  <div class="rail-foot"><button type="button" id="aboutbtn" aria-haspopup="dialog" aria-expanded="false" data-fan-aria><span class="fan">fan-made</span><span class="ab">About</span></button></div>
+</nav>
+
+<main class="canvas" id="main">
+ <div class="canvas-inner">
+  <div class="title-row">
+    <div>
+      <h1 id="h1">Session</h1>
+      <p class="finding" id="finding">&nbsp;</p>
+      <div class="title-extra" id="title-extra" hidden></div>
+    </div>
+    <div class="stampbox">
+      <div class="stamp" id="stamp"><div class="l1">&nbsp;</div><div class="l2">&nbsp;</div></div>
+      <button type="button" class="btn" id="checkbtn">Check again</button>
+    </div>
+  </div>
+  <div class="notices" id="notices">
+    <div class="preview-note" id="preview-note" hidden></div>
+    <div class="sysline" id="sysline" aria-live="polite"></div>
+  </div>
+
+  <div class="cols">
+   <div class="main-col">
+
+    <!-- ===================== SESSION ===================== -->
+    <section class="view" id="v-session" data-view="session" hidden>
+      <div class="main-col">
+        <div class="note-line" id="s-follow" hidden></div>
+        <section class="win" id="w-s-glance" aria-labelledby="t-s-glance">
+          <header class="win-bar"><h2 id="t-s-glance">At a glance</h2></header>
+          <div class="win-body"><div class="glance" id="s-glance"></div></div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
+        <section class="win" id="w-s-zone" aria-labelledby="t-s-zone">
+          <header class="win-bar"><h2 id="t-s-zone" tabindex="-1">Here</h2><div class="tools" id="s-zone-tools"></div></header>
+          <div class="win-body" id="s-zone"></div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
+        <section class="win" id="w-s-xp" aria-labelledby="t-s-xp">
+          <header class="win-bar primary"><h2 id="t-s-xp">Experience</h2>
+            <div class="tools"><div class="tabs" role="tablist" aria-label="Experience scope" id="xpscope">
+              <button role="tab" type="button" data-s="day">Today</button><button role="tab" type="button" data-s="login">This login</button>
+            </div></div>
+          </header>
+          <div class="win-body"><div id="s-xp"></div></div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
+        <div class="grid2">
+          <section class="win" id="w-s-skill" aria-labelledby="t-s-skill">
+            <header class="win-bar"><h2 id="t-s-skill">XP by skill</h2></header>
+            <div class="win-body" id="s-skill"></div>
+            <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+          </section>
+          <section class="win" id="w-s-lvl" aria-labelledby="t-s-lvl">
+            <header class="win-bar"><h2 id="t-s-lvl">Level-ups</h2></header>
+            <div class="win-body" id="s-lvl"></div>
+            <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+          </section>
+        </div>
+        <div class="grid2" id="s-pair-cc">
+          <section class="win" id="w-s-coin" aria-labelledby="t-s-coin">
+            <header class="win-bar"><h2 id="t-s-coin">Councils</h2></header>
+            <div class="win-body" id="s-coin"></div>
+            <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+          </section>
+          <section class="win" id="w-s-combat" aria-labelledby="t-s-combat">
+            <header class="win-bar"><h2 id="t-s-combat">Combat</h2></header>
+            <div class="win-body" id="s-combat"></div>
+            <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+          </section>
+        </div>
+        <div class="grid2" id="s-pair2">
+          <section class="win" id="w-s-loot" aria-labelledby="t-s-loot">
+            <header class="win-bar"><h2 id="t-s-loot">Loot</h2></header>
+            <div class="win-body">
+              <div class="toolbar"><label class="sr" for="lootq">Search loot</label><input type="search" id="lootq" class="grow" placeholder="Item name, e.g. Spider Leg" autocomplete="off"></div>
+              <div id="s-loot"></div>
+            </div>
+            <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+          </section>
+          <section class="win" id="w-s-what" aria-labelledby="t-s-what">
+            <header class="win-bar"><h2 id="t-s-what">What happened</h2></header>
+            <div class="win-body" id="s-what"></div>
+            <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+          </section>
+        </div>
+        <section class="win darkzone" id="w-s-chat" aria-labelledby="t-s-chat">
+          <header class="win-bar"><h2 id="t-s-chat">Chat log</h2></header>
+          <div class="win-body flush">
+            <div class="chips-wrap" id="chips-wrap"><div class="chips" id="chips" aria-label="Channels"></div><button type="button" class="chip more" id="chips-more" hidden></button></div>
+            <div class="feed-wrap">
+              <div class="feed" id="feed" role="log" aria-live="off" aria-label="Chat log lines"></div>
+              <button type="button" class="pill newpill" id="newpill" hidden></button>
+            </div>
+          </div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
+      </div>
+    </section>
+
+    <!-- ===================== COMBAT ===================== -->
+    <section class="view" id="v-combat" data-view="combat" hidden>
+      <div class="main-col">
+        <div class="note-line" id="d-follow" hidden></div>
+        <section class="win" id="w-d-glance" aria-labelledby="t-d-glance">
+          <header class="win-bar"><h2 id="t-d-glance">At a glance</h2></header>
+          <div class="win-body"><div class="glance" id="d-glance"></div></div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
+        <section class="win" id="w-d-fights" aria-labelledby="t-d-fights">
+          <header class="win-bar primary"><h2 id="t-d-fights">Fights <span class="count" id="d-count"></span></h2>
+            <div class="tools"><div class="tabs" role="tablist" aria-label="Fights scope" id="dscope">
+              <button role="tab" type="button" data-s="day">Today</button><button role="tab" type="button" data-s="login">This login</button>
+            </div></div>
+          </header>
+          <div class="win-body" id="d-fights"></div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
+        <section class="win" id="w-d-break" aria-labelledby="t-d-break">
+          <header class="win-bar"><h2 id="t-d-break" tabindex="-1">Breakdown <span class="count" id="d-break-sub"></span></h2>
+            <div class="tools"><button type="button" class="btn" id="d-copy" disabled><span class="d-only">Copy for Discord</span><span class="m-only">Copy</span></button></div>
+          </header>
+          <div class="win-body" id="d-break"></div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
+      </div>
+    </section>
+
+    <!-- ===================== VENDORS ===================== -->
+    <section class="view" id="v-vendors" data-view="vendors" hidden>
+      <div class="main-col">
+        <section class="win" id="w-v-glance" aria-labelledby="t-v-glance">
+          <header class="win-bar"><h2 id="t-v-glance">At a glance</h2></header>
+          <div class="win-body"><div class="glance" id="v-glance"></div></div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
+        <div class="grid2">
+          <section class="win" id="w-v-where" aria-labelledby="t-v-where">
+            <header class="win-bar"><h2 id="t-v-where">Where to sell</h2></header>
+            <div class="win-body" id="v-where"></div>
+            <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+          </section>
+          <section class="win" id="w-v-buy" aria-labelledby="t-v-buy">
+            <header class="win-bar"><h2 id="t-v-buy">What they buy</h2></header>
+            <div class="win-body" id="v-buy"></div>
+            <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+          </section>
+        </div>
+        <section class="win" id="w-v-pane" aria-labelledby="t-v-pane">
+          <header class="win-bar primary"><h2 id="t-v-pane">Vendors</h2>
+            <div class="tools"><div class="tabs" role="tablist" aria-label="Vendor layout" id="vmode">
+              <button role="tab" type="button" data-m="area">By area</button><button role="tab" type="button" data-m="list">One list</button>
+            </div></div>
+          </header>
+          <div class="win-body">
+            <div class="toolbar">
+              <label class="sr" for="vq">Search vendors</label>
+              <input type="search" id="vq" class="grow" placeholder="Vendor or what they buy, e.g. Gem" autocomplete="off">
+              <label class="sr" for="varea">Area</label><select id="varea"><option value="">All areas</option></select>
+              <label class="check"><input type="checkbox" id="vhide"> Hide drained</label>
+              <label class="sr" for="vsortm">Sort</label><select id="vsortm" class="m-sort"></select>
+            </div>
+            <div class="chips wrap" id="vfilters"></div>
+            <div id="v-pane"></div>
+          </div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
+      </div>
+    </section>
+
+    <!-- ===================== STORAGE ===================== -->
+    <section class="view" id="v-storage" data-view="storage" hidden>
+      <div class="main-col">
+        <section class="win" id="w-t-glance" aria-labelledby="t-t-glance">
+          <header class="win-bar"><h2 id="t-t-glance">At a glance</h2></header>
+          <div class="win-body"><div class="glance" id="t-glance"></div></div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
+        <section class="win" id="w-t-room" aria-labelledby="t-t-room">
+          <header class="win-bar"><h2 id="t-t-room">Where there's room</h2></header>
+          <div class="win-body" id="t-room"></div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
+        <section class="win" id="w-t-pane" aria-labelledby="t-t-pane">
+          <header class="win-bar primary"><h2 id="t-t-pane">Vaults</h2></header>
+          <div class="win-body">
+            <div class="toolbar">
+              <label class="sr" for="sq">Search vaults</label>
+              <input type="search" id="sq" class="grow" placeholder="Vault or area, e.g. Serbule" autocomplete="off">
+              <label class="check"><input type="checkbox" id="shide"> Hide empty, unused vaults</label>
+              <label class="sr" for="ssortm">Sort</label><select id="ssortm" class="m-sort"></select>
+            </div>
+            <div class="chips wrap" id="sfilters"></div>
+            <div id="t-pane"></div>
+          </div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
+        <section class="win" id="w-t-merge" aria-labelledby="t-t-merge">
+          <header class="win-bar"><h2 id="t-t-merge">Stacks to merge<span class="count" id="t-merge-count"></span></h2>
+            <div class="tools" id="tmode-wrap"><div class="tabs" role="tablist" aria-label="Merge layout" id="tmode">
+              <button role="tab" type="button" id="tm-items" data-m="items" aria-controls="t-merge-items">By item</button><button role="tab" type="button" id="tm-stops" data-m="stops" aria-controls="t-merge-stops">By stop</button>
+            </div></div>
+          </header>
+          <div class="win-body" id="t-merge"></div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
+        <section class="win" id="w-t-items" aria-labelledby="t-t-items">
+          <header class="win-bar"><h2 id="t-t-items">Items</h2>
+            <div class="tools m-only"><div class="tabs" role="tablist" aria-label="Items layout" id="imode">
+              <button role="tab" type="button" data-m="items">Items</button><button role="tab" type="button" data-m="loc">By location</button>
+            </div></div>
+          </header>
+          <div class="win-body">
+            <div class="toolbar">
+              <label for="itemsel" class="small dim">Export</label><select id="itemsel"></select>
+              <span class="small dim" id="iteminfo"></span>
+            </div>
+            <div id="items-older" class="small" hidden></div>
+            <div class="grid2 items-grid">
+              <div id="i-loc-wrap"><h3 class="small dim" style="margin:4px 0 4px 8px;font-weight:400">By location</h3><div id="i-loc"></div></div>
+              <div id="i-tbl-wrap">
+                <div class="toolbar">
+                  <label class="sr" for="itemq">Search items</label>
+                  <input type="search" id="itemq" class="grow" placeholder="Item or power, e.g. Max Health" autocomplete="off">
+                  <label class="sr" for="vaultf">Location</label><select id="vaultf"><option value="">All locations</option></select>
+                  <label class="sr" for="isortm">Sort</label><select id="isortm" class="m-sort"></select>
+                </div>
+                <div id="chips-items" class="chips wrap"></div>
+                <div id="i-tbl"></div>
+              </div>
+            </div>
+          </div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
+      </div>
+    </section>
+
+    <!-- ===================== CHARACTER ===================== -->
+    <section class="view cview" id="v-character" data-view="character" hidden>
+      <div class="main-col">
+        <section class="win" id="w-c-broken" aria-labelledby="t-c-broken" hidden>
+          <header class="win-bar"><h2 id="t-c-broken">This export came out partial</h2></header>
+          <div class="win-body" id="c-broken"></div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
+        <section class="win" id="w-c-glance" aria-labelledby="t-c-glance">
+          <header class="win-bar"><h2 id="t-c-glance">At a glance</h2></header>
+          <div class="win-body"><div class="glance" id="c-glance"></div></div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
+        <div class="fade-edge"><div class="tabs ctabs" role="tablist" aria-label="Character windows" id="ctabs">
+          <button role="tab" type="button" data-w="w-c-skills">Skills</button><button role="tab" type="button" data-w="w-c-cur">Currencies</button><button role="tab" type="button" data-w="w-c-favor">Favor</button><button role="tab" type="button" data-w="w-c-quests">Quests</button><button role="tab" type="button" data-w="w-c-stats">Stats</button>
+        </div></div>
+        <section class="win cwin" id="w-c-skills" aria-labelledby="t-c-skills">
+          <header class="win-bar primary"><h2 id="t-c-skills">Skills</h2></header>
+          <div class="win-body">
+            <div class="toolbar"><label class="sr" for="skillq">Search skills</label><input type="search" id="skillq" class="grow" placeholder="Skill, e.g. Mycology" autocomplete="off">
+              <label class="sr" for="ksortm">Sort</label><select id="ksortm" class="m-sort"></select></div>
+            <div id="c-skills"></div>
+          </div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
+        <div class="grid2">
+          <div class="mcol">
+            <section class="win cwin" id="w-c-cur" aria-labelledby="t-c-cur">
+              <header class="win-bar"><h2 id="t-c-cur">Currencies</h2></header>
+              <div class="win-body" id="c-cur"></div>
+              <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+            </section>
+            <section class="win cwin" id="w-c-stats" aria-labelledby="t-c-stats">
+              <header class="win-bar"><h2 id="t-c-stats">Stats</h2></header>
+              <div class="win-body">
+                <div class="toolbar"><label class="sr" for="statq">Search stats</label><input type="search" id="statq" class="grow" placeholder="Stat, e.g. Max health" autocomplete="off"></div>
+                <div id="c-stats"></div>
+              </div>
+              <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+            </section>
+          </div>
+          <div class="mcol">
+            <section class="win cwin" id="w-c-quests" aria-labelledby="t-c-quests">
+              <header class="win-bar"><h2 id="t-c-quests">Active quests <span class="count" id="questcount"></span></h2></header>
+              <div class="win-body">
+                <div class="toolbar"><label class="sr" for="questq">Search quests</label><input type="search" id="questq" class="grow" placeholder="Quest name" autocomplete="off"></div>
+                <div id="c-quests"></div>
+              </div>
+              <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+            </section>
+            <section class="win cwin" id="w-c-favor" aria-labelledby="t-c-favor">
+              <header class="win-bar"><h2 id="t-c-favor">NPC favor</h2></header>
+              <div class="win-body">
+                <div class="toolbar"><label class="sr" for="favq">Search NPCs</label><input type="search" id="favq" class="grow" placeholder="NPC or tier, e.g. Kib" autocomplete="off"></div>
+                <div id="c-favor"></div>
+              </div>
+              <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+            </section>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== FILES ===================== -->
+    <section class="view" id="v-files" data-view="files" hidden>
+      <div class="main-col files-grid">
+        <section class="win" id="w-f-list" aria-labelledby="t-f-list">
+          <header class="win-bar primary"><h2 id="t-f-list">Files <span class="count" id="f-count"></span></h2></header>
+          <div class="win-body flush">
+            <div id="f-list"></div>
+            <p class="small dim pane-under" id="f-under" hidden></p>
+          </div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
+        <section class="win darkzone" id="w-f-view" aria-labelledby="t-f-view">
+          <header class="win-bar"><h2 id="t-f-view" tabindex="-1">Contents <span class="count" id="f-total"></span></h2></header>
+          <div class="win-body">
+            <div class="toolbar" id="f-tools">
+              <label class="sr" for="fileq">Search this file</label>
+              <input type="search" id="fileq" class="grow" placeholder="Key or value in this file, e.g. Mycology" autocomplete="off" aria-controls="f-results" disabled>
+              <button type="button" class="btn" id="f-expand" disabled>Expand all</button>
+              <button type="button" class="btn" id="f-collapse" disabled>Collapse all</button>
+              <a class="btn openraw" id="f-raw" aria-disabled="true" target="_blank" rel="noopener">Open raw</a>
+            </div>
+            <p class="small dim" id="f-qnote" hidden></p>
+            <div class="pathbar well small fade-edge" id="f-pathwrap" hidden><div class="pathbar-in" id="f-path"></div></div>
+            <div class="note-line" id="f-note" hidden></div>
+            <div id="f-results" hidden></div>
+            <div id="f-state"></div>
+            <div class="scrollbox treebox" id="f-treebox" hidden><ul class="tree" role="tree" id="f-tree" aria-label="Contents"></ul></div>
+            <p class="small dim" id="f-hint" hidden>Arrow keys move and open, * opens every sibling, type a letter to jump.</p>
+            <span class="sr" role="status" id="f-status"></span>
+          </div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
+      </div>
+    </section>
+
+   </div>
+   <aside class="margin" id="margin" aria-label="Where these numbers come from" tabindex="-1">
+     <section class="win">
+       <header class="win-bar"><h2>Where these numbers come from</h2></header>
+       <div class="mhead" id="mhead"></div>
+       <div class="notes" id="mnotes"></div>
+       <div class="also" id="malso" hidden></div>
+       <footer class="win-foot"><span class="fl" id="mfoot"></span><span class="fr"><button type="button" class="linkbtn" id="mremind">Reminders</button></span></footer>
+     </section>
+   </aside>
+  </div>
+ </div>
+</main>
+
+<div class="pop" id="rempanel" role="dialog" aria-labelledby="rem-title" hidden></div>
+<div class="pop about" id="aboutpop" role="dialog" aria-labelledby="about-title" hidden></div>
+<div class="toasts" id="toasts"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
