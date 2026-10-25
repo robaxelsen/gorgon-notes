@@ -186,7 +186,7 @@ const S = {
   firstRound: true,
   loading: true,
 };
-function cdnVersion() { return S.health?.cdnVersion || S.vendors?.cdnVersion || S.storage?.cdnVersion || CDN_FALLBACK; }
+function cdnVersion() { const v = String(S.health?.cdnVersion || S.vendors?.cdnVersion || S.storage?.cdnVersion || ''); return /^\d{1,6}$/.test(v) ? v : CDN_FALLBACK; }
 function iconUrl(id) { return id == null ? null : `https://cdn.projectgorgon.com/v${cdnVersion()}/icons/icon_${id}.png`; }
 const ICON_FAILED = new Set();
 /* No icon: an empty slot, or, given a name, a slot holding its initial (vendors whose goods have no art). */
@@ -196,7 +196,7 @@ function iconImg(id, size, alt = '', letter = '') {
   const slot = q => `<span class=${q}slot${ch ? ' lettered' : ''}${q} style=${q}width:${size}px;height:${size}px${q} aria-hidden=${q}true${q}>${ch}</span>`;
   if (!u || ICON_FAILED.has(u)) return slot('"');
   // A failed URL is remembered, so the next render writes the slot itself and the block stops changing.
-  return `<img class="ico" src="${u}" width="${size}" height="${size}" loading="lazy" decoding="async" alt="${esc(alt)}" onerror="ICON_FAILED.add(this.src);this.outerHTML='${slot('&quot;')}'">`;
+  return `<img class="ico" src="${esc(u)}" width="${size}" height="${size}" loading="lazy" decoding="async" alt="${esc(alt)}" onerror="ICON_FAILED.add(this.src);this.outerHTML='${slot('&quot;')}'">`;
 }
 
 /* ---------- fetch layer with preview overrides ---------- */
@@ -1641,6 +1641,8 @@ function initCombat() {
 
 const vUI = {
   mode: 'area', q: '', area: '', hide: false, type: '', selected: null,
+  qTypes: null,      // the search box's item lookup: { query, items, examples, types: [{ type, items }] } for vUI.q
+  moreTypes: false,  // What they buy: the types past the first twelve are shown
   sort: (store.json('pgdash.sort', {}).vendors) || { key: 'remaining', dir: 'desc' },
   open: (store.json('pgdash.open', {}).vendors) || null,
 };
@@ -1775,13 +1777,19 @@ function renderVendors() {
   else {
     const byType = {};
     live.forEach(r => r.types.forEach(t => { byType[t] = (byType[t] || 0) + r.remaining; }));
-    const top = Object.entries(byType).sort((a, b) => b[1] - a[1]).slice(0, 12);
+    const all = Object.entries(byType).sort((a, b) => b[1] - a[1]);
+    const top = all.slice(0, 12);
+    // The pressed type stays visible in the first row even when it sits below the twelve.
+    if (vUI.type && byType[vUI.type] != null && !top.some(([t]) => t === vUI.type)) top.push([vUI.type, byType[vUI.type]]);
+    const rest = all.filter(([t]) => !top.some(([x]) => x === t)).sort((a, b) => typeLabel(a[0]).localeCompare(typeLabel(b[0])));
     needIcons({ types: Object.keys(byType) });
     const sel = vUI.selected ? rows.find(r => r.npc === vUI.selected) : null;
-    $('#v-buy').html = `<div class="chips wrap">${top.map(([t, n]) => {
+    const chip = ([t, n]) => {
       const pressed = vUI.type === t || (sel && sel.types.includes(t));
       return `<button type="button" class="chip goods" data-type="${esc(t)}" aria-pressed="${pressed}">${iconImg(S.icons.byType[t], 24)}${esc(typeLabel(t))} <span class="cnt">${short(n)}</span></button>`;
-    }).join('')}</div><p class="small dim" style="margin-top:8px">Councils left per item type, in thousands where marked k. Tap one to filter the vendor list.</p>`;
+    };
+    const more = rest.length ? `<button type="button" class="chip more" data-more aria-expanded="${vUI.moreTypes}" aria-controls="v-buy-rest">${vUI.moreTypes ? 'Fewer types' : `${plural(rest.length, 'more type')}`}</button>` : '';
+    $('#v-buy').html = `<div class="chips wrap">${top.map(chip).join('')}${more}</div>${vUI.moreTypes && rest.length ? `<div class="chips wrap" id="v-buy-rest">${rest.map(chip).join('')}</div>` : ''}<p class="small dim" style="margin-top:8px">Councils left per item type, in thousands where marked k. Tap one to filter the vendor list${rest.length ? `; the first twelve by councils are shown, ${vUI.moreTypes ? 'then the rest A to Z' : `${rest.length} more behind the button`}` : ''}.</p>`;
   }
   setFoot('w-v-buy', `${footL} · types from game data v${esc(ver)}`, footR);
 
@@ -1809,10 +1817,21 @@ function renderVendors() {
   if (missing) { setFoot('w-v-where', `Character export · ${shape('bad', 's13')}<span class="age bad">missing</span>`, esc(fixText('export-character'))); setFoot('w-v-buy', `Character export · ${shape('bad', 's13')}<span class="age bad">missing</span>`, esc(fixText('export-character'))); }
 }
 
+/* The item lookup that belongs to the current search text, else null (a stale answer never filters). */
+function vendorItemTypes() {
+  const l = vUI.qTypes, q = vUI.q.trim().toLowerCase();
+  if (!l || l.query !== vUI.q.trim() || l.query.length < 3) return null;
+  // Text that already names a type ("skin", "gem") filters by that type alone: the item lookup would add the
+  // buyers of every item whose name contains the word (recipe documents, armor) and widen the list.
+  const rows = S.vendors?.vendors || [];
+  if (rows.some(r => (r.buys || '').split(',').some(t => t && typeLabel(t).toLowerCase().includes(q)))) return null;
+  return l;
+}
 function applyVendorFilters(rows, { skipArea = false } = {}) {
   const q = vUI.q.trim().toLowerCase();
+  const qt = (vendorItemTypes()?.types || []).map(t => t.type);  // "figurine" → Artwork, Antique, from the game's item data
   return rows.filter(r => (skipArea || !vUI.area || r.area === vUI.area) && (!vUI.hide || !r.drained) && (!vUI.type || r.types.includes(vUI.type)) &&
-    (!q || `${r.name} ${r.buys} ${typeLabel(r.buys)}`.toLowerCase().includes(q)));
+    (!q || `${r.name} ${r.buys} ${typeLabel(r.buys)}`.toLowerCase().includes(q) || r.types.some(t => qt.includes(t))));
 }
 function renderVendorFilters() {
   const chips = [];
@@ -1821,6 +1840,14 @@ function renderVendorFilters() {
   if (vUI.selected) { const r = (S.vendors?.vendors || []).find(x => x.npc === vUI.selected); if (r) chips.push(`<button type="button" class="chip filter" data-clear="sel">Selected: ${esc(r.name)} ✕</button>`); }
   $('#vfilters').html = chips.join('');
   $('#vfilters').style.marginBottom = chips.length ? '8px' : '0';
+  // Under the search: what the typed item resolves to, so a miss ("coin": no vendor type) is explained, not blank.
+  const l = vendorItemTypes(), note = $('#vq-note');
+  if (!l) { note.hidden = true; note.html = ''; return; }
+  const qq = `“${esc(l.query)}”`;
+  if (l.types.length) note.html = `${qq} is sold as ${joinNames(l.types.map(t => `${esc(typeLabel(t.type))} <span class="dim">(${plural(t.items, 'item')})</span>`))}, from game data v${esc(cdnVersion())}.`;
+  else if (l.items) note.html = `${qq}: ${plural(l.items, 'item')} in the game data v${esc(cdnVersion())}, none with a type vendors buy${l.examples.length ? ` (${esc(joinNames(l.examples))})` : ''}.`;
+  else note.html = `No item named ${qq} in the game data v${esc(cdnVersion())}; matching vendor names and types only.`;
+  note.hidden = false;
 }
 
 const VENDOR_COMPACT_W = 860;
@@ -1915,13 +1942,28 @@ function renderVendorPane(rows) {
 
 function initVendors() {
   vUI.mode = 'area';
-  $('#vq').addEventListener('input', e => { vUI.q = e.target.value; renderVendors(); });
+  let lookupTimer = null;
+  $('#vq').addEventListener('input', e => {
+    vUI.q = e.target.value; renderVendors();
+    clearTimeout(lookupTimer);
+    const q = vUI.q.trim();
+    if (q.length < 3) return;
+    lookupTimer = setTimeout(async () => {  // one request per pause in typing; the answer applies only if the text still matches
+      try {
+        const r = await api(`/api/lookup?item=${encodeURIComponent(q)}`);
+        if (r?.item && vUI.q.trim() === q) { vUI.qTypes = r.item; renderVendors(); }
+      } catch (err) { /* the search still matches vendor names and types */ }
+    }, 250);
+  });
   $('#varea').addEventListener('change', e => { vUI.area = e.target.value; renderVendors(); });
   $('#vhide').addEventListener('change', e => { vUI.hide = e.target.checked; renderVendors(); });
   $('#vmode').addEventListener('click', e => { const b = e.target.closest('[role=tab]'); if (!b) return; vUI.mode = b.dataset.m; renderVendors(); });
   tabKeys($('#vmode'));
   $('#v-where').addEventListener('click', e => { const b = e.target.closest('[data-area]'); if (!b) return; vUI.area = vUI.area === b.dataset.area ? '' : b.dataset.area; renderVendors(); });
-  $('#v-buy').addEventListener('click', e => { const b = e.target.closest('[data-type]'); if (!b) return; vUI.type = vUI.type === b.dataset.type ? '' : b.dataset.type; renderVendors(); });
+  $('#v-buy').addEventListener('click', e => {
+    if (e.target.closest('[data-more]')) { vUI.moreTypes = !vUI.moreTypes; renderVendors(); $('#v-buy [data-more]')?.focus(); return; }
+    const b = e.target.closest('[data-type]'); if (!b) return; vUI.type = vUI.type === b.dataset.type ? '' : b.dataset.type; renderVendors();
+  });
   $('#vfilters').addEventListener('click', e => {
     const b = e.target.closest('[data-clear]'); if (!b) return;
     if (b.dataset.clear === 'area') vUI.area = ''; else if (b.dataset.clear === 'type') vUI.type = ''; else vUI.selected = null;

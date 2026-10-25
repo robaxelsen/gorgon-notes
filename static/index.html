@@ -234,11 +234,12 @@
           <div class="win-body">
             <div class="toolbar">
               <label class="sr" for="vq">Search vendors</label>
-              <input type="search" id="vq" class="grow" placeholder="Vendor or what they buy, e.g. Gem" autocomplete="off">
+              <input type="search" id="vq" class="grow" placeholder="Vendor, what they buy, or an item, e.g. figurine" autocomplete="off">
               <label class="sr" for="varea">Area</label><select id="varea"><option value="">All areas</option></select>
               <label class="check"><input type="checkbox" id="vhide"> Hide drained</label>
               <label class="sr" for="vsortm">Sort</label><select id="vsortm" class="m-sort"></select>
             </div>
+            <p class="small dim" id="vq-note" hidden></p>
             <div class="chips wrap" id="vfilters"></div>
             <div id="v-pane"></div>
           </div>

@@ -370,7 +370,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
   }
 
   func webView(_ webView: WKWebView, createWebViewWith c: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-    if let url = action.request.url { NSWorkspace.shared.open(url) }
+    // window.open from the page: web links only, like decidePolicyFor; never hand another URL scheme to the system.
+    if let url = action.request.url, url.scheme?.hasPrefix("http") == true { NSWorkspace.shared.open(url) }
     return nil
   }
 

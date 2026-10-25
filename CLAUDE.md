@@ -17,6 +17,7 @@ Read these before working:
 - `docs/ROADMAP.md`: current status, next steps, open questions, Mac app plan
 - `docs/DATA-SOURCES.md`: where game data lives and its formats (verified)
 - `docs/GLOGGER-COMPARISON.md`: feature gap vs glogger
+- `docs/SHARING.md`: how party members could share fight data (ntfy.sh first, Cloudflare room later); research 25 Oct
 - `docs/DISTRIBUTION.md`: plan for sharing with friends (Mac signing/notarization, Windows exe, CI); paused
 - `README.md`: how to run, API, UI tabs
 - `docs/DESIGN-PROCESS.md`: how the redesign was made, final screenshots, outstanding review issues

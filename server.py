@@ -148,7 +148,9 @@ def cdn_version():
     """Current game data version: fileversion.txt (re-checked every 10 min), else newest cached."""
     if _ver["v"] is None or time.time() - _ver["at"] > 600:
         try:
-            v = fetch("http://client.projectgorgon.com/fileversion.txt", 5).decode().strip()
+            v = fetch("https://client.projectgorgon.com/fileversion.txt", 5).decode().strip()
+            if not re.fullmatch(r"\d{1,6}", v):  # builds cache paths and CDN URLs and reaches the page: digits only
+                raise ValueError(f"unexpected fileversion.txt: {v[:40]!r}")
             if _ver["v"] and v != _ver["v"]:
                 _ver["changedAt"] = local_iso(datetime.now())
                 _cdn.clear()
@@ -2232,8 +2234,47 @@ def power_text(power, tier):
     return "; ".join(parts) or None
 
 
+def buy_words():
+    """Every item-type word any vendor's CapIncreases names (the vocabulary of the Vendors view's Buys column)."""
+    if "buywords" not in _maps:
+        words = set()
+        for info in cdn_data("npcs").values():
+            for sv in info.get("Services", []):
+                if sv.get("Type") == "Store":
+                    for c in sv.get("CapIncreases") or []:
+                        parts = c.split(":")
+                        if len(parts) > 2:
+                            words.update(w for w in parts[2].split(",") if w)
+        _maps["buywords"] = words
+    return _maps["buywords"]
+
+
+def item_types(query):
+    """Vendors search by item (GET /api/lookup?item=): the vendor type words carried by the items whose name
+    contains the query, counted, so "figurine" finds the Artwork and Antique buyers. A type is kept when at
+    least two matching items carry it and at least a tenth of them do; at most six types, most common first."""
+    q = (query or "").strip().lower()
+    if len(q) < 3:
+        return None
+    words = buy_words()
+    counts, n, examples = Counter(), 0, []
+    for it in cdn_data("items").values():
+        name = it.get("Name") or ""
+        if q in name.lower():
+            n += 1
+            if len(examples) < 3:
+                examples.append(name)
+            for w in {k.split("=")[0] for k in it.get("Keywords") or []}:
+                if w in words:
+                    counts[w] += 1
+    types = [{"type": w, "items": c} for w, c in counts.most_common() if c >= 2 and c * 10 >= n][:6]
+    return {"query": query, "items": n, "examples": examples, "types": types}
+
+
 def lookup(q):
     out = {"cdnVersion": cdn_version() or "488", "quests": {}, "powers": {}}
+    if "item" in q:
+        out["item"] = item_types(q.get("item"))
     keys = [x for x in (q.get("quests") or "").split(",") if x]
     if keys:
         if "quests" not in _maps:
@@ -2897,7 +2938,22 @@ class Handler(SimpleHTTPRequestHandler):
         else:
             self.wfile.write(body)
 
+    LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+    def local_only(self):
+        """The server listens on 127.0.0.1 only, but a browser can be made to send a request for another host name
+        that resolves there (DNS rebinding) and then read the answer as its own origin. Serve only the names the
+        app, the Mac app and the Windows program use; everything else gets 403."""
+        host = (self.headers.get("Host") or "").strip()
+        name = host.rsplit(":", 1)[0] if re.fullmatch(r"[^:]+(:\d+)?|\[[^\]]+\](:\d+)?", host) else host
+        if name.strip("[]") in self.LOCAL_HOSTS:
+            return True
+        self.send_json({"error": "forbidden host"}, 403)
+        return False
+
     def do_GET(self):
+        if not self.local_only():
+            return
         url = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
         try:
@@ -2951,8 +3007,17 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
+        if not self.local_only():
+            return
         url = urlparse(self.path)
         if url.path == "/api/capacity":
+            # Only the page itself posts here: JSON content type (a cross-site form or no-cors fetch cannot send
+            # it without a preflight, and no CORS headers are ever sent) and, when the browser names an origin,
+            # this server's own.
+            origin = self.headers.get("Origin")
+            ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            if ctype != "application/json" or (origin and urlparse(origin).hostname not in self.LOCAL_HOSTS):
+                return self.send_json({"error": "forbidden"}, 403)
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
                 if not isinstance(body, dict):
