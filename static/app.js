@@ -620,7 +620,7 @@ function chanEnabled(c) {
 }
 
 async function loadSession() {
-  const s = await api('/api/session?scope=' + S.scope);
+  const s = await api('/api/session?scope=' + S.scope + (S.character ? '&character=' + encodeURIComponent(S.character) : ''));
   S.session = s || {};
   S.sessionAt = NOW();
   S.lastGood.session = NOW();
@@ -948,6 +948,15 @@ function councilRows(events) {
       for (; i < j; i++) rows.push(events[i]);
       continue;
     }
+    if (e.kind === 'received' && e.source === 'corpse') {  // 3+ corpses in a row fold the same way
+      let j = i; while (j < events.length && events[j].kind === 'received' && events[j].source === 'corpse') j++;
+      if (j - i >= 3) {
+        rows.push({ kind: 'corpses', ts: events[j - 1].ts, first: events[i].ts, n: j - i, amount: events.slice(i, j).reduce((a, x) => a + x.amount, 0), character: e.character });
+        i = j; continue;
+      }
+      for (; i < j; i++) rows.push(events[i]);
+      continue;
+    }
     if (e.kind === 'overburdened') {
       let j = i; while (j < events.length && events[j].kind === 'overburdened' && events[j].ts === e.ts && events[j].amount === e.amount && events[j].who === e.who) j++;
       rows.push({ ...e, times: j - i }); i = j; continue;
@@ -974,12 +983,18 @@ function renderCouncils(s) {
       quiet = true;
       box.html = `<p class="empty">No councils in or out ${scopeWord}. What comes in is written to the chat log; what you spend never is.</p>`;
     } else {
+      // Older servers fold casino wins into `received` and have no `gaming`; the page then shows what it gets.
+      const newer = 'gaming' in c;
+      const recSub = c.receivedLines ? `received ${plural(c.receivedLines, 'time')}${c.corpseLines ? ` · ${fmt(c.corpseCoins)} from ${plural(c.corpseLines, 'corpse')}` : ''}${!newer && c.gamingLines ? ` · ${fmt(c.gamingLines)} with Gaming XP` : ''}` : 'none yet';
       const figs = [
-        { lb: 'Received', val: `${COIN}${fmt(c.received || 0)}`, sub: c.receivedLines ? `received ${plural(c.receivedLines, 'time')}${c.gamingLines ? ` · ${fmt(c.gamingLines)} with Gaming XP` : ''}` : 'none yet' },
+        { lb: 'Received', val: `${COIN}${fmt(c.received || 0)}`, sub: recSub },
+      ];
+      if (newer && c.gamingLines) figs.push({ lb: 'Gaming', val: `${COIN}${fmt(c.gaming || 0)}`, sub: `${plural(c.gamingLines, 'pull')} with Gaming XP · ${plural(c.gamingWins || 0, 'win')}` });
+      figs.push(
         { lb: 'Stolen', val: `${COIN}${fmt(c.stolen || 0)}`, sub: c.stolenLines ? `${plural(c.stolenLines, 'theft')} · ${joinNames(c.thieves || [])}` : 'none yet' },
         { lb: 'Recovered', val: `${COIN}${fmt(c.recovered || 0)}`, sub: c.recoveredLines ? `${plural(c.recoveredLines, 'theft')} undone` : (c.stolenLines ? 'none yet' : 'nothing to recover') },
-        { lb: 'Net', val: `${COIN}${fmt(c.net || 0)}`, sub: 'received, less stolen, plus recovered' },
-      ];
+        { lb: 'Net', val: `${COIN}${fmt(c.net || 0)}`, sub: newer && c.gamingLines ? 'received and gaming, less stolen, plus recovered' : 'received, less stolen, plus recovered' },
+      );
       const glance = `<div class="glance nolead">${figs.map((f, i) => `<div class="fig${i ? '' : ' lead'}"><div class="lb">${f.lb}</div><div class="val">${f.val}</div><div class="sub">${esc(f.sub)}</div></div>`).join('')}</div>`;
       // The spending note: the balance is a second source (character export), so its age and fix live here, not in the footer.
       let note = "Spending isn't written to the chat log, so this is what came in, not what's left. ";
@@ -1010,6 +1025,10 @@ function renderCouncils(s) {
       const row = e => {
         let what = '';
         if (e.kind === 'run') what = `With Gaming XP: <em class="n">${fmt(e.amount)}</em>, ${plural(e.n, 'time')} from ${e.first.slice(9, 14)} to ${e.ts.slice(9, 14)}`;
+        else if (e.kind === 'corpses') what = `Found <em class="n">${fmt(e.amount)}</em> coins on ${plural(e.n, 'corpse')} from ${e.first.slice(9, 14)} to ${e.ts.slice(9, 14)}`;
+        else if (e.kind === 'received' && e.source === 'corpse') what = `Found <em class="n">${fmt(e.amount)}</em> coins on a corpse`;
+        else if (e.kind === 'received' && e.source === 'given') what = `<em class="t">${esc(e.who)}</em> gave you <em class="n">${fmt(e.amount)}</em> coins`;
+        else if (e.kind === 'received' && e.source === 'coins') what = `Received <em class="n">${fmt(e.amount)}</em> coins`;
         else if (e.kind === 'received') what = `Received <em class="n">${fmt(e.amount)}</em>${e.gaming ? ' <span class="dim small">with Gaming XP</span>' : ''}`;
         else if (e.kind === 'stolen') what = `<em class="t">${esc(e.who)}</em> stole <em class="n">${fmt(e.amount)}</em>`;
         else if (e.kind === 'recovered') what = `Recovered <em class="n">${fmt(e.amount)}</em> from <em class="t">${esc(e.who)}</em>`;
@@ -1672,6 +1691,7 @@ function renderBreakdown(c, f) {
       : "Nobody else was logged nearby, so it's your DoTs or your pets'.";
     note = `<p class="small dim" style="margin:12px 0 0">Indirect damage on what you fought, source not logged: ${fmt(f.indirectUnattributed)}. ${esc(who)} It isn't counted above.</p>`;
   }
+  if (c.unclassified?.length) note += `<p class="small dim" style="margin:8px 0 0">Not placed: ${esc(joinNames(c.unclassified))}. ${c.unclassified.length === 1 ? 'It hit things you never fought and nothing you fought hit it, so the meter can\'t tell a pet from a stranger; if it is your pet, its damage is missing above.' : 'They hit things you never fought and nothing you fought hit them, so the meter can\'t tell pets from strangers; if any is your pet, its damage is missing above.'}</p>`;
   const tl = f.timeline || [];
   const spark = f.dmg && tl.length >= 2
     ? `<div class="chart spark" id="d-spark" data-key="${esc(`${f.id}|${f.dur}|${f.dmg}`)}"><svg role="img" aria-label="Damage a second over this fight" tabindex="0"></svg><div class="tip" hidden></div></div>
@@ -3601,12 +3621,47 @@ function logLineHtml(l, q) {
     const i = String(s).toLowerCase().indexOf(q.toLowerCase());
     return i < 0 ? esc(s) : `${esc(s.slice(0, i))}<b>${esc(s.slice(i, i + q.length))}</b>${esc(s.slice(i + q.length))}`;
   };
-  if (!l.ts) return `<div class="lline cont">${num}<span class="ts"></span><span class="msg">${mark(l.msg)}</span></div>`;
+  const hit = q ? ' hit" role="button" tabindex="0" title="Show this line in the log' : '';
+  const jumped = fUI.log?.jump?.n === l.n && !q ? ' jumped' : '';
+  if (!l.ts) return `<div class="lline cont${jumped}${hit}" data-n="${l.n}">${num}<span class="ts"></span><span class="msg">${mark(l.msg)}</span></div>`;
   const c = chanOf(l.msg);
   let body = l.msg, tag = '';
   if (c !== 'System') { tag = `<span class="ch" style="color:${CHAN_COLOR[c] || 'var(--text)'}">[${esc(c)}]</span>`; body = body.replace(CHAN_RE, ''); }
   const cls = /reached level/.test(body) ? ' lvl' : c === 'Error' ? ' err' : '';
-  return `<div class="lline${cls}">${num}<span class="ts">${esc(l.ts.slice(9))}</span><span class="msg">${tag}${mark(body)}</span></div>`;
+  return `<div class="lline${cls}${jumped}${hit}" data-n="${l.n}">${num}<span class="ts">${esc(l.ts.slice(9))}</span><span class="msg">${tag}${mark(body)}</span></div>`;
+}
+/* A search hit opens the log around that line (200 before, 200 after), marks it and scrolls it into the middle;
+   the search text stays in the box, so "Back to the matches" is one click. */
+const LOG_JUMP_AROUND = 200;
+async function jumpToLine(n) {
+  const L = fUI.log; if (!L || !S.file) return;
+  const offset = Math.max(0, n - 1 - LOG_JUMP_AROUND);
+  let r;
+  try { r = await fileApi('lines', { offset, limit: LOG_JUMP_AROUND * 2 + 1 }, { mtime: false }); }
+  catch (e) { onFetchError(e); return; }
+  if (fUI.log !== L) return;
+  L.tail = { lines: r.lines, offset: r.offset, total: r.total };
+  L.hits = null; L.jump = { n, q: fUI.q.trim() };
+  renderLog(false);
+  const box = $('#f-logbox'), el = box.querySelector(`.lline[data-n="${n}"]`);
+  if (el) { box.scrollTop = Math.max(0, el.offsetTop - box.clientHeight / 2); el.focus?.(); }
+  announce(`Line ${fmt(n)} of ${fmt(r.total)}.`);
+}
+document.addEventListener('keydown', e => {  // a focused search hit opens on Enter or Space
+  const hl = e.target.closest?.('.logbox .lline.hit');
+  if (hl && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); jumpToLine(Number(hl.dataset.n)); }
+});
+async function loadLater() {
+  const L = fUI.log; if (!L || L.hits) return;
+  const end = L.tail.offset + L.tail.lines.length;
+  if (end >= L.tail.total) return;
+  let r;
+  try { r = await fileApi('lines', { offset: end, limit: LOG_PAGE }, { mtime: false }); }
+  catch (e) { onFetchError(e); return; }
+  if (fUI.log !== L) return;
+  L.tail = { lines: L.tail.lines.concat(r.lines), offset: L.tail.offset, total: Math.max(L.tail.total, r.total) };
+  renderLog(false);
+  $('#f-logbox').querySelector('[data-lmore2]')?.focus();
 }
 function renderLog(scrollDown) {
   const box = $('#f-logbox'), L = fUI.log;
@@ -3627,13 +3682,19 @@ function renderLog(scrollDown) {
     return;
   }
   const t = L.tail;
+  if (L.jump) {
+    const back = L.jump.q ? `<button type="button" class="linkbtn" data-fback="1" style="text-decoration:underline">Back to the matches for "${esc(L.jump.q)}"</button>` : '';
+    html += `<div class="rhead"><span class="small dim">Line ${fmt(L.jump.n)} of ${plural(t.total, 'line')}</span><span>${back}${back ? ' · ' : ''}<button type="button" class="linkbtn" data-fend="1" style="text-decoration:underline">Back to the end</button></span></div>`;
+  }
   if (t.offset > 0) {
-    if (t.lines.length >= LOG_ROW_BUDGET) html += `<p class="small dim lmore">Showing the last ${fmt(t.lines.length)} of ${plural(t.total, 'line')}. Open raw for the whole file.</p>`;
+    if (t.lines.length >= LOG_ROW_BUDGET) html += `<p class="small dim lmore">Showing ${fmt(t.lines.length)} of ${plural(t.total, 'line')}. Open raw for the whole file.</p>`;
     else html += `<div class="lmore"><button type="button" class="btn" data-lmore="1">Show ${fmt(Math.min(LOG_PAGE, t.offset))} earlier of ${plural(t.total, 'line')}</button></div>`;
   }
   html += t.lines.length ? t.lines.map(l => logLineHtml(l, '')).join('') : '<p class="empty">This log is empty.</p>';
+  const end = t.offset + t.lines.length;
+  if (end < t.total && t.lines.length < LOG_ROW_BUDGET) html += `<div class="lmore"><button type="button" class="btn" data-lmore2="1">Show ${fmt(Math.min(LOG_PAGE, t.total - end))} later of ${plural(t.total, 'line')}</button></div>`;
   box.innerHTML = html;
-  if (scrollDown || atBottom) box.scrollTop = box.scrollHeight;
+  if (!L.jump && (scrollDown || atBottom)) box.scrollTop = box.scrollHeight;
 }
 
 function paneArgs() {
@@ -3950,7 +4011,7 @@ async function runSearch() {
     try {
       const r = await fileApi('lines', { q, limit: LOG_PAGE }, { mtime: false });
       if (!fUI.log || r.q !== fUI.q.trim()) return;
-      fUI.log.hits = { q: r.q, lines: r.lines, matches: r.matches, capped: r.capped };
+      fUI.log.hits = { q: r.q, lines: r.lines, matches: r.matches, capped: r.capped }; fUI.log.jump = null;
       renderLog(false);
     } catch (e) { if (fUI.log) { fUI.log.hits = null; $('#f-logbox').innerHTML = blockError('the search', null).replace('data-retry="1"', 'data-fsearch="1"'); announce("Couldn't search."); } }
     return;
@@ -4022,6 +4083,10 @@ function initFiles() {
     if (t.closest('[data-fmore]')) { fUI.showOld = !fUI.showOld; renderFilePane(paneArgs()); $('#f-list [data-fmore]')?.focus(); return; }
     if (t.closest('[data-lmoreold]')) { fUI.showOldLogs = !fUI.showOldLogs; renderFilePane(paneArgs()); $('#f-list [data-lmoreold]')?.focus(); return; }
     if (t.closest('[data-lmore]')) { loadEarlier(); return; }
+    if (t.closest('[data-lmore2]')) { loadLater(); return; }
+    if (t.closest('[data-fback]')) { if (fUI.log) { fUI.log.jump = null; } runSearch(); return; }
+    if (t.closest('[data-fend]')) { if (fUI.log) { fUI.log.jump = null; } refreshLog().then(() => renderLog(true)); return; }
+    const hl = t.closest('.lline.hit'); if (hl) { jumpToLine(Number(hl.dataset.n)); return; }
     const frow = t.closest('tr[data-frow]');
     if (frow && !t.closest('button')) {
       const a = frow.querySelector('a.fopen');

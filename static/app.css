@@ -798,12 +798,16 @@ li[role="treeitem"]:focus-visible > .jrow { outline: 2px solid var(--selection);
 .fade-edge.pathbar.overflow::after { background: linear-gradient(to right, transparent, var(--well)); }
 #f-results .tbl td { vertical-align: top; }
 #f-results .hit { cursor: pointer; }
+.logbox .lline.hit { cursor: pointer; }
+.logbox .lline.hit:hover { background: var(--row-hover); }
+.logbox .lline.jumped { background: var(--sel-bg); color: var(--sel-text); outline: 1px solid var(--sel-focus); outline-offset: -1px; }
+.logbox .lline.jumped .ln, .logbox .lline.jumped .ts { color: var(--sel-text); }
 #f-results .hit b { font-weight: 700; }
 #f-results .rhead { display: flex; align-items: center; gap: 12px; margin: 0 0 4px; }
 /* Chat log lines (Files → Contents for a Chat-*.log): the feed's look, plus a line number; the match in bold. */
 .logbox { max-height: 70vh; overflow: auto; font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; outline: none; }
 .logbox:focus-visible { outline: 2px solid var(--selection); outline-offset: -2px; }
-.logbox .rhead { display: flex; align-items: center; gap: 12px; margin: 0 0 4px; }
+.logbox .rhead { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; margin: 0 0 4px; }
 .logbox .lline { display: flex; gap: 0 8px; align-items: baseline; padding: 1px 0; }
 .logbox .lline:hover { background: var(--row-hover); }
 .logbox .ln { flex: none; min-width: 5ch; text-align: right; color: var(--text-dim); font-size: 13px; font-variant-numeric: tabular-nums lining-nums; }

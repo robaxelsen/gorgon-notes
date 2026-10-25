@@ -62,7 +62,7 @@ Two layers, both set up on 2026-10-23:
 
 | Endpoint | Returns |
 |---|---|
-| `GET /api/session?scope=day\|login` | XP per skill, XP/hr, level-ups, loot, areas, deaths and kills (`combat`, `combat31d`, `death` events), councils in and out (`councils`: received, stolen, recovered, net, events, on-hand balance from the character export; spending is never logged) from the newest chat log |
+| `GET /api/session?scope=day\|login&character=` | XP per skill, XP/hr, level-ups, loot, areas, deaths and kills (`combat`, `combat31d`, `death` events), councils in and out (`councils`: received incl. coins looted or given, casino wins as `gaming`, stolen, recovered, net, events, the on-hand balance from the selected character's export; spending is never logged) from the newest chat log |
 | `GET /api/tail?log=&offset=` | New chat lines since `offset` (UI polls every 2 s) |
 | `GET /api/reports` | All files in `Reports/` with type/character/timestamp |
 | `GET /api/report?file=` | One raw report JSON (path-traversal guarded) |

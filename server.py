@@ -59,6 +59,10 @@ COUNCILS_RECEIVED_RE = re.compile(r"^\[Status\] You received ([\d,]+) Councils\.
 COUNCILS_STOLEN_RE = re.compile(r"^\[Status\] (.+?) stole ([\d,]+) Councils!$")
 COUNCILS_RECOVERED_RE = re.compile(r"^\[Status\] You recovered ([\d,]+) Councils stolen by (.+?)\.$")
 COUNCILS_OVERBURDENED_RE = re.compile(r"^\[Error\] Error: Corpse is overburdened with ([\d,]+) Councils taken from (.+?)\.$")
+# "coins" lines are councils too (user, 26 Oct): looted from corpses, handed over by the game, given by a player.
+COINS_CORPSE_RE = re.compile(r"^\[Status\] You searched the corpse and found ([\d,]+) coins\.$")
+COINS_RECEIVE_RE = re.compile(r"^\[Status\] You receive ([\d,]+) coins\.$")
+COINS_GIVEN_RE = re.compile(r"^\[Status\] You were given ([\d,]+) coins by (.+?)!$")
 GAMING_XP_RE = re.compile(r"^\[Status\] You earned \d+ XP(?: and reached level \d+)? in Gaming[.!]$")
 SALE_RE = COUNCILS_RECEIVED_RE  # health "sales" = non-zero receipts not next to Gaming XP (see gaming_receipt)
 GAMING_NEAR_SEC = 3    # a receipt within 3 s of a Gaming XP line is a casino win
@@ -1683,9 +1687,17 @@ def gaming_flags(gaming, receipts):
 
 
 def councils_match(msg):
-    """(kind, amount, who) for a councils line, else None. Names are kept verbatim ("1 victim" is one)."""
+    """(kind, amount, who[, source]) for a councils line, else None. Names are kept verbatim ("1 victim" is one).
+    `source` on receipts: "councils" (the game's own line), "corpse" (looted), "coins" ("You receive N coins"),
+    "given" (another player handed them over, `who` names them)."""
     if m := COUNCILS_RECEIVED_RE.match(msg):
-        return "received", int(m.group(1).replace(",", "")), None
+        return "received", int(m.group(1).replace(",", "")), None, "councils"
+    if m := COINS_CORPSE_RE.match(msg):
+        return "received", int(m.group(1).replace(",", "")), None, "corpse"
+    if m := COINS_RECEIVE_RE.match(msg):
+        return "received", int(m.group(1).replace(",", "")), None, "coins"
+    if m := COINS_GIVEN_RE.match(msg):
+        return "received", int(m.group(1).replace(",", "")), m.group(2), "given"
     if m := COUNCILS_STOLEN_RE.match(msg):
         return "stolen", int(m.group(2).replace(",", "")), m.group(1)
     if m := COUNCILS_RECOVERED_RE.match(msg):
@@ -1707,12 +1719,17 @@ def councils_events(lines, character=None):
         hit = councils_match(msg)
         if not hit:
             continue
-        kind, amount, who = hit
+        kind, amount, who = hit[:3]
+        source = hit[3] if len(hit) > 3 else None
         e = {"ts": ts, "at": chat_iso(ts), "kind": kind, "amount": amount, "character": character}
-        if kind != "received":
+        if kind != "received" or who:
             e["who"] = who
+        if kind == "received":
+            e["source"] = source
+            e["gaming"] = False
         out.append(e)
-    received = [e for e in out if e["kind"] == "received"]
+    # Only the game's own "You received N Councils." lines can be casino wins; coins lines never are.
+    received = [e for e in out if e["kind"] == "received" and e["source"] == "councils"]
     for e, g in zip(received, gaming_flags(gaming, [(chat_dt(e["ts"]), e["amount"]) for e in received])):
         e["gaming"] = g
     return out
@@ -1742,35 +1759,42 @@ def councils_owner(events, character):
     return next(iter(owners)) if len(owners) == 1 else character
 
 
-def councils_summary(events, character):
-    """The /api/session `councils` object. net = received - stolen + recovered; overburdened [Error] lines
-    are reported but not counted (what they mean beyond their wording is unverified). `onHand` is the export
-    of the events' owner (councils_owner), so an export of that character is the fix that changes it."""
+def councils_summary(events, character, selected=None):
+    """The /api/session `councils` object. `received` is what came in outside the casino (coins lines included
+    since 26 Oct), `gaming` the casino wins as their own figure; net = received + gaming - stolen + recovered;
+    overburdened [Error] lines are reported but not counted (what they mean beyond their wording is unverified).
+    `onHand` is the export of the character selected in the page (`selected`, user decision 26 Oct), else of
+    the events' owner (councils_owner)."""
     rec = [e for e in events if e["kind"] == "received"]
+    gam = [e for e in rec if e["gaming"]]
+    plain = [e for e in rec if not e["gaming"]]
     sto = [e for e in events if e["kind"] == "stolen"]
     rcv = [e for e in events if e["kind"] == "recovered"]
     ovb = [e for e in events if e["kind"] == "overburdened"]
-    received, stolen, recovered = (sum(e["amount"] for e in g) for g in (rec, sto, rcv))
+    received, gaming, stolen, recovered = (sum(e["amount"] for e in g) for g in (plain, gam, sto, rcv))
     thieves = []
     for e in sto:
         if e["who"] not in thieves:
             thieves.append(e["who"])
+    by_source = Counter(e["source"] for e in plain)
     return {
-        "received": received, "receivedLines": len(rec),
+        "received": received, "receivedLines": len(plain),
+        "corpseLines": by_source.get("corpse", 0), "corpseCoins": sum(e["amount"] for e in plain if e["source"] == "corpse"),
+        "coinsLines": by_source.get("coins", 0) + by_source.get("given", 0),
         "zeroLines": sum(1 for e in rec if e["amount"] == 0),
-        "gamingLines": sum(1 for e in rec if e["gaming"]),
-        "gamingReceived": sum(e["amount"] for e in rec if e["gaming"]),
+        "gaming": gaming, "gamingLines": len(gam), "gamingWins": sum(1 for e in gam if e["amount"] > 0),
+        "gamingReceived": gaming,  # kept for older pages
         "stolen": stolen, "stolenLines": len(sto), "thieves": thieves,
         "recovered": recovered, "recoveredLines": len(rcv),
-        "net": received - stolen + recovered,
+        "net": received + gaming - stolen + recovered,
         "overburdened": sum(e["amount"] for e in ovb), "overburdenedLines": len(ovb),
         "events": events,
-        "spendingLogged": False,  # the chat log has no councils-spent line
-        "onHand": councils_on_hand(councils_owner(events, character)),
+        "spendingLogged": False,  # the chat log has no councils-spent line (casino tickets name no currency: unverified)
+        "onHand": councils_on_hand(selected or councils_owner(events, character)),
     }
 
 
-def parse_session(path, scope="day"):
+def parse_session(path, scope="day", selected=None):
     """Summarise a chat log: the whole day, or only since the last login."""
     lines = []
     with path.open(encoding="utf-8", errors="replace") as f:
@@ -1843,7 +1867,7 @@ def parse_session(path, scope="day"):
         character, server = resolved[0] if resolved else last_login_before(path)
 
     # Councils in and out, same `lines` slice (the first line in scope is a login line whenever there is one).
-    councils = councils_summary(councils_events(lines, character), character)
+    councils = councils_summary(councils_events(lines, character), character, selected)
 
     def to_dt(ts):
         return datetime.strptime(ts, "%y-%m-%d %H:%M:%S")
@@ -1955,7 +1979,8 @@ def log_summary(path):
             elif am := AREA_RE.match(msg):
                 s["areas"].append((ts, am.group(1)))
             elif cm := councils_match(msg):
-                s["councils"].append((ts,) + cm)  # (ts, kind, amount, who); gaming flag added below
+                if cm[0] != "received" or cm[3] == "councils":  # coins lines (corpses, gifts) are never vendor sales
+                    s["councils"].append((ts,) + cm[:3])  # (ts, kind, amount, who); gaming flag added below
             elif fm := FAVOR_GAIN_RE.match(msg):
                 s["favor"].append((ts, fm.group(2)))
             elif SEARCH_RE.match(msg):
@@ -3456,7 +3481,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(plan(q.get("character")))
             if url.path == "/api/session":
                 log = latest_chatlog()
-                return self.send_json(parse_session(log, q.get("scope", "day")) if log else {})
+                return self.send_json(parse_session(log, q.get("scope", "day"), q.get("character") or None) if log else {})
             if url.path == "/api/zone":
                 return self.send_json(zone(q.get("character"), q.get("area")))
             if url.path == "/api/combat":
