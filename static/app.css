@@ -774,6 +774,22 @@ li[role="treeitem"]:focus-visible > .jrow { outline: 2px solid var(--selection);
 #f-results .hit { cursor: pointer; }
 #f-results .hit b { font-weight: 700; }
 #f-results .rhead { display: flex; align-items: center; gap: 12px; margin: 0 0 4px; }
+/* Chat log lines (Files → Contents for a Chat-*.log): the feed's look, plus a line number; the match in bold. */
+.logbox { max-height: 70vh; overflow: auto; font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; outline: none; }
+.logbox:focus-visible { outline: 2px solid var(--selection); outline-offset: -2px; }
+.logbox .rhead { display: flex; align-items: center; gap: 12px; margin: 0 0 4px; }
+.logbox .lline { display: flex; gap: 0 8px; align-items: baseline; padding: 1px 0; }
+.logbox .lline:hover { background: var(--row-hover); }
+.logbox .ln { flex: none; min-width: 5ch; text-align: right; color: var(--text-dim); font-size: 13px; font-variant-numeric: tabular-nums lining-nums; }
+.logbox .ts { flex: none; color: var(--chat-ts); font-variant-numeric: tabular-nums lining-nums; }
+.logbox .msg { min-width: 0; }
+.logbox .ch { margin-right: 4px; }
+.logbox .lvl .msg { color: var(--title); font-weight: 700; }
+.logbox .err .msg { color: var(--chat-error); }
+.logbox .msg b { color: var(--title); }
+.logbox .lmore { padding: 6px 0; }
+.logbox .lmore .btn { height: 28px; }
+@media (max-width: 767px) { .logbox { max-height: 60vh; } .logbox .ln { display: none; } .logbox .lline { flex-wrap: wrap; } .logbox .ts { font-size: 13px; width: 100%; } }
 #f-state .plaque-wide { margin-top: 8px; }
 #f-state p + p { margin-top: 8px; }
 .note-line { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 8px; padding: 8px 12px; border-radius: 4px; background: var(--well); }

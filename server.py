@@ -2252,10 +2252,14 @@ def lookup(q):
 
 # ---------------------------------------------------------------------------
 # JSON inspector: GET /api/files, /api/file/node, /api/file/search, /api/file/raw (Files view)
-# Read-only. Three locations only: Reports/ exports, the app's capacity.json and the CDN cache.
+# Read-only. Four locations only: Reports/ exports, the app's capacity.json, the CDN cache and the ChatLogs/ folder
+# (the chat logs the DPS meter, Session and the health checks read; served as text lines, never as JSON nodes).
 # ---------------------------------------------------------------------------
-FILE_ID_RE = re.compile(r"^(reports|app|cdn/v\d{1,6})/([A-Za-z0-9_.\-]+\.json)$")  # no "/", "\", NUL or ".." by construction
-FILES_SOURCES = ("character-export", "storage-export", "partial-export", "vault-sizes", "cdn", "alt-stale", "alt-missing")
+FILE_ID_RE = re.compile(r"^(reports|app|cdn/v\d{1,6})/([A-Za-z0-9_.\-]+\.json)$|^(logs)/(Chat-\d\d-\d\d-\d\d\.log)$")  # no "/", "\", NUL or ".." by construction
+FILES_SOURCES = ("character-export", "storage-export", "partial-export", "vault-sizes", "cdn", "alt-stale", "alt-missing", "chat-log")
+LINES_PAGE = 500           # /api/file/lines: lines per page and matches per search
+LINES_PAGE_MAX = 2000
+LINES_TOTAL_MAX = 10000    # a search keeps counting matches past the page up to this
 NODE_PAGE = 200            # children per page (client TREE_PAGE)
 NODE_PAGE_MAX = 1000
 EXPAND_MAX_NODES = 2000    # default depth budget for depth > 1 (client TREE_EXPAND_MAX)
@@ -2288,9 +2292,11 @@ def file_path(fid):
     m = FILE_ID_RE.match(fid or "")
     if not m:
         raise BadRequest("bad file id")
-    group, name = m.groups()
+    group, name = (m.group(1), m.group(2)) if m.group(1) else (m.group(3), m.group(4))
     version = None
-    if group == "reports":
+    if group == "logs":
+        root = CHATLOGS
+    elif group == "reports":
         root = REPORTS
     elif group == "app":
         if name != CAPACITY_FILE.name:
@@ -2394,6 +2400,33 @@ def list_files():
         cdn_rows.append(row)
     cdn_rows.sort(key=lambda r: (-int(r["version"]), r["name"]))
     files.extend(cdn_rows)
+
+    # Chat logs: every Chat-YY-MM-DD.log, newest written first. `newest` is the one latest_chatlog() returns, i.e.
+    # the file the DPS meter, Session and the live health checks read; for it the DpsTracker's counts are attached
+    # (cached per size/mtime by dps_tracker(), so this never parses twice). Older logs feed the 31-day combat
+    # totals and the alt / previous-login lookups; nothing here reads them line by line.
+    log_rows = []
+    logs = sorted((p for p in CHATLOGS.glob("Chat-*.log") if CHATLOGS.is_dir()), key=lambda p: p.stat().st_mtime, reverse=True)
+    for i, p in enumerate(logs):
+        if not p.is_file() or p.resolve().parent != CHATLOGS.resolve() or not FILE_ID_RE.match(f"logs/{p.name}"):
+            continue
+        day = p.name[5:13]  # Chat-26-10-24.log -> 26-10-24
+        try:
+            date = datetime.strptime(day, "%y-%m-%d").date().isoformat()
+        except ValueError:
+            date = None
+        row, st = _file_stat(p, f"logs/{p.name}", "logs", p.name, "ChatLogs/", date=date, newest=False, source="chat-log",
+                             lines=None, combatLines=None, lastLineAt=None, lastCombatAt=None, character=None)
+        if i == 0:
+            row["newest"] = True
+            try:
+                tracker, _ = dps_tracker(p)
+                row.update(combatLines=tracker.lines, lastLineAt=chat_iso(tracker.last_ts), lastCombatAt=chat_iso(tracker.last_combat),
+                           character=tracker.char or last_login_before(p)[0])
+            except Exception:
+                pass  # the row still lists the file; the counts are a courtesy
+        log_rows.append(row)
+    files.extend(log_rows)
     return {"version": 1, "listedAt": local_iso(datetime.now()), "cdnVersion": cdn_version(),
             "csvSkipped": sum(1 for _ in REPORTS.glob("*.csv")), "files": files}
 
@@ -2414,6 +2447,8 @@ def file_entry(fid, mtime=None):
     """The parsed file behind an id: (entry, path, group, version). Raises FileError 409 when `mtime` (ns) no longer
     matches the file and 422 when it isn't JSON. Current CDN files reuse cdn_data(); the rest live in an LRU of 8."""
     p, group, version = file_path(fid)
+    if group == "logs":
+        raise BadRequest("a chat log has lines, not JSON nodes; use /api/file/lines")
     st = p.stat()
     stamp = {"bytes": st.st_size, "mtime": local_iso(datetime.fromtimestamp(st.st_mtime)), "mtimeNs": st.st_mtime_ns}
     if mtime not in (None, "") and str(st.st_mtime_ns) != str(mtime):
@@ -2757,6 +2792,60 @@ def file_search(q):
             "ms": int((time.monotonic() - t0) * 1000)}
 
 
+def file_lines(q):
+    """GET /api/file/lines?id=&offset=&limit=500&q=&mtime=: a page of a chat log's lines, or the lines matching `q`.
+    Without `q` the default page is the tail (the newest `limit` lines); `offset` is a 0-based line index for
+    earlier pages. With `q` (case-insensitive substring, 2+ characters) every matching line is returned in file
+    order up to `limit`, `total` counting on to LINES_TOTAL_MAX. A line is {n, ts, msg}; a continuation line (no
+    timestamp) has ts null. The whole file is read each call (a day's log is a few MB; nothing is cached)."""
+    p, group, _ = file_path(q.get("id"))
+    if group != "logs":
+        raise BadRequest("not a chat log")
+    st = p.stat()
+    stamp = {"bytes": st.st_size, "mtime": local_iso(datetime.fromtimestamp(st.st_mtime)), "mtimeNs": st.st_mtime_ns}
+    if q.get("mtime") not in (None, "") and str(st.st_mtime_ns) != str(q["mtime"]):
+        raise FileError(409, {"error": "file changed", **stamp})
+    try:
+        limit = max(1, min(int(q.get("limit", LINES_PAGE)), LINES_PAGE_MAX))
+    except ValueError:
+        raise BadRequest("bad limit")
+    with p.open("rb") as f:
+        raw = f.read().decode("utf-8", errors="replace")
+    lines = raw.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()  # the trailing newline, not an empty last line
+    total = len(lines)
+
+    def row(n, text):
+        text = text.rstrip("\r")
+        m = LINE_RE.match(text)
+        return {"n": n + 1, "ts": m.group(1), "msg": m.group(2)} if m else {"n": n + 1, "ts": None, "msg": text}
+
+    query = (q.get("q") or "").strip()
+    if query:
+        if len(query) < 2:
+            raise BadRequest("type at least 2 characters")
+        needle = query.lower()
+        hits, matches, capped = [], 0, False
+        for n, text in enumerate(lines):
+            if needle in text.lower():
+                matches += 1
+                if len(hits) < limit:
+                    hits.append(row(n, text))
+                elif matches >= LINES_TOTAL_MAX:
+                    capped = True
+                    break
+        return {"id": q.get("id"), "q": query, "lines": hits, "matches": matches, "capped": capped, "total": total, **stamp}
+    try:
+        offset = int(q["offset"]) if q.get("offset") not in (None, "") else max(0, total - limit)
+    except ValueError:
+        raise BadRequest("bad offset")
+    offset = max(0, min(offset, total))
+    page = [row(offset + k, text) for k, text in enumerate(lines[offset:offset + limit])]
+    return {"id": q.get("id"), "lines": page, "offset": offset, "limit": limit, "total": total,
+            "more": offset + len(page) < total, **stamp}
+
+
 def file_subtree(q):
     """Pretty JSON of one subtree for Copy value; 413 past RAW_MAX_BYTES. The whole file is streamed by the handler."""
     entry, p, group, version = file_entry(q.get("id"), q.get("mtime"))
@@ -2796,7 +2885,7 @@ class Handler(SimpleHTTPRequestHandler):
             body, name = file_subtree(q)
             length = len(body)
         self.send_response(200)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Type", f"{'text/plain' if name.endswith('.log') else 'application/json'}; charset=utf-8")
         self.send_header("Content-Length", str(length))
         self.send_header("Content-Disposition", f'inline; filename="{name}"')
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -2843,6 +2932,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(file_search(q))
             if url.path == "/api/file/raw":
                 return self.send_raw(q)
+            if url.path == "/api/file/lines":
+                return self.send_json(file_lines(q))
             if url.path == "/api/tail":
                 log = latest_chatlog()
                 if not log:

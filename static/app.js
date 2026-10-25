@@ -230,6 +230,7 @@ async function api(path, opts) {
     const who = S.character || store.get('pgdash.character', null) || S.session?.character || S.health?.game?.character;
     return { ...body, files: body.files.filter(x => x.group !== 'reports' || (x.character !== who && x.character !== '???')) };
   }
+  if (PREVIEW.sim === 'nolog' && path.startsWith('/api/files') && Array.isArray(body?.files)) return { ...body, files: body.files.filter(x => x.group !== 'logs') };
   return body;
 }
 function isNetworkError(e) { return e instanceof TypeError || (e && e.status >= 500 && !e.body); }
@@ -303,13 +304,13 @@ function browserVerdicts() {
   const hasLog = s && s.log;
   if (!hasLog) {
     add({ source: 'game', severity: 'info', title: 'Game', evidence: 'Not known without a chat log.', unknown: true });
-    add({ source: 'chat-log', severity: 'bad', title: 'Chat log', evidence: 'No chat log found. The game only writes one with Log All Chat on.', fixKey: 'chat-logging', views: VIEWS.slice() });
+    add({ source: 'chat-log', severity: 'bad', title: 'Chat log', evidence: 'No chat log found. The game only writes one with Log All Chat on.', fixKey: 'chat-logging', views: VIEWS.slice() }); // includes files
   } else {
     const lastAt = parseIso(s.lastLineAt) || (s.xpTimeline?.length ? parseChatTs(s.xpTimeline.at(-1)[0]) : null);
     const li = typeof s.loggedIn === 'boolean' ? s.loggedIn : s.live;
     add({ source: 'game', severity: li && s.live ? 'ok' : 'info', title: 'Game', evidence: li ? `Logged in as ${s.character || '?'}.` : (s.loggedOutAt ? `Logged out ${hhmm(parseIso(s.loggedOutAt))}.` : 'Not logged in.') });
-    if (li && !s.live) add({ source: 'chat-log', severity: 'warn', title: 'Chat log', evidence: 'Logged in but nothing was written for 15 minutes.', fixKey: 'chat-logging', views: ['session', 'combat'], at: lastAt ? new Date(lastAt).toISOString() : null });
-    else add({ source: 'chat-log', severity: 'ok', title: 'Chat log', evidence: s.live ? 'The log is being written.' : 'The log was written last session. It fills in next time you play.', fixKey: 'chat-logging-ok', views: ['session', 'combat'], at: lastAt ? new Date(lastAt).toISOString() : null });
+    if (li && !s.live) add({ source: 'chat-log', severity: 'warn', title: 'Chat log', evidence: 'Logged in but nothing was written for 15 minutes.', fixKey: 'chat-logging', views: ['session', 'combat', 'files'], at: lastAt ? new Date(lastAt).toISOString() : null });
+    else add({ source: 'chat-log', severity: 'ok', title: 'Chat log', evidence: s.live ? 'The log is being written.' : 'The log was written last session. It fills in next time you play.', fixKey: 'chat-logging-ok', views: ['session', 'combat', 'files'], at: lastAt ? new Date(lastAt).toISOString() : null });
   }
   const reps = S.reports || [];
   const who = S.character;
@@ -383,7 +384,7 @@ function computeVerdicts() {
   }
   if (PREVIEW.sim === 'broken') ov('partial-export', v => { v.severity = 'bad'; v.fixKey = 'export-again'; v.views = ['character', 'vendors', 'storage']; v.evidence = 'That export came out a bit… partial (name "???"). Export again while fully logged in.'; });
   if (PREVIEW.sim === 'nolog') {
-    ov('chat-log', v => { v.severity = 'bad'; v.evidence = 'No chat log found. The game only writes one with Log All Chat on.'; v.fixKey = 'chat-logging'; v.views = ['session', 'combat']; v.at = null; v.ageSec = null; });
+    ov('chat-log', v => { v.severity = 'bad'; v.evidence = 'No chat log found. The game only writes one with Log All Chat on.'; v.fixKey = 'chat-logging'; v.views = ['session', 'combat', 'files']; v.at = null; v.ageSec = null; });
     ov('game', v => { v.severity = 'info'; v.evidence = 'Not known without a chat log.'; v.unknown = true; });
   }
   if (PREVIEW.sim === 'noexport') {
@@ -1401,7 +1402,8 @@ function renderCombatView() {
   const lastF = fights.at(-1) || null;
   const lastCombat = parseIso(c.lastCombatAt);
   const left = `${live} · ${scopeWord}`;
-  const leftFights = lastCombat ? `${live} · last combat line ${hhmm(lastCombat)} · ${scopeWord}` : left;
+  const openLog = c.log && !S.filesOld ? ` · <a href="#files?f=${encodeURIComponent('logs/' + c.log)}">Open the log</a>` : '';
+  const leftFights = (lastCombat ? `${live} · last combat line ${hhmm(lastCombat)} · ${scopeWord}` : left) + openLog;
 
   // At a glance: the live figure leads; zeros fold into the finding except the three that frame the day.
   const figs = [];
@@ -2784,7 +2786,10 @@ function initCharacter() {
 const TREE_PAGE = 200;          // children fetched per page (server NODE_PAGE)
 const TREE_EXPAND_MAX = 2000;   // Expand all: nodes in one depth-99 request (server EXPAND_MAX_NODES)
 const TREE_ROW_BUDGET = 5000;   // rendered treeitems before the least recently opened collapsed subtrees are pruned
-const FILE_SOURCES = ['character-export', 'storage-export', 'partial-export', 'vault-sizes', 'cdn', 'alt-stale', 'alt-missing'];
+const FILE_SOURCES = ['character-export', 'storage-export', 'partial-export', 'vault-sizes', 'cdn', 'alt-stale', 'alt-missing', 'chat-log'];
+const LOG_PAGE = 500;           // chat log lines per page and matches per search (server LINES_PAGE)
+const LOG_ROW_BUDGET = 5000;    // rendered log lines before "Show earlier" hands over to Open raw
+const LOGS_SHOWN = 7;           // chat logs listed before "Show N older logs"
 const CDN_LABEL = { items: 'Items', quests: 'Quests', npcs: 'NPCs', attributes: 'Stats', areas: 'Areas', storagevaults: 'Storage vaults', tsysclientinfo: 'Item powers' };
 const TIME_KEYS = new Set(['Timestamp', 'VendorResetTime']);
 const UTC_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}Z$/;
@@ -2797,9 +2802,11 @@ let treeTick = 0;
 
 const fUI = {
   showOld: false,     // "Show N older exports" (not persisted)
+  showOldLogs: false, // "Show N older logs" (not persisted)
+  log: null,          // open chat log: { tail: {lines, offset, total}, hits: null | {q, lines, matches, capped} }
   folds: {},          // group id -> true when collapsed (not persisted)
   q: '', qTimer: null, results: null,
-  state: 'none',      // Contents body: none | loading | tree | empty | scalar | invalid | gone | error
+  state: 'none',      // Contents body: none | loading | tree | log | empty | scalar | invalid | gone | error
   err: null, changed: false, note: null,
   lastHash: null, autoTried: false, openSeq: 0, flash: [], booted: false,
 };
@@ -2825,11 +2832,15 @@ async function loadFiles() {
   const open = S.file && r.files.find(f => f.id === S.file.id);
   if (open && S.file.mtimeNs != null && open.mtimeNs != null && open.mtimeNs !== S.file.mtimeNs && fUI.state !== 'none' && fUI.state !== 'loading') {
     if (fUI.state === 'tree') fileChanged(open.mtime);
+    else if (fUI.state === 'log') refreshLog().catch(() => {}); // the live log is appended, not rewritten: just read the new tail
     else openFile(S.file.id, '', { focus: false });
   }
 }
 const fileRows = () => S.files?.files || [];
 const exportFiles = () => fileRows().filter(f => f.group === 'reports');
+const logFiles = () => fileRows().filter(f => f.group === 'logs'); // newest written first (server order)
+const newestLog = () => logFiles().find(f => f.newest) || logFiles()[0] || null;
+const logWrittenAt = f => f ? parseIso(f.lastLineAt) || parseIso(f.mtime) : null;
 function fileMeta(f) {
   const mine = f.character === S.character;
   const at = parseIso(f.at) || parseIso(f.mtime);
@@ -2872,15 +2883,17 @@ function renderFiles() {
     $('#h1').textContent = 'Files';
     $('#title-extra').hidden = true;
     if (old) { $('#finding').textContent = 'Needs a newer server.py to list the files.'; setStamp('File list', 'not available', 'bad'); }
-    else if (loading) { $('#finding').html = '<span class="dim">Reading Reports/, capacity.json and cache/…</span>'; setStamp('Newest export', '…', 'ok'); }
-    else if (none) { $('#finding').textContent = 'No JSON files yet. Exports land in Reports/ once you use the VIP menu; game data is fetched the first time Vendors or Storage loads.'; setStamp('No exports found', 'missing', 'bad'); }
+    else if (loading) { $('#finding').html = '<span class="dim">Reading Reports/, capacity.json, cache/ and ChatLogs/…</span>'; setStamp('Newest export', '…', 'ok'); }
+    else if (none) { $('#finding').textContent = 'No files yet. Exports land in Reports/ once you use the VIP menu, the chat log appears with Log All Chat on, and game data is fetched the first time Vendors or Storage loads.'; setStamp('No exports found', 'missing', 'bad'); }
     else if (err) { $('#finding').textContent = "Couldn't load the file list."; setStamp('File list', 'not loaded', 'bad'); }
     else {
       const parts = [`<em class="n">${fmt(reps.length)}</em> ${reps.length === 1 ? 'export' : 'exports'}`];
       if (cap?.exists) parts.push('your vault sizes');
       parts.push(`<em class="n">${fmt(cdnCur.length)}</em> game data ${cdnCur.length === 1 ? 'file' : 'files'} (v${esc(cur)}, ${fmtBytes(cdnCur.reduce((a, f) => a + f.bytes, 0))})`);
+      const logs = logFiles();
+      if (logs.length) parts.push(`<em class="n">${fmt(logs.length)}</em> chat ${logs.length === 1 ? 'log' : 'logs'} (${fmtBytes(logs.reduce((a, f) => a + f.bytes, 0))})`);
       const nFiles = files.filter(f => f.exists !== false).length;
-      let f = `<em class="n">${fmt(nFiles)}</em> JSON ${nFiles === 1 ? 'file' : 'files'}: ${joinNames(parts)}.`;
+      let f = `<em class="n">${fmt(nFiles)}</em> ${nFiles === 1 ? 'file' : 'files'}: ${joinNames(parts)}.`;
       // The age sentence and the stamp share one source: the selected character's newest valid export.
       const mine = newestExport();
       const mAt = mine ? parseIso(mine.at) : null;
@@ -2890,6 +2903,10 @@ function renderFiles() {
         f += S.character ? ` No exports for ${esc(S.character)} yet.` : ' No exports yet.';
         if (nAt && newest.character && newest.character !== '???') f += ` ${esc(newest.character)}'s newest is <em class="n">${esc(ageWord((NOW() - nAt) / 1000))}</em> old.`;
       }
+      // The chat log sentence: the file Combat and Session read, and how fresh it is (the chat-log verdict's own words when it's not fine).
+      const nl = newestLog(), lAt = logWrittenAt(nl), cv = V('chat-log');
+      if (nl && lAt) f += cv && (cv.severity === 'warn' || cv.severity === 'bad') ? ` <span class="suffix">The chat log was last written ${ageLong((NOW() - lAt) / 1000)} ago. ${esc(cv.evidence)}</span>` : ` The chat log was written <em class="n">${esc(ago(lAt))}</em>.`;
+      else if (!nl && !loading) f += ' No chat log yet.';
       if (worst && worst.severity === 'warn' && worst.ageSec != null) f += ` <span class="suffix">The newest ${worst.source === 'storage-export' ? 'storage' : 'character'} export is ${ageLong(worst.ageSec)} old.</span>`;
       $('#finding').html = f;
       if (S.down && S.downSince) setStamp('Newest export', `as of ${hhmm(S.downSince)}`, 'bad');
@@ -2927,24 +2944,26 @@ function renderFilePane({ old, err, loading, none, cur, cdnCur, cap, reps }) {
   under.hidden = !(S.files?.csvSkipped > 0);
   under.textContent = S.files?.csvSkipped > 0 ? `Also in Reports/: ${plural(S.files.csvSkipped, 'CSV export')}, not shown.` : '';
   const listedAt = S.filesAt ? hhmm(S.filesAt) : '…';
-  const footL = `Reports/, capacity.json, cache/v${esc(cur)} · listed ${listedAt}`;
+  const footL = `Reports/, capacity.json, cache/v${esc(cur)}, ChatLogs/ · listed ${listedAt}`;
   const worst = worstExportSource();
+  const chatV = V('chat-log');
   const footR = worst && (worst.severity === 'warn' || worst.severity === 'bad') && worst.fixKey
     ? srcFix(worst.source, worst.ageSec == null ? '' : worst.source === 'storage-export' ? 'After storing:' : 'After selling:')
+    : chatV && (chatV.severity === 'warn' || chatV.severity === 'bad') && chatV.fixKey ? srcFix('chat-log')
     : '<span>To refresh: VIP menu → Export Character JSON or Export Storage JSON</span>';
   if (old) { box.html = '<p class="needs" style="padding:12px">Needs a newer server.py.</p>'; setFoot('w-f-list', footL, 'Files need a newer server.py'); return; }
   if (err) { box.html = `<div style="padding:12px">${blockError('the file list', S.lastGood.files)}</div>`; setFoot('w-f-list', footL, footR); return; }
   if (loading) {
     const bar = w => `<tr class="row"><td class="m1"><span class="loading-bar" style="width:${w}px;height:14px;background:var(--pane-track)"></span><div class="small"><span class="loading-bar" style="width:${w + 60}px;height:12px;background:var(--pane-track)"></span></div></td><td class="num m2"><span class="loading-bar" style="width:48px;height:14px;background:var(--pane-track)"></span></td></tr>`;
     box.html = `<div class="pane-wrap"><div class="pane"><table class="tbl resp files"><thead><tr><th>File</th><th class="num">Size</th></tr></thead><tbody>
-      <tr class="sec"><td><span class="secbtn">Exports</span></td><td></td></tr>${bar(140)}${bar(120)}<tr class="sec"><td><span class="secbtn">Typed in by you</span></td><td></td></tr>${bar(90)}<tr class="sec"><td><span class="secbtn">Game data</span></td><td></td></tr>${bar(60)}</tbody></table></div></div>`;
-    setFoot('w-f-list', 'Reading Reports/, capacity.json and cache/…', '');
+      <tr class="sec"><td><span class="secbtn">Exports</span></td><td></td></tr>${bar(140)}${bar(120)}<tr class="sec"><td><span class="secbtn">Chat logs</span></td><td></td></tr>${bar(110)}<tr class="sec"><td><span class="secbtn">Typed in by you</span></td><td></td></tr>${bar(90)}<tr class="sec"><td><span class="secbtn">Game data</span></td><td></td></tr>${bar(60)}</tbody></table></div></div>`;
+    setFoot('w-f-list', 'Reading Reports/, capacity.json, cache/ and ChatLogs/…', '');
     return;
   }
   if (none) {
     plaqueInView = 'export-character';
     const pl = plaqueFor('export-character');
-    box.html = `<p class="pane-empty" style="padding:12px 12px 0">No JSON files yet. Exports land in Reports/ once you use the VIP menu; game data is fetched the first time Vendors or Storage loads.</p>
+    box.html = `<p class="pane-empty" style="padding:12px 12px 0">No files yet. Exports land in Reports/ once you use the VIP menu, the chat log appears with Log All Chat on, and game data is fetched the first time Vendors or Storage loads.</p>
       <div style="padding:0 12px 12px"><button type="button" class="plaque plaque-wide" data-fix="export-character" aria-label="${esc(pl[0] + '. ' + pl[1] + '. Then check again.')}"><span class="p1">${pl[0]}</span><span class="p2">${pl[1]}</span></button></div>`;
     setFoot('w-f-list', footL, esc(fixText('export-character')));
     return;
@@ -3000,6 +3019,29 @@ function renderFilePane({ old, err, loading, none, cur, cdnCur, cap, reps }) {
     if (hidden > 0 || (fUI.showOld && reps.some(f => !(f.newest || f.partial || f.valid === false))))
       body += `<tr class="row"><td class="m1" colspan="2"><button type="button" class="linkbtn" data-fmore="1" style="text-decoration:underline">${fUI.showOld ? 'Show fewer' : `Show ${plural(hidden, 'older export')}`}</button></td></tr>`;
   }
+  // Chat logs: one file per day, newest first; the newest is the one Combat, Session and the live health checks read.
+  // The last week is listed, the rest behind "Show N older logs"; older than 31 days only the raw file is left to read.
+  const logs = logFiles();
+  if (logs.length) {
+    body += sec('logs', 'Chat logs', logs.length, logs.reduce((a, f) => a + f.bytes, 0));
+    if (!fUI.folds.logs) {
+      const shownL = fUI.showOldLogs ? logs : logs.slice(0, LOGS_SHOWN);
+      for (const f of shownL) {
+        const at = logWrittenAt(f);
+        const day = parseIso(f.date ? `${f.date}T00:00:00` : f.mtime);
+        const fname = `<span class="well fname">${esc(f.name)}</span>`;
+        let chips = '', flag = '';
+        if (f.newest) {
+          chips = tag('in use');
+          if (chatV && (chatV.severity === 'warn' || chatV.severity === 'bad')) flag = flagWord(chatV.severity, chatV.severity === 'bad' ? 'off' : 'silent');
+        }
+        const meta = [fname, at ? `written ${dateTime(at)}` : 'date unknown', at ? ago(at) : ''];
+        if (f.newest && f.combatLines != null) meta.push(plural(f.combatLines, 'combat line'));
+        body += row(f, `Chat log · ${day ? (isToday(day) ? 'today' : dayMon(day)) : esc(f.name)}`, meta.filter(Boolean).join(' · ') + flag, chips);
+      }
+      if (logs.length > LOGS_SHOWN) body += `<tr class="row"><td class="m1" colspan="2"><button type="button" class="linkbtn" data-lmoreold="1" style="text-decoration:underline">${fUI.showOldLogs ? 'Show fewer' : `Show ${plural(logs.length - LOGS_SHOWN, 'older log')}`}</button></td></tr>`;
+    }
+  }
   // Typed in by you: capacity.json, listed even when absent so the row can say how it gets created.
   if (cap) {
     body += sec('app', 'Typed in by you', cap.exists === false ? 0 : 1, cap.exists === false ? 0 : cap.bytes);
@@ -3036,16 +3078,23 @@ function renderContents() {
   if (f && row) f.row = row;
   const st = fUI.state;
   const open = !!f && st === 'tree';
+  const isLog = !!f && st === 'log';
   const wide = window.innerWidth >= 1180;
-  $('#f-total').textContent = f?.total != null && st !== 'loading' ? `${plural(f.total, 'entry', 'entries')}` : '';
+  $('#f-total').textContent = f?.total != null && st !== 'loading' ? (isLog ? plural(f.total, 'line') : `${plural(f.total, 'entry', 'entries')}`) : '';
   $('#f-tree').setAttribute('aria-label', f ? `Contents of ${f.name}` : 'Contents');
-  ['#fileq', '#f-expand', '#f-collapse'].forEach(s => { $(s).disabled = !open || fUI.changed; });
+  $('#f-logbox').setAttribute('aria-label', f ? `Lines of ${f.name}` : 'Lines');
+  ['#f-expand', '#f-collapse'].forEach(s => { $(s).disabled = !open || fUI.changed; });
+  const q = $('#fileq');
+  q.disabled = !(open || isLog) || fUI.changed;
+  q.placeholder = isLog ? 'Any text, e.g. Bee Stab' : 'Key or value in this file, e.g. Mycology';
   const raw = $('#f-raw');
-  const rawOk = f && (st === 'tree' || st === 'invalid' || st === 'empty' || st === 'scalar') && !fUI.changed;
+  const rawOk = f && (st === 'tree' || st === 'log' || st === 'invalid' || st === 'empty' || st === 'scalar') && !fUI.changed;
   if (rawOk) { raw.href = `/api/file/raw?id=${encodeURIComponent(f.id)}`; raw.removeAttribute('aria-disabled'); raw.textContent = `Open raw · ${fmtBytes(f.bytes)}`; }
   else { raw.removeAttribute('href'); raw.setAttribute('aria-disabled', 'true'); raw.textContent = 'Open raw'; }
   $('#f-treebox').hidden = !open;
-  $('#f-hint').hidden = !open;
+  $('#f-logbox').hidden = !isLog;
+  $('#f-hint').hidden = !(open || isLog);
+  $('#f-hint').textContent = isLog ? 'Newest lines at the bottom. A search lists every matching line in the file, oldest first.' : 'Arrow keys move and open, * opens every sibling, type a letter to jump.';
   $('#f-pathwrap').hidden = !open;
   if (!open) $('#f-results').hidden = true;
   const note = $('#f-note');
@@ -3061,6 +3110,7 @@ function renderContents() {
     empty: f ? `<p class="empty">This file is an empty ${f.type === 'array' ? 'list' : 'object'}.</p>` : '',
     scalar: f ? `<p class="empty">This file holds one value: <span class="v">${esc(JSON.stringify(fUI.err))}</span></p>` : '',
     tree: '',
+    log: '',
   };
   if (st in bodyFor) state.html = bodyFor[st];
   else if (st === 'invalid') {
@@ -3073,10 +3123,11 @@ function renderContents() {
       plaqueInView = 'export-again';
       html += `<p class="empty">An export written right before logout can be cut short.</p><button type="button" class="plaque plaque-wide" data-fix="export-again" aria-label="${esc(pl[0] + '. ' + pl[1] + '. Then check again.')}"><span class="p1">${pl[0]}</span><span class="p2">${pl[1]}</span></button>`;
     } else if (f?.row?.group === 'cdn') html += `<p class="empty">Delete ${esc(f.row.dir + f.name)} and the server fetches it again the next time Vendors loads.</p>`;
+    else if (f?.row?.group === 'logs') html += '<p class="empty">A chat log is plain text; open it as one from the list.</p>';
     else html += '<p class="empty">Nothing in the app reads it until it parses again.</p>';
     state.html = html;
   } else if (st === 'gone') {
-    const dir = f?.row?.dir || (f?.id.startsWith('reports/') ? 'Reports/' : f?.id.startsWith('cdn/') ? `cache/${f.id.split('/')[1]}/` : 'the app folder');
+    const dir = f?.row?.dir || (f?.id.startsWith('reports/') ? 'Reports/' : f?.id.startsWith('cdn/') ? `cache/${f.id.split('/')[1]}/` : f?.id.startsWith('logs/') ? 'ChatLogs/' : 'the app folder');
     state.html = `<p class="txt-bad" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${shape('bad')}<span>This file is gone. ${esc(f?.name || '')} isn't in ${esc(dir)} any more; the list has been refreshed.</span><button type="button" class="btn" data-fretry="1">Retry</button></p>`;
   } else if (st === 'error') state.html = blockError('this file', S.lastGood.file);
   contentsFoot(f, st);
@@ -3116,6 +3167,18 @@ function contentsFoot(f, st) {
     return setFoot('w-f-view', `${m.kind} export of ${when}${at ? ' · ' + ago(at) : ''}${nAt ? ` · superseded by the one of ${dateTime(nAt)}` : ''}`,
       nw ? `<button type="button" class="linkbtn" data-fnewest="${esc(nw.id)}" style="text-decoration:underline">Show newest</button>` : '');
   }
+  if (row.group === 'logs') {
+    const last = logWrittenAt(row) || mt;
+    const day = parseIso(row.date ? `${row.date}T00:00:00` : row.mtime);
+    const v = V('chat-log');
+    const sev = row.newest && v && (v.severity === 'warn' || v.severity === 'bad') ? v.severity : null;
+    const age = last ? ago(last) : '';
+    const left = `Chat log of ${day ? dayMon(day) : esc(f.name)}${last ? ` · last line ${dateTime(last)}` : ''} · ${sev ? `${shape(sev, 's13')}<span class="age ${sev}">${age}</span>` : age}${size ? ' · ' + size : ''}`;
+    let right;
+    if (row.newest) right = sev ? srcFix('chat-log') : `<span>${S.session?.live ? 'Being written as you play; this view re-reads it every minute.' : 'Combat and Session read this one.'} ${esc(fixText('chat-logging-ok'))}</span>`;
+    else right = last && (NOW() - last) / 1000 < 31 * 86400 ? 'Only the 31-day combat totals read this one.' : 'Nothing in the app reads this one any more.';
+    return setFoot('w-f-view', left, right);
+  }
   if (row.group === 'app') return setFoot('w-f-view', `Vault sizes · capacity.json${mt ? ` · saved ${dateTime(mt)}` : ''}${row.vaults != null ? ` · ${plural(row.vaults, 'vault')}` : ''} · typed in by you`, '<span>To change a size: <a href="#storage">Storage → Slots column</a></span>');
   if (row.group === 'cdn') {
     const v = V('cdn');
@@ -3152,8 +3215,9 @@ async function openFile(id, pointer = '', opts = {}) {
   fUI.changed = false; fUI.note = null; fUI.results = null; fUI.q = ''; fUI.changedAt = null;
   $('#fileq').value = ''; $('#f-results').hidden = true; $('#f-qnote').hidden = true;
   store.set('pgdash.file', id);
-  clearTree(); setTreeState('loading'); renderContents(); renderFilePane(paneArgs());
+  clearTree(); fUI.log = null; $('#f-logbox').innerHTML = ''; setTreeState('loading'); renderContents(); renderFilePane(paneArgs());
   if (opts.focus !== false) $('#t-f-view').focus(); // the Here window rule: focus lands on the title, not <body>
+  if (row?.group === 'logs' || id.startsWith('logs/')) return openLog(seq);
   let r;
   try { r = await fileApi('node', { path: '', limit: TREE_PAGE }, { mtime: false }); }
   catch (e) { if (seq !== fUI.openSeq) return; return fileFailed(e); }
@@ -3179,6 +3243,86 @@ async function openFile(id, pointer = '', opts = {}) {
     }
   }
 }
+/* ---------- chat logs: plain lines, newest at the bottom, search lists matching lines ---------- */
+// The live log is appended every few seconds, so no `mtime` token travels with these requests (a 409 would be noise);
+// the listing poll calls refreshLog() when the file grew.
+async function openLog(seq) {
+  let r;
+  try { r = await fileApi('lines', { limit: LOG_PAGE }, { mtime: false }); }
+  catch (e) { if (seq !== fUI.openSeq) return; return fileFailed(e); }
+  if (seq !== fUI.openSeq) return;
+  Object.assign(S.file, { mtimeNs: r.mtimeNs, bytes: r.bytes, mtime: r.mtime, total: r.total, type: 'log' });
+  S.lastGood.file = NOW();
+  fUI.log = { tail: { lines: r.lines, offset: r.offset, total: r.total }, hits: null };
+  setTreeState('log'); renderFiles(); renderLog(true);
+}
+async function refreshLog() {
+  if (!S.file || fUI.state !== 'log' || !fUI.log) return;
+  const seq = fUI.openSeq;
+  const r = await fileApi('lines', { limit: Math.max(LOG_PAGE, Math.min(LOG_ROW_BUDGET, fUI.log.tail.lines.length)) }, { mtime: false });
+  if (seq !== fUI.openSeq || fUI.state !== 'log') return;
+  Object.assign(S.file, { mtimeNs: r.mtimeNs, bytes: r.bytes, mtime: r.mtime, total: r.total });
+  fUI.log.tail = { lines: r.lines, offset: r.offset, total: r.total };
+  if (fUI.log.hits) await runSearch(); else renderLog(false);
+  renderContents();
+}
+async function loadEarlier() {
+  const L = fUI.log; if (!L || L.hits || L.tail.offset <= 0) return;
+  const box = $('#f-logbox'), btn = box.querySelector('[data-lmore]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
+  const offset = Math.max(0, L.tail.offset - LOG_PAGE), limit = L.tail.offset - offset;
+  let r;
+  try { r = await fileApi('lines', { offset, limit }, { mtime: false }); }
+  catch (e) { if (btn) { btn.disabled = false; btn.textContent = 'Retry'; } onFetchError(e); return; }
+  if (fUI.log !== L) return;
+  L.tail = { lines: r.lines.concat(L.tail.lines), offset: r.offset, total: Math.max(L.tail.total, r.total) };
+  const before = box.scrollHeight, top = box.scrollTop;
+  renderLog(false);
+  box.scrollTop = top + (box.scrollHeight - before); // the lines on screen stay put
+  const nb = box.querySelector('[data-lmore]'); if (nb) nb.focus(); else box.focus();
+}
+function logLineHtml(l, q) {
+  const num = `<span class="ln" aria-hidden="true">${fmt(l.n)}</span>`;
+  const mark = s => {
+    if (!q) return esc(s);
+    const i = String(s).toLowerCase().indexOf(q.toLowerCase());
+    return i < 0 ? esc(s) : `${esc(s.slice(0, i))}<b>${esc(s.slice(i, i + q.length))}</b>${esc(s.slice(i + q.length))}`;
+  };
+  if (!l.ts) return `<div class="lline cont">${num}<span class="ts"></span><span class="msg">${mark(l.msg)}</span></div>`;
+  const c = chanOf(l.msg);
+  let body = l.msg, tag = '';
+  if (c !== 'System') { tag = `<span class="ch" style="color:${CHAN_COLOR[c] || 'var(--text)'}">[${esc(c)}]</span>`; body = body.replace(CHAN_RE, ''); }
+  const cls = /reached level/.test(body) ? ' lvl' : c === 'Error' ? ' err' : '';
+  return `<div class="lline${cls}">${num}<span class="ts">${esc(l.ts.slice(9))}</span><span class="msg">${tag}${mark(body)}</span></div>`;
+}
+function renderLog(scrollDown) {
+  const box = $('#f-logbox'), L = fUI.log;
+  if (!L) { box.innerHTML = ''; return; }
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  let html = '';
+  if (L.hits) {
+    const h = L.hits, q = h.q;
+    const head = `${plural(h.matches, 'matching line')} for "${esc(q)}"`;
+    let cap = '';
+    if (h.lines.length < h.matches || h.capped) cap = `Showing the first ${fmt(h.lines.length)} of ${fmt(h.matches)}${h.capped ? '+' : ''} matching lines. Narrow the search.`;
+    html += `<div class="rhead"><span class="small dim">${head}</span><button type="button" class="linkbtn" data-fclear="1" style="text-decoration:underline">Clear</button></div>`;
+    if (cap) html += `<p class="small dim" style="margin:0 0 4px">${esc(cap)}</p>`;
+    html += h.lines.length ? h.lines.map(l => logLineHtml(l, q)).join('') : `<p class="empty">No "${esc(q)}" in this log. Every line is searched as plain text.</p>`;
+    box.innerHTML = html;
+    box.scrollTop = 0;
+    announce(head + (cap ? '. ' + cap : ''));
+    return;
+  }
+  const t = L.tail;
+  if (t.offset > 0) {
+    if (t.lines.length >= LOG_ROW_BUDGET) html += `<p class="small dim lmore">Showing the last ${fmt(t.lines.length)} of ${plural(t.total, 'line')}. Open raw for the whole file.</p>`;
+    else html += `<div class="lmore"><button type="button" class="btn" data-lmore="1">Show ${fmt(Math.min(LOG_PAGE, t.offset))} earlier of ${plural(t.total, 'line')}</button></div>`;
+  }
+  html += t.lines.length ? t.lines.map(l => logLineHtml(l, '')).join('') : '<p class="empty">This log is empty.</p>';
+  box.innerHTML = html;
+  if (scrollDown || atBottom) box.scrollTop = box.scrollHeight;
+}
+
 function paneArgs() {
   const files = fileRows(), cur = S.files?.cdnVersion || cdnVersion();
   return { old: S.filesOld, err: !S.filesOld && S.errors.files && !S.files, loading: !S.filesOld && !S.errors.files && !S.files, none: S.files && !files.some(f => f.exists !== false),
@@ -3485,7 +3629,19 @@ function onSearchInput() {
 async function runSearch() {
   const q = fUI.q.trim();
   const note = $('#f-qnote');
-  if (!S.file || fUI.state !== 'tree' || fUI.changed) return;
+  if (!S.file || (fUI.state !== 'tree' && fUI.state !== 'log') || fUI.changed) return;
+  if (fUI.state === 'log') {
+    if (!q) { if (fUI.log?.hits) { fUI.log.hits = null; renderLog(true); } note.hidden = true; return; }
+    if (q.length < 2) { note.hidden = false; note.textContent = 'Type at least 2 characters.'; return; }
+    note.hidden = true;
+    try {
+      const r = await fileApi('lines', { q, limit: LOG_PAGE }, { mtime: false });
+      if (!fUI.log || r.q !== fUI.q.trim()) return;
+      fUI.log.hits = { q: r.q, lines: r.lines, matches: r.matches, capped: r.capped };
+      renderLog(false);
+    } catch (e) { if (fUI.log) { fUI.log.hits = null; $('#f-logbox').innerHTML = blockError('the search', null).replace('data-retry="1"', 'data-fsearch="1"'); announce("Couldn't search."); } }
+    return;
+  }
   if (!q) { fUI.results = null; note.hidden = true; renderResults(); return; }
   if (q.length < 2) { fUI.results = null; note.hidden = false; note.textContent = 'Type at least 2 characters.'; renderResults(); return; }
   note.hidden = true;
@@ -3551,6 +3707,8 @@ function initFiles() {
     const fold = t.closest('[data-fold]');
     if (fold && fold.closest('#f-list')) { const id = fold.dataset.fold; fUI.folds[id] = !fUI.folds[id]; renderFilePane(paneArgs()); $(`#f-list [data-fold="${CSS.escape(id)}"]`)?.focus(); return; }
     if (t.closest('[data-fmore]')) { fUI.showOld = !fUI.showOld; renderFilePane(paneArgs()); $('#f-list [data-fmore]')?.focus(); return; }
+    if (t.closest('[data-lmoreold]')) { fUI.showOldLogs = !fUI.showOldLogs; renderFilePane(paneArgs()); $('#f-list [data-lmoreold]')?.focus(); return; }
+    if (t.closest('[data-lmore]')) { loadEarlier(); return; }
     const frow = t.closest('tr[data-frow]');
     if (frow && !t.closest('button')) {
       const a = frow.querySelector('a.fopen');
@@ -3567,7 +3725,11 @@ function initFiles() {
     if (t.closest('[data-freload]')) { if (S.file) { const p = focusedRow()?.dataset.path || ''; openFile(S.file.id, p, { focus: true }); } return; }
     const nw = t.closest('[data-fnewest]');
     if (nw) { location.hash = `files?f=${encodeURIComponent(nw.dataset.fnewest)}`; return; }
-    if (t.closest('[data-fclear]')) { fUI.results = null; $('#fileq').value = ''; fUI.q = ''; $('#f-qnote').hidden = true; renderResults(); focusRow(focusedRow() || $('#f-tree li[role=treeitem]')); return; }
+    if (t.closest('[data-fclear]')) {
+      $('#fileq').value = ''; fUI.q = ''; $('#f-qnote').hidden = true;
+      if (fUI.state === 'log') { if (fUI.log) fUI.log.hits = null; renderLog(true); $('#fileq').focus(); return; }
+      fUI.results = null; renderResults(); focusRow(focusedRow() || $('#f-tree li[role=treeitem]')); return;
+    }
     if (t.closest('[data-fsearch]')) { runSearch(); return; }
     const hit = t.closest('[data-hit]');
     if (hit) { pickHit(+hit.dataset.hit); return; }
@@ -3659,7 +3821,11 @@ function initFiles() {
   $('#f-results').addEventListener('keydown', e => { const h = e.target.closest('[data-hit]'); if (h && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pickHit(+h.dataset.hit); } });
   $('#fileq').addEventListener('input', onSearchInput);
   $('#fileq').addEventListener('keydown', e => {
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); $('#fileq').value = ''; fUI.q = ''; fUI.results = null; $('#f-qnote').hidden = true; renderResults(); focusRow(focusedRow() || $('#f-tree li[role=treeitem]'), true); }
+    if (e.key === 'Escape') {
+      e.preventDefault(); e.stopPropagation(); $('#fileq').value = ''; fUI.q = ''; $('#f-qnote').hidden = true;
+      if (fUI.state === 'log') { if (fUI.log) fUI.log.hits = null; renderLog(true); return; }
+      fUI.results = null; renderResults(); focusRow(focusedRow() || $('#f-tree li[role=treeitem]'), true);
+    }
     if (e.key === 'Enter' && fUI.results?.hits?.length) { e.preventDefault(); pickHit(0); }
   });
   window.addEventListener('resize', () => { if (S.view === 'files') { const li = focusedRow(); if (li) updatePathBar(li); } });

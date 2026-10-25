@@ -7,6 +7,8 @@ Game is the Steam build: `~/Library/Application Support/Steam/steamapps/common/P
 ### `Reports/` — VIP exports (JSON)
 Created via in-game **VIP menu → Export Character JSON / Export Storage JSON**. Each export writes a `[Status] Saved report to …` line in the chat log.
 
+**Still here after the 22 Oct 2026 update (checked 25 Oct 19:20):** Steam's `appmanifest_342940.acf` says the game last updated 22 Oct 19:58 (build 26133121) and the newest storage export, `Robchew_Arisetsu_items_2026-10-22-22-56-14Z.json` (23 Oct 00:56 local), was made after it, into `Reports/`. The client's `Assembly-CSharp.dll` (UTF-16 user strings) still has the VIP panel keys `VIP_Reports_Items_JSON`, `VIP_Reports_Items_CSV`, `VIP_Reports_Character_JSON`, `VIP_Reports_Stored_Location`, the folder name `/Reports`, a `-reportdir` command-line option, the `api itemreport ` server command and `AutoExportCharacterOnLogout`; no string anywhere in the client mentions "player files". The wiki's Game updates page lists nothing newer than 3 Sep 2026 and no change to exports. So nothing moved: a missing storage export means none was taken (the 25 Oct chat log has 30 `Saved report` lines, all `Character_…`, none `_items_`).
+
 **`Character_<Name>_<Server>.json`** (`Report: "CharacterSheet"`), overwritten on each export:
 - `Character`, `ServerName`, `Timestamp` (UTC), `Race`, `MostRecentArea` (e.g. `AreaEltibule`)
 - `Skills{name: {Level, BonusLevels, XpTowardNextLevel, XpNeededForNextLevel, Abilities[]}}`, where key `Unknown` is a catch-all ability list (skip it)
