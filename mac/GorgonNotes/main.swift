@@ -49,6 +49,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
   func applicationDidFinishLaunching(_ note: Notification) {
     NSApp.setActivationPolicy(.accessory)
+    // A main menu with the standard Edit items: without it the window has no ⌘X / ⌘C / ⌘V / ⌘A (the key
+    // equivalents are dispatched through the main menu, and a menu-bar app has none by default). The
+    // items have no target, so they travel the responder chain to the web view's focused field.
+    let mainMenu = NSMenu()
+    let appItem = NSMenuItem(); mainMenu.addItem(appItem)
+    let appMenu = NSMenu(title: "Gorgon Notes"); appItem.submenu = appMenu
+    appMenu.addItem(action("Quit Gorgon Notes", #selector(NSApplication.terminate(_:)), "q", target: NSApp))
+    let editItem = NSMenuItem(); mainMenu.addItem(editItem)
+    let edit = NSMenu(title: "Edit"); editItem.submenu = edit
+    edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+    edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+    edit.addItem(.separator())
+    edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+    edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+    edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+    edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+    NSApp.mainMenu = mainMenu
     statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     statusItem.button?.image = symbol("scroll")
     statusItem.button?.imagePosition = .imageLeading

@@ -1229,9 +1229,29 @@ def party_save():
     os.replace(tmp, PARTY_FILE)
 
 
+PARTY_BACKFILL = 3   # a join shares this many of the fights already closed, so the table fills at once
+
+
+def party_backfill_since():
+    """The join clock: the start of the third most recent closed fight with damage (else now), so a join shares
+    a little history instead of the whole day."""
+    now = datetime.now()
+    log = latest_chatlog()
+    if not log:
+        return local_iso(now)
+    try:
+        tracker, st = dps_tracker(log)
+        rows = [r for r in tracker.result("day", log, st)["fights"] if not r["open"] and not r["minor"] and r["dmg"] > 0]
+    except Exception:
+        rows = []
+    tail = rows[-PARTY_BACKFILL:]
+    return tail[0]["at"] if tail else local_iso(now)
+
+
 def party_set(code):
-    """Join a topic (code), leave it (None) or make a new code ("new"). Joining starts the clock: only fights
-    that close from now on are posted, so a party never gets the day's history dumped on it."""
+    """Join a topic (code), leave it (None) or make a new code ("new"). Joining sets the clock to the third most
+    recent closed fight (PARTY_BACKFILL): those and every fight that closes from then on are posted, never the
+    whole day. The record of what was posted survives a leave, so an undo does not post the same fights twice."""
     import secrets
     with PARTY_LOCK:
         if code == "new":
@@ -1241,9 +1261,10 @@ def party_set(code):
             if not PARTY_CODE_RE.match(code):
                 raise BadRequest("a party code looks like gn- and 12 letters or digits")
         if code != _party["code"]:
-            _party.update(code=code, since=local_iso(datetime.now()) if code else None, remote={}, sinceId=None, lastPoll=0.0,
+            _party.update(code=code, since=party_backfill_since() if code else None, remote={}, sinceId=None, lastPoll=0.0,
                           lastOkAt=None, lastErrAt=None, lastErr=None, lastPostAt=None, lastMsgAt=None)
-            _party["posted"] = {k: v for k, v in _party["posted"].items() if code and k.startswith(code + "|")}
+            cutoff = local_iso(datetime.now() - timedelta(hours=24))
+            _party["posted"] = {k: v for k, v in _party["posted"].items() if v >= cutoff}
             party_save()
         party_thread()
         return _party["code"]
@@ -1346,7 +1367,7 @@ def party_poll():
             continue
         summ["who"] = summ["who"][:40]
         summ["ntfyAt"] = local_iso(datetime.fromtimestamp(ev.get("time") or now.timestamp()))
-        _party["remote"][ev["id"]] = summ
+        _party["remote"][f"{summ['who']}|{summ['start']}"] = summ  # one row per player and fight, however often it was posted
         _party["lastMsgAt"] = summ["ntfyAt"]
     cutoff = now - timedelta(seconds=PARTY_KEEP_SEC)
     for k in [k for k, v in _party["remote"].items() if (iso_dt(v.get("ntfyAt")) or now).replace(tzinfo=None) < cutoff]:

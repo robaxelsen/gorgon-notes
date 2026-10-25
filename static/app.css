@@ -584,7 +584,7 @@ tr[aria-selected="true"] .sizein { border-color: var(--sel-text); color: var(--s
   .pop .win-bar { height: 48px; }
   .pop [data-rem="close"] { min-height: 44px; min-width: 44px; padding: 0 8px; font-size: 15px; }
   .tbl td, .tbl th { padding-left: 6px; padding-right: 6px; }
-  input[type="search"], select, input[type="time"] { height: 44px; font-size: 16px; }
+  input[type="search"], input[type="text"], select, input[type="time"] { height: 44px; font-size: 16px; }
   .sizein { height: 44px; font-size: 16px; }
   .check { min-height: 44px; }
   .barrow { min-height: 44px; }
@@ -709,8 +709,16 @@ tr[aria-selected="true"] .sizein { border-color: var(--sel-text); color: var(--s
 .party-fight .ph { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 6px 0 4px; border-bottom: 1px solid var(--rule); }
 .party-fight .ph .t { font-weight: 700; }
 .party-fight .ph .tag { margin-left: 2px; }
-.party-fight .barrow { --bar-v: 19ch; }  /* "21,470  307/s · 100%" */
-@media (max-width: 640px) { .party-fight .barrow { --bar-v: 15ch; } .party-fight .barrow .v .dim { display: block; margin: 0; } }
+.party-fight .barrow { --bar-v: 19ch; grid-template-columns: minmax(0, 12em) minmax(0, 1fr) var(--bar-v); }  /* "21,470  307/s · 100%"; names get 12em before the ellipsis */
+.party-under { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+#d-pstate .tagw.status { color: var(--status); }
+#d-pstate .tagw.error { color: var(--error); }
+#d-pstate .linkbtn { margin-left: 4px; }
+@media (max-width: 640px) {
+  .party-fight .barrow { --bar-v: 15ch; grid-template-columns: minmax(0, 9em) minmax(0, 1fr) var(--bar-v); } .party-fight .barrow .v .dim { display: block; margin: 0; }
+  #pcode { width: 100%; }           /* the field takes the row; the buttons and the state line follow */
+  #d-pstate { flex-basis: 100%; }
+}
 #vq-note[hidden] { display: none; }
 @media (min-width: 1180px) { .chips-wrap .chips { flex-wrap: wrap; overflow: visible; } }
 /* Feeds: a line scrolled under the top edge fades out over one full row instead of showing half-cut. */
