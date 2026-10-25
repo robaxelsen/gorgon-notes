@@ -202,6 +202,23 @@
           <div class="win-body" id="d-break"></div>
           <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
         </section>
+        <section class="win" id="w-d-party" aria-labelledby="t-d-party">
+          <header class="win-bar"><h2 id="t-d-party">Party <span class="count" id="d-party-count"></span></h2>
+            <div class="tools"><button type="button" class="btn" id="d-pnew">New code</button></div>
+          </header>
+          <div class="win-body">
+            <form class="toolbar" id="d-pform">
+              <label class="sr" for="pcode">Party code</label>
+              <input type="text" id="pcode" class="code" placeholder="gn-… from party chat" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="15">
+              <button type="submit" class="btn" id="d-pjoin">Join</button>
+              <button type="button" class="btn" id="d-pcopy" hidden>Copy code</button>
+              <button type="button" class="btn" id="d-pleave" hidden>Leave</button>
+              <span class="small dim" id="d-pstate" aria-live="polite"></span>
+            </form>
+            <div id="d-party"></div>
+          </div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
       </div>
     </section>
 

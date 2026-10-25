@@ -1123,7 +1123,7 @@ class DpsTracker:
             "taken": taken_me["dmg"] + indirect_me, "takenMe": taken_me["dmg"], "takenHits": taken_me["hits"], "indirectMe": indirect_me,
             "takenPet": taken_pet["dmg"] + indirect_pet,
             "kills": kills, "petKills": pet_kills, "deaths": f.deaths, "instakills": instakills,
-            "targets": tg[:6], "targetCount": len(tg), "mobs": len(tids), "top": tg[0]["name"] if tg else None,
+            "targets": tg[:6], "targetCount": len(tg), "mobs": len(tids), "mobIds": sorted(tids)[:40], "top": tg[0]["name"] if tg else None,
             "abilities": abilities, "takenBy": taken_by[:8],
             "indirectUnattributed": indirect_other, "shared": f.party or bool(others), "others": others[:5],
             "timeline": tl, "timelineStep": step,
@@ -1191,6 +1191,263 @@ def combat_report(scope="day"):
         return {}
     tracker, st = dps_tracker(log)
     return tracker.result("login" if scope == "login" else "day", log, st)
+
+
+# ---------------------------------------------------------------------------
+# Party sharing (GET/POST /api/party), docs/SHARING.md. Each copy of the app posts its own closed fights as small
+# JSON summaries to an ntfy.sh topic named by a party code, reads the others' from the same topic, and merges
+# them into party fights by time overlap. No server of ours: the topic name is the only key.
+# ---------------------------------------------------------------------------
+PARTY_FILE = HERE / "party.json"
+PARTY_LOCK = threading.RLock()
+NTFY_BASE = os.environ.get("PG_NTFY", "https://ntfy.sh").rstrip("/")
+PARTY_CODE_RE = re.compile(r"^gn-[a-z0-9]{12}$")
+PARTY_CODE_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"  # no 0/o, 1/l/i: the code is read out loud or retyped
+PARTY_TICK_SEC = 10          # publish and poll cadence
+PARTY_IDLE_SEC = 90          # polling stops this long after the last /api/party request; publishing never stops
+PARTY_HTTP_SEC = 6
+PARTY_MSG_MAX = 4000         # ntfy turns bigger messages into attachments
+PARTY_KEEP_SEC = 14 * 3600   # remote summaries kept in memory (ntfy's own cache is 12 h)
+PARTY_VERSION = 1
+_party = {"code": None, "since": None, "posted": {}, "remote": {}, "sinceId": None, "lastPoll": 0.0, "lastReq": 0.0,
+          "lastOkAt": None, "lastErrAt": None, "lastErr": None, "lastPostAt": None, "lastMsgAt": None, "thread": None}
+
+
+def party_load():
+    try:
+        d = json.loads(PARTY_FILE.read_text(encoding="utf-8"))
+        if PARTY_CODE_RE.match(d.get("code") or ""):
+            _party.update(code=d["code"], since=d.get("since"), posted=dict(d.get("posted") or {}))
+    except Exception:
+        pass
+
+
+def party_save():
+    data = {"code": _party["code"], "since": _party["since"], "posted": _party["posted"]}
+    tmp = PARTY_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=1), encoding="utf-8")
+    os.replace(tmp, PARTY_FILE)
+
+
+def party_set(code):
+    """Join a topic (code), leave it (None) or make a new code ("new"). Joining starts the clock: only fights
+    that close from now on are posted, so a party never gets the day's history dumped on it."""
+    import secrets
+    with PARTY_LOCK:
+        if code == "new":
+            code = "gn-" + "".join(secrets.choice(PARTY_CODE_ALPHABET) for _ in range(12))
+        elif code is not None:
+            code = str(code).strip().lower()
+            if not PARTY_CODE_RE.match(code):
+                raise BadRequest("a party code looks like gn- and 12 letters or digits")
+        if code != _party["code"]:
+            _party.update(code=code, since=local_iso(datetime.now()) if code else None, remote={}, sinceId=None, lastPoll=0.0,
+                          lastOkAt=None, lastErrAt=None, lastErr=None, lastPostAt=None, lastMsgAt=None)
+            _party["posted"] = {k: v for k, v in _party["posted"].items() if code and k.startswith(code + "|")}
+            party_save()
+        party_thread()
+        return _party["code"]
+
+
+def party_summary(row, me, app_version):
+    """The message one fight becomes: the fight's figures, its top abilities and the enemy ids, under 4 KB."""
+    pets = Counter()
+    for a in row["abilities"]:
+        if a["who"] != "you":
+            pets[a["who"]] += a["dmg"]
+    out = {"v": PARTY_VERSION, "who": me, "start": row["at"], "end": row["endAt"], "dur": row["dur"],
+           "dmg": row["dmg"], "me": row["me"], "pets": dict(pets.most_common(4)), "dps": row["dps"],
+           "taken": row["taken"], "kills": row["kills"] + row["petKills"], "deaths": row["deaths"],
+           "top": [[a["name"] if a["who"] == "you" else f"{a['who']}: {a['name']}", a["dmg"]] for a in row["abilities"][:5]],
+           "targets": [t["name"] for t in row["targets"][:3]], "enemies": row.get("mobIds", [])[:40],
+           "area": row["area"], "app": app_version}
+    while len(json.dumps(out, separators=(",", ":"))) > PARTY_MSG_MAX and out["enemies"]:
+        out["enemies"] = out["enemies"][: len(out["enemies"]) // 2]
+    return out
+
+
+def ntfy(path, data=None, headers=None):
+    h = {"User-Agent": "gorgon-notes/" + str(PARTY_VERSION)}
+    h.update(headers or {})
+    req = Request(f"{NTFY_BASE}/{path}", data=data, headers=h, method="POST" if data is not None else "GET")
+    return urlopen(req, timeout=PARTY_HTTP_SEC).read()
+
+
+def iso_dt(s):
+    try:
+        return datetime.fromisoformat(s) if s else None
+    except ValueError:
+        return None
+
+
+def party_local_rows():
+    """This machine's closed, non-minor fights since the code was set (the day scope of the live tracker)."""
+    log = latest_chatlog()
+    if not log or not _party["code"]:
+        return None, []
+    tracker, st = dps_tracker(log)
+    rep = tracker.result("day", log, st)
+    since = iso_dt(_party["since"])
+    rows = [r for r in rep["fights"] if not r["open"] and not r["minor"] and r["dmg"] > 0 and r["endAt"]
+            and (since is None or (iso_dt(r["endAt"]) or since) >= since)]
+    return rep["character"], rows
+
+
+def party_publish():
+    """Post every closed fight not posted yet. A failure leaves it for the next tick."""
+    code = _party["code"]
+    me, rows = party_local_rows()
+    if not code or not me:
+        return
+    for r in rows:
+        key = f"{code}|{r['at']}"
+        if key in _party["posted"]:
+            continue
+        body = json.dumps(party_summary(r, me, "gorgon-notes"), separators=(",", ":")).encode("utf-8")
+        try:
+            ntfy(code, body, {"Content-Type": "application/json", "X-Title": f"{me}: fight at {r['start'][9:14]}", "X-Tags": "crossed_swords"})
+        except Exception as e:
+            _party.update(lastErr=f"post: {e}"[:200], lastErrAt=local_iso(datetime.now()))
+            return
+        now = local_iso(datetime.now())
+        _party["posted"][key] = r["endAt"]
+        _party.update(lastPostAt=now, lastOkAt=now)
+    party_save()
+
+
+def party_poll():
+    """Read what the others posted since the last message seen (all of the topic's 12 h cache the first time)."""
+    code = _party["code"]
+    if not code:
+        return
+    try:
+        raw = ntfy(f"{code}/json?poll=1&since={_party['sinceId'] or 'all'}")
+    except Exception as e:
+        _party.update(lastErr=f"poll: {e}"[:200], lastErrAt=local_iso(datetime.now()))
+        return
+    now = datetime.now()
+    _party.update(lastOkAt=local_iso(now), lastPoll=time.time())
+    for line in raw.decode("utf-8", errors="replace").splitlines():
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        if ev.get("id"):
+            _party["sinceId"] = ev["id"]
+        if ev.get("event") != "message":
+            continue
+        try:
+            summ = json.loads(ev.get("message") or "")
+        except ValueError:
+            continue
+        if not isinstance(summ, dict) or summ.get("v") != PARTY_VERSION or not isinstance(summ.get("who"), str):
+            continue
+        if not all(isinstance(summ.get(k), str) for k in ("start", "end")) or not isinstance(summ.get("dmg"), (int, float)):
+            continue
+        summ["who"] = summ["who"][:40]
+        summ["ntfyAt"] = local_iso(datetime.fromtimestamp(ev.get("time") or now.timestamp()))
+        _party["remote"][ev["id"]] = summ
+        _party["lastMsgAt"] = summ["ntfyAt"]
+    cutoff = now - timedelta(seconds=PARTY_KEEP_SEC)
+    for k in [k for k, v in _party["remote"].items() if (iso_dt(v.get("ntfyAt")) or now).replace(tzinfo=None) < cutoff]:
+        del _party["remote"][k]
+
+
+def party_tick():
+    with PARTY_LOCK:
+        if not _party["code"]:
+            return
+        try:
+            party_publish()
+        except Exception as e:
+            _party.update(lastErr=f"publish: {e}"[:200], lastErrAt=local_iso(datetime.now()))
+        if time.time() - _party["lastReq"] < PARTY_IDLE_SEC:
+            party_poll()
+
+
+def party_thread():
+    """One daemon thread ticks every PARTY_TICK_SEC while a code is set."""
+    t = _party.get("thread")
+    if t and t.is_alive():
+        return
+    def loop():
+        while True:
+            time.sleep(PARTY_TICK_SEC)
+            if _party["code"]:
+                party_tick()
+    t = threading.Thread(target=loop, name="party", daemon=True)
+    _party["thread"] = t
+    t.start()
+
+
+def party_merge(me, local_rows, remote, since=None):
+    """Party fights: summaries whose time windows overlap, one per player per group. Enemy ids decide nothing
+    yet (whether two clients log the same #id for one mob is unverified); `byIds` reports when they did match.
+    The window shows fights since this copy joined: a remote fight that ended before `since`, or dealt no
+    damage, is left out, as the local ones are."""
+    items = []
+    for r in local_rows:
+        s = party_summary(r, me, "local")
+        s["mine"] = True
+        items.append(s)
+    for s in remote.values():
+        if s.get("who") == me or not s.get("dmg"):
+            continue
+        if since is not None and (iso_dt(s.get("end")) or since) < since:
+            continue
+        items.append(dict(s, mine=False))
+    def t(x):
+        try:
+            return datetime.fromisoformat(x).timestamp()
+        except Exception:
+            return None
+    items = [dict(i, _s=t(i["start"]), _e=t(i["end"])) for i in items]
+    items = [i for i in items if i["_s"] is not None and i["_e"] is not None]
+    items.sort(key=lambda i: i["_s"])
+    groups = []
+    for i in items:
+        g = next((g for g in groups if i["_s"] <= g["_e"] and i["_e"] >= g["_s"] and i["who"] not in g["whos"]), None)
+        if g is None:
+            g = {"_s": i["_s"], "_e": i["_e"], "whos": set(), "items": [], "ids": set()}
+            groups.append(g)
+        g["_s"], g["_e"] = min(g["_s"], i["_s"]), max(g["_e"], i["_e"])
+        g["whos"].add(i["who"])
+        g["items"].append(i)
+    out = []
+    for g in groups:
+        id_sets = [set(map(str, i.get("enemies") or [])) for i in g["items"]]
+        shared = len(id_sets) > 1 and bool(set.intersection(*id_sets))
+        members = sorted(({k: v for k, v in i.items() if not k.startswith("_") and k != "v"} for i in g["items"]), key=lambda m: -m["dmg"])
+        total = sum(m["dmg"] for m in members)
+        for m in members:
+            m["share"] = round(m["dmg"] / total, 3) if total else 0
+        first = min(g["items"], key=lambda i: i["_s"])
+        out.append({"id": first["start"], "start": first["start"], "end": max(g["items"], key=lambda i: i["_e"])["end"],
+                    "dur": int(g["_e"] - g["_s"]) + 1, "area": next((i.get("area") for i in g["items"] if i.get("area")), None),
+                    "total": total, "byIds": shared, "members": members, "solo": len(members) == 1})
+    return out
+
+
+def party_state():
+    """GET /api/party: the code, the link's health and the merged party fights."""
+    with PARTY_LOCK:
+        _party["lastReq"] = time.time()
+        code = _party["code"]
+        if code:
+            party_thread()
+            if not _party["lastPoll"]:  # first look after joining or starting: fetch now; the thread takes over
+                party_poll()
+        me, rows = party_local_rows() if code else (None, [])
+        fights = party_merge(me, rows, _party["remote"], iso_dt(_party["since"])) if code else []
+        ok, err = _party["lastOkAt"], _party["lastErrAt"]
+        reachable = bool(ok) and (not err or ok >= err)
+        pending = len([r for r in rows if f"{code}|{r['at']}" not in _party["posted"]]) if code else 0
+        return {"version": PARTY_VERSION, "code": code, "since": _party["since"], "character": me, "base": NTFY_BASE,
+                "ntfy": {"reachable": reachable, "lastOkAt": ok, "lastErrorAt": err, "lastError": _party["lastErr"],
+                         "lastPostAt": _party["lastPostAt"], "lastMessageAt": _party["lastMsgAt"],
+                         "posted": len([k for k in _party["posted"] if code and k.startswith(code + "|")]),
+                         "pending": pending, "received": len(_party["remote"])},
+                "members": sorted({m["who"] for f in fights for m in f["members"]}), "fights": fights}
 
 
 def gaming_receipt(gaming, t, amount, run=False):
@@ -2974,6 +3231,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(zone(q.get("character"), q.get("area")))
             if url.path == "/api/combat":
                 return self.send_json(combat_report(q.get("scope", "day")))
+            if url.path == "/api/party":
+                return self.send_json(party_state())
             if url.path == "/api/health":
                 return self.send_json(health(q.get("character")))
             if url.path == "/api/icons":
@@ -3029,6 +3288,17 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error": repr(e)}, 500)
             return self.send_json({"ok": True, "slots": slots})
+        if url.path == "/api/party":
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                if not isinstance(body, dict):
+                    raise BadRequest("body must be a JSON object")
+                code = party_set("new" if body.get("action") == "new" else body.get("code"))
+            except (BadRequest, json.JSONDecodeError) as e:
+                return self.send_json({"error": str(e) if isinstance(e, BadRequest) else "body must be JSON"}, 400)
+            except Exception as e:
+                return self.send_json({"error": repr(e)}, 500)
+            return self.send_json(party_state())
         self.send_json({"error": "not found"}, 404)
 
 
@@ -3059,6 +3329,9 @@ def main(argv):
         return 0
     exports = len(list(REPORTS.glob("*.json"))) if REPORTS.is_dir() else 0
     logs = len(list(CHATLOGS.glob("Chat-*.log"))) if CHATLOGS.is_dir() else 0
+    party_load()
+    if _party["code"]:
+        party_thread()  # keep posting closed fights to the party's topic even while no view is open
     print(f"Gorgon Notes on {url}")
     print(f"Game data: {GAME_DIR}")
     print(f"  {plural(exports, 'export')} in Reports, {plural(logs, 'chat log')} in ChatLogs")

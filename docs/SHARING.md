@@ -1,4 +1,6 @@
-# Sharing fight data with party members (research, 2026-10-25)
+# Sharing fight data with party members (research 2026-10-25; option 1 built the same evening)
+
+**Status 25 Oct 22:45:** option 1 is built (Combat → Party window; `server.py` `party_*`, `GET/POST /api/party`; spec in `DESIGN.md` → Views → Combat → Party and Server contract). Verified on this Mac against a throwaway topic: 11 fights posted, read back, merged with a faked second player. Not yet tried between two machines; the enemy-id question (same `#id` in two logs?) is still open, so the merge is by time overlap only.
 
 Question from the user: is there a better way than Discord to share damage data with the party, ideally with no backend, else a free service with very little overhead?
 

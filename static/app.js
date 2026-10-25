@@ -170,6 +170,7 @@ const S = {
   verdicts: [],             // merged verdict list
   session: null, sessionAt: null,
   combat: null, combatAt: null, combatOld: false, // /api/combat (DPS meter); combatOld = the server has no such endpoint
+  party: null, partyOld: false,                   // /api/party (fight sharing over ntfy.sh); partyOld = no such endpoint
   scope: 'day',
   reports: null,
   vendors: null, vendorsAt: null,
@@ -1331,9 +1332,97 @@ async function loadCombat() {
     throw e;
   }
 }
+let partyRound = 0;
 async function combatRound() {
   try { await loadCombat(); markUp(); } catch (e) { onFetchError(e); }
+  if (partyRound++ % 5 === 0) await loadParty();  // the party link every 10 s: ntfy.sh is polled at that pace
   if (S.view === 'combat') { renderCombatView(); renderMargin(); renderShellHealth(); }
+}
+
+/* ===================== party sharing (Combat → Party window) ===================== */
+/* docs/SHARING.md: each copy posts its closed fights to an ntfy.sh topic named by a party code and reads the
+   others'. The server does the posting, polling and merging; this window shows the code, the link's health
+   and the merged fights, newest first. */
+async function loadParty() {
+  try {
+    const p = await api('/api/party');
+    S.party = p || null; S.partyOld = false;
+  } catch (e) {
+    if (e && e.status === 404) { S.partyOld = true; S.party = null; }
+  }
+}
+async function postParty(body) {
+  try {
+    const p = await api('/api/party', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    S.party = p; S.partyOld = false; renderParty();
+    return p;
+  } catch (e) {
+    $('#d-pstate').textContent = e?.status === 400 ? e.message : 'The server didn\'t answer; try again.';
+    return null;
+  }
+}
+const PARTY_CODE_RE = /^gn-[a-z0-9]{12}$/;
+function partyTip(m) {
+  const pets = Object.entries(m.pets || {}).map(([n, d]) => `${n} ${fmt(d)}`).join(', ');
+  const parts = [`you ${fmt(m.me)}`];
+  if (pets) parts.push(`pets ${pets}`);
+  if (m.kills) parts.push(plural(m.kills, 'kill'));
+  if (m.deaths) parts.push(plural(m.deaths, 'death'));
+  if (m.taken) parts.push(`took ${fmt(m.taken)}`);
+  if (m.top?.length) parts.push(`top: ${m.top.map(([n, d]) => `${pretty(n)} ${fmt(d)}`).join(', ')}`);
+  return `${m.who}: ${parts.join(' · ')}`;
+}
+function partyFightHtml(f) {
+  const t = parseIso(f.start);
+  const solo = f.members.length === 1 ? (f.members[0].mine ? '<span class="tag">only you so far</span>' : '<span class="tag">without you</span>') : '';
+  const ids = f.byIds ? '<span class="tag" title="The same enemy ids appear in more than one player\'s log">same enemies</span>' : '';
+  const head = `<div class="ph"><span class="t">${hhmm(t)}</span><span class="dim">${secs(f.dur)}</span>${f.area ? `<span class="dim">${esc(f.area)}</span>` : ''}<span><b>${fmt(f.total)}</b> damage · ${plural(f.members.length, 'player')}</span>${solo}${ids}</div>`;
+  const max = f.members[0]?.dmg || 1;
+  const rows = f.members.map(m => `<div class="barrow" title="${esc(partyTip(m))}"><span class="nm">${esc(m.who)}${m.mine ? ' <span class="tag">you</span>' : ''}</span><div class="bar"><i style="width:${Math.max(1, m.dmg / max * 100)}%"></i></div><span class="v">${fmt(m.dmg)} <span class="dim">${fmt(m.dps)}/s · ${Math.round((m.share || 0) * 100)}%</span></span></div>`).join('');
+  return `<div class="party-fight">${head}<div class="barlist">${rows}</div></div>`;
+}
+function renderParty() {
+  const p = S.party, old = S.partyOld, box = $('#d-party'), inp = $('#pcode'), st = $('#d-pstate'), cnt = $('#d-party-count');
+  const code = p?.code || null;
+  $('#d-pnew').hidden = !!code || old;
+  $('#d-pjoin').hidden = !!code || old;
+  $('#d-pcopy').hidden = !code;
+  $('#d-pleave').hidden = !code;
+  inp.disabled = old; inp.readOnly = !!code;
+  if (code && document.activeElement !== inp) inp.value = code;
+  if (old) { cnt.textContent = ''; st.textContent = ''; box.html = '<p class="needs">Needs a newer server.py.</p>'; setFoot('w-d-party', 'Party sharing', 'Sharing fights needs a newer server.py'); return; }
+  if (!p) { cnt.textContent = ''; box.html = '<p class="needs">Checking the party link…</p>'; setFoot('w-d-party', 'ntfy.sh', ''); return; }
+  if (!code) {
+    cnt.textContent = ''; st.textContent = '';
+    box.html = '<p class="empty">Share fights with your party. One of you presses New code and pastes it into party chat; the others paste it here and press Join. From then on every fight that closes is sent, and everyone\'s shows up here side by side.</p>';
+    setFoot('w-d-party', 'ntfy.sh · not joined', 'Press New code, or paste a code from party chat');
+    return;
+  }
+  const n = p.ntfy || {}, since = parseIso(p.since);
+  st.textContent = `joined ${hhmm(since)}`;
+  const fights = (p.fights || []).slice().reverse();
+  cnt.textContent = fights.length ? fmt(fights.length) : '';
+  if (!fights.length) {
+    const who = (p.members || []).filter(m => m !== p.character);
+    box.html = `<p class="empty">Joined at ${hhmm(since)}. Fights that close from now on are sent; the others' arrive within 10 s.${who.length ? ` Here so far: ${esc(joinNames(who))}.` : ''}</p>`;
+  } else box.html = fights.map(partyFightHtml).join('');
+  const left = `ntfy.sh · ${esc(code)}${n.lastMessageAt ? ` · last message ${hhmm(parseIso(n.lastMessageAt))}` : ' · nothing received yet'}${n.posted ? ` · ${plural(n.posted, 'fight')} sent` : ''}`;
+  let right;
+  if (!n.reachable && n.lastErrorAt) right = `ntfy.sh not answering since ${hhmm(parseIso(n.lastErrorAt))}; ${n.pending ? `${plural(n.pending, 'fight')} waiting, sent` : 'fights are sent'} when it answers again`;
+  else if (n.pending) right = `${plural(n.pending, 'fight')} waiting to be sent`;
+  else right = 'Fight numbers and character names go to ntfy.sh; anyone with the code can read them';
+  setFoot('w-d-party', left, esc(right));
+}
+function initParty() {
+  $('#d-pnew').addEventListener('click', async () => { const p = await postParty({ action: 'new' }); if (p?.code) copyText(p.code, 'the party code'); });
+  $('#d-pform').addEventListener('submit', e => {
+    e.preventDefault();
+    const v = $('#pcode').value.trim().toLowerCase();
+    if (!PARTY_CODE_RE.test(v)) { $('#d-pstate').textContent = 'A code looks like gn- and 12 letters or digits.'; return; }
+    postParty({ code: v });
+  });
+  $('#d-pcopy').addEventListener('click', () => copyText(S.party?.code || '', 'the party code'));
+  $('#d-pleave').addEventListener('click', () => { $('#pcode').value = ''; postParty({ code: null }); });
 }
 
 /* Which fight the Breakdown shows: the one the player picked, else the live one, else the newest. */
@@ -1426,7 +1515,8 @@ function renderCombatView() {
 
   // Breakdown
   renderBreakdown(c, pickedFight(c));
-  setFoot('w-d-break', live, `Party members' hits aren't in your log. Each of them needs their own copy.`);
+  setFoot('w-d-break', live, `Party members' hits aren't in your log; the Party window below puts their copies' numbers beside yours.`);
+  renderParty();
 }
 
 function combatFinding(c, scopeWord) {
@@ -1634,6 +1724,7 @@ function initCombat() {
     const c = S.combat, f = c?.fights?.find(x => x.id === dUI.selected);
     if (f) copyText(discordText(c, f), 'the fight for Discord');
   });
+  initParty();
 }
 
 /* ===================== vendors ===================== */
@@ -4437,7 +4528,7 @@ async function refreshExports(force) {
 async function fullRound() {
   try {
     await loadSession();
-    if (S.view === 'combat') await loadCombat();
+    if (S.view === 'combat') { await loadCombat(); await loadParty(); }
     await refreshExports(false);
     await loadHealth();
     markUp();

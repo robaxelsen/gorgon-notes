@@ -701,6 +701,16 @@ tr[aria-selected="true"] .sizein { border-color: var(--sel-text); color: var(--s
 .chip.more { color: var(--text); border-color: var(--control); background: transparent; }
 #v-buy .chips + .chips { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rule); }
 #vq-note { margin: 0 0 8px; }
+/* Party window (Combat): the code field is monospace so a pasted code reads letter by letter. */
+#pcode { font-family: ui-monospace, Menlo, Consolas, monospace; width: 20ch; letter-spacing: .02em; }
+#d-pform .btn { min-width: 0; }
+.party-fight { margin-top: 12px; }
+.party-fight:first-child { margin-top: 0; }
+.party-fight .ph { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 6px 0 4px; border-bottom: 1px solid var(--rule); }
+.party-fight .ph .t { font-weight: 700; }
+.party-fight .ph .tag { margin-left: 2px; }
+.party-fight .barrow { --bar-v: 19ch; }  /* "21,470  307/s · 100%" */
+@media (max-width: 640px) { .party-fight .barrow { --bar-v: 15ch; } .party-fight .barrow .v .dim { display: block; margin: 0; } }
 #vq-note[hidden] { display: none; }
 @media (min-width: 1180px) { .chips-wrap .chips { flex-wrap: wrap; overflow: visible; } }
 /* Feeds: a line scrolled under the top edge fades out over one full row instead of showing half-cut. */

@@ -1,5 +1,6 @@
 # Player's own data and local state
 capacity.json
+party.json
 cache/
 tools/probe-state/
 
