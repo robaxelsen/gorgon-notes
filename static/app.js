@@ -260,6 +260,7 @@ function fixText(key, args = {}, opts = {}) {
     'player-log': ['Nothing to do. Exports cover it.'],
     'vip': ['Exports need VIP. Check your VIP status in game.'],
     'server': ['Start it again: python3 server.py'],
+    'party-sharing': ['Nothing to do but wait: the app retries every 10 s. Copy for Discord on the Breakdown shares a fight by hand.'],
   }[key];
   if (!T) return '';
   return (!inGame && T[1]) ? T[1] : T[0];
@@ -422,7 +423,7 @@ const sevOf = src => V(src)?.severity || 'ok';
 const PHONE_MQ = window.matchMedia('(max-width: 767px)');
 const FOLD_NAME = { 'game': 'game state', 'chat-log': 'chat log', 'character-export': 'character export', 'storage-export': 'storage export', 'partial-export': 'partial exports',
   'auto-export': 'logout export setting', 'vault-sizes': 'vault sizes', 'alt-stale': 'alts', 'alt-missing': 'alts', 'combat-logging': 'combat logging', 'player-log': 'live game events',
-  'vip': 'VIP', 'server': 'server', 'cdn': 'game data', 'selected-export': 'picked export' };
+  'vip': 'VIP', 'server': 'server', 'cdn': 'game data', 'selected-export': 'picked export', 'party-sharing': 'party sharing' };
 function foldLabel(v) {
   const n = FOLD_NAME[v.source] || v.source;
   if (v.source === 'chat-log') return `${n} (${S.session?.live ? 'live' : v.ageSec != null ? ageWord(v.ageSec) : v.severity})`;
@@ -2412,6 +2413,7 @@ function planLead(p) {
   if (s.stays) html += ` <em class="n">${fmt(s.stays)}</em> ${s.stays === 1 ? 'stack stays' : 'stacks stay'}: no vault has room.`;
   html += '</p>';
   const notes = [];
+  if (s.marked) notes.push(`${plural(s.marked, 'type')} marked by you (Sell / Store in By item; a mark applies to every stack of the type, now and later)`);
   if (s.unsellable) notes.push(`${fmt(s.unsellable)} of the stored stacks no vendor buys`);
   if (!p.sheet) notes.push('no character export, so vendors and the sale price are unknown');
   if (gear.stacks) notes.push("worn gear can't be told from carried in the export");
@@ -2432,6 +2434,20 @@ function planByStop(p) {
     return `<section class="stop"><h3>${esc(head)} · ${plural(st.stacks, 'stack')}${st.councils ? ` · about ${fmt(st.councils)} councils` : ''}${st.area === here ? ' <span class="tag">you\'re here</span>' : ''}</h3>${sells}${stores}</section>`;
   }).join('') || '<p class="empty">No stops: nothing can be sold or stored from here.</p>';
 }
+/* The keep list control: Sell / Store per item type. Only sellable types get it (nothing can be sold otherwise);
+   the current state is the row's action, a mark shows as the checked option. */
+function markSeg(i) {
+  if (!i.sellable) return '';
+  const cur = i.mark || (i.kind === 'sell' ? 'sell' : 'store');
+  const opt = (v, label) => `<button type="button" role="radio" aria-checked="${cur === v}" data-mark="${v}" data-tid="${esc(String(i.typeId))}" ${cur === v ? 'tabindex="0"' : 'tabindex="-1"'}>${label}</button>`;
+  return `<span class="seg mark" role="radiogroup" aria-label="${esc(i.name)}: sell or store">${opt('sell', 'Sell')}${opt('store', 'Store')}</span>`;
+}
+async function setMark(typeId, mark) {
+  try {
+    await api('/api/mark', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ typeId: Number(typeId), mark }) });
+    await loadVendors(); computeVerdicts(); renderStorage();
+  } catch (e) { sysLine('error', `Couldn't save the mark: ${e?.message || 'the server didn\'t answer'}.`); }
+}
 function planByItem(p) {
   const order = { sell: 0, store: 1, gear: 2, stays: 3 };
   const rows = [...p.items].sort((a, b) => order[a.action] - order[b.action] || b.price - a.price).map(i => {
@@ -2440,9 +2456,9 @@ function planByItem(p) {
     else if (i.action === 'store') { doText = `Store at <em class="t">${esc(i.storeAt.name)}</em>${i.storeAt.area ? ` · ${esc(i.storeAt.area)}` : ''}${i.storeAt.holdsSome ? ' <span class="tag">has some already</span>' : ''}${i.why ? ` <span class="tag">${esc(i.why)}</span>` : ''}${i.sellTo ? ` <span class="small dim">or ${esc(i.sellTo.name)} pays about ${fmt(i.sellTo.councils)}</span>` : ''}`; }
     else if (i.action === 'gear') { doText = `Your call${i.sellTo ? ` · ${esc(i.sellTo.name)} pays about ${fmt(i.sellTo.councils)}` : ''}${i.storeAt ? ` · or store at ${esc(i.storeAt.name)}` : ''}`; about = i.sellTo ? fmt(i.sellTo.councils) : ''; }
     else doText = `Stays <span class="tag">${esc(i.note || 'no room')}</span>`;
-    return `<tr class="row"><td class="m1"><span class="cell-name">${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span>${esc(i.name)}</span></span></td><td class="num">${fmt(i.qty)}</td><td>${doText}</td><td class="num m2">${about}</td><td class="m-line2">${fmt(i.qty)} · ${doText}${about ? ` · about ${about}` : ''}</td></tr>`;
+    return `<tr class="row"><td class="m1"><span class="cell-name">${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span>${esc(i.name)}</span></span></td><td class="num">${fmt(i.qty)}</td><td>${doText}</td><td class="num m2">${about}</td><td class="markcell">${markSeg(i)}</td><td class="m-line2">${fmt(i.qty)} · ${doText}${about ? ` · about ${about}` : ''}</td></tr>`;
   }).join('');
-  return `<table class="tbl resp-plain" style="margin-top:10px"><thead><tr><th scope="col">Item</th><th scope="col" class="num">Qty</th><th scope="col">Do</th><th scope="col" class="num">About</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table class="tbl resp-plain plan-items" style="margin-top:10px"><thead><tr><th scope="col">Item</th><th scope="col" class="num">Qty</th><th scope="col">Do</th><th scope="col" class="num">About</th><th scope="col">Your mark</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function stripHtml(v) {
@@ -2765,7 +2781,17 @@ function initStorage() {
   tabKeys($('#tmode'));
   $('#w-t-plan').addEventListener('click', e => {
     const tab = e.target.closest('#pmode [role=tab]');
-    if (tab) { sUI.pmode = tab.dataset.m; renderPlan(); tab.focus(); }
+    if (tab) { sUI.pmode = tab.dataset.m; renderPlan(); tab.focus(); return; }
+    const m = e.target.closest('[data-mark]');
+    if (m && m.getAttribute('aria-checked') !== 'true') setMark(m.dataset.tid, m.dataset.mark);
+  });
+  $('#w-t-plan').addEventListener('keydown', e => {
+    const m = e.target.closest('.seg.mark [role=radio]');
+    if (!m || !['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+    e.preventDefault();
+    const other = m.dataset.mark === 'sell' ? 'store' : 'sell';
+    m.parentElement.querySelector(`[data-mark="${other}"]`)?.focus();
+    setMark(m.dataset.tid, other);
   });
   tabKeys($('#pmode'));
   $('#itemq').addEventListener('input', e => { sUI.iq = e.target.value; sUI.ilimit = 200; renderItems(); });

@@ -739,6 +739,10 @@ tr[aria-selected="true"] .sizein { border-color: var(--sel-text); color: var(--s
 #t-merge .stop .from, #t-plan .stop .from { margin: 8px 0 2px; }
 #t-merge .list li, #t-plan .list li { justify-content: flex-start; }
 #t-plan .list li .n { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.seg.mark { padding: 1px 2px; }
+.seg.mark button { height: 24px; padding: 0 10px; font-size: 12px; }
+.plan-items .markcell { white-space: nowrap; width: 1%; }
+@media (max-width: 639px) { .tbl.resp-plain tr.row td.markcell { display: block; grid-column: 1 / -1; padding-top: 4px; } .tbl.resp-plain .seg.mark { display: inline-flex; } .seg.mark button { min-height: 36px; height: 36px; } }
 @media (max-width: 639px) { #t-merge-count, #t-plan-count { display: none; } }
 
 /* ---------- Files view: file list pane + JSON tree (DESIGN.md → Components → JSON tree) ---------- */

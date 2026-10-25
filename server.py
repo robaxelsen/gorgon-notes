@@ -437,7 +437,7 @@ def consolidation(character=None):
         for i in its:
             by[loc_of(i)] += i.get("StackSize") or 1
             ns[loc_of(i)] += 1
-        cands = [l for l in by if l != "Inventory"]  # inventory is only ever a source
+        cands = [l for l in by if l != "Inventory" and not is_transfer_chest(l)]  # inventory and transfer chests are only ever sources
         if not cands:
             skipped["unknownLocation"] += 1
             continue
@@ -1199,6 +1199,41 @@ def combat_report(scope="day"):
 # Export-only: nothing live. Decisions recorded in DESIGN.md → Views → Storage → Sell and store.
 # ---------------------------------------------------------------------------
 PLAN_TRASH = "VendorTrash"
+MARKS_FILE = HERE / "marks.json"   # the keep list: {"<TypeID>": "sell" | "store"}; absent = the plan's default
+MARKS_LOCK = threading.Lock()
+MARK_VALUES = ("sell", "store")
+
+
+def is_transfer_chest(vault_key):
+    """Account transfer chests are shared by all the player's characters and kept for moving things: a source,
+    never a destination (user decision 26 Oct)."""
+    return str(vault_key).startswith("*AccountStorage_")
+
+
+def load_marks():
+    try:
+        d = json.loads(MARKS_FILE.read_text(encoding="utf-8"))
+        return {str(k): v for k, v in d.items() if v in MARK_VALUES} if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_mark(type_id, mark):
+    if type_id in (None, "") or not str(type_id).strip().isdigit():
+        raise BadRequest("typeId must be a number")
+    if mark not in MARK_VALUES and mark is not None:
+        raise BadRequest("mark must be sell, store or null")
+    with MARKS_LOCK:
+        marks = load_marks()
+        key = str(int(str(type_id).strip()))
+        if mark is None:
+            marks.pop(key, None)
+        else:
+            marks[key] = mark
+        tmp = MARKS_FILE.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(marks, indent=1, sort_keys=True), encoding="utf-8")
+        os.replace(tmp, MARKS_FILE)
+        return marks
 
 
 def item_keywords(entry):
@@ -1219,7 +1254,9 @@ def plan(character=None):
     # Vendors with councils left, their types as sets; remaining is spent down as stacks are assigned.
     vrows = [dict(v, typeset=set((v.get("buys") or "").split(",")) - {""}, left=v["remaining"]) for v in vend.get("vendors", []) if v.get("remaining")]
     # Vaults with room; the saddlebag travels with you (Anywhere). Free is spent down as stacks are assigned.
-    vaults = {v["vault"]: dict(v, left=v["free"]) for v in st["vaults"] if v["vault"] != "Inventory" and (v.get("free") or 0) > 0}
+    vaults = {v["vault"]: dict(v, left=v["free"]) for v in st["vaults"]
+              if v["vault"] != "Inventory" and not is_transfer_chest(v["vault"]) and (v.get("free") or 0) > 0}
+    marks = load_marks()
     held = defaultdict(set)   # TypeID -> vaults that already hold it
     for it in items:
         if it.get("StorageVault"):
@@ -1248,8 +1285,13 @@ def plan(character=None):
         e = cdn.get(f"item_{it.get('TypeID')}") or {}
         kws = item_keywords(e)
         sellable = bool(kws & buy_words()) and (it.get("Value") or 0) > 0
+        mark = marks.get(str(it.get("TypeID")))
+        if mark == "sell" and sellable:
+            return "sell", kws, sellable       # the keep list wins, gear included
         if it.get("Slot") or it.get("TSysPowers"):
             return "gear", kws, sellable
+        if mark == "store":
+            return "store", kws, sellable
         if PLAN_TRASH in kws:
             return "sell", kws, sellable
         return "store", kws, sellable
@@ -1259,7 +1301,8 @@ def plan(character=None):
         qty = it.get("StackSize") or 1
         unit = int(round((it.get("Value") or 0) * mult))
         row = {"typeId": it.get("TypeID"), "name": it.get("Name"), "qty": qty, "value": it.get("Value") or 0, "unit": unit,
-               "price": unit * qty, "kind": kind, "action": None, "sellTo": None, "storeAt": None, "note": None}
+               "price": unit * qty, "kind": kind, "action": None, "sellTo": None, "storeAt": None, "note": None,
+               "mark": marks.get(str(it.get("TypeID"))), "sellable": sellable}
         prefer = {a for a, n in areas_used.items() if n}
         if sellable:
             v, whole = best_vendor(kws, unit * qty, prefer)
@@ -1316,7 +1359,7 @@ def plan(character=None):
         for g in stores:
             g["after"] = g["free"] - g["stacks"]
         stop_rows.append({"area": stp["area"], "stacks": stp["stacks"], "councils": stp["councils"], "sell": sells, "store": stores})
-    stop_rows.sort(key=lambda s: -s["stacks"])
+    stop_rows.sort(key=lambda s: (s["area"] in ("Anywhere", "Elsewhere"), -s["stacks"]))  # carried storage last: it can be done any time
     sell_rows = [r for r in out if r["action"] == "sell"]
     gear_rows = [r for r in out if r["action"] == "gear"]
     summary = {
@@ -1328,8 +1371,9 @@ def plan(character=None):
         "unsellable": sum(1 for r in out if r["action"] == "store" and r.get("why")),
         "stops": len(stop_rows),
     }
+    summary["marked"] = sum(1 for r in out if r["mark"])
     return {"character": st["vaults"] and (head.get("character")), "source": head, "sheet": sheet_head, "cdnVersion": cdn_version(),
-            "multiplier": mult, "summary": summary, "stops": stop_rows, "items": out}
+            "multiplier": mult, "summary": summary, "stops": stop_rows, "items": out, "marks": marks}
 
 
 # ---------------------------------------------------------------------------
@@ -2426,6 +2470,30 @@ def health(character=None):
     else:
         add("cdn", "ok", "Game data", f"Game data v{ver}, current.", views=[], server_only=True)
 
+    # party sharing over ntfy.sh, only while joined (docs/SHARING.md)
+    with PARTY_LOCK:
+        pcode = _party["code"]
+        if pcode:
+            ok_at, err_at = _party["lastOkAt"], _party["lastErrAt"]
+            reachable = bool(ok_at) and (not err_at or ok_at >= err_at)
+            try:
+                _, prow = party_local_rows()
+                pending = len([r for r in prow if f"{pcode}|{r['at']}" not in _party["posted"]])
+            except Exception:
+                pending = 0
+            sent = len([k for k in _party["posted"] if k.startswith(pcode + "|")])
+            last_msg = iso_dt(_party["lastMsgAt"])
+            last_txt = f"last message {last_msg.strftime('%H:%M')}" if last_msg else "nothing received yet"
+            if not reachable and err_at:
+                since_t = iso_dt(err_at)
+                add("party-sharing", "warn", "Party sharing",
+                    f"ntfy.sh hasn't answered since {since_t.strftime('%H:%M') if since_t else 'a while'}; "
+                    f"{plural(pending, 'fight waits', 'fights wait')} and {'goes' if pending == 1 else 'go'} out when it does.",
+                    "party-sharing", views=["combat"], at=since_t.replace(tzinfo=None) if since_t else None, evidence_data={"code": pcode, "pending": pending})
+            else:
+                add("party-sharing", "ok", "Party sharing", f"Topic {pcode}, {last_txt}, {plural(sent, 'fight')} sent{f', {pending} waiting' if pending else ''}.",
+                    "party-sharing", views=["combat"], evidence_data={"code": pcode, "pending": pending})
+
     # summary
     counts = Counter(i["severity"] for i in items)
     worst = next((s for s in ("bad", "warn", "info") if counts[s]), "ok")
@@ -3430,15 +3498,15 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self):
         if not self.local_only():
             return
+        # Only the page itself posts here (every POST route): JSON content type (a cross-site form or no-cors
+        # fetch cannot send it without a preflight, and no CORS headers are ever sent) and, when the browser
+        # names an origin, this server's own.
+        origin = self.headers.get("Origin")
+        ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if ctype != "application/json" or (origin and urlparse(origin).hostname not in self.LOCAL_HOSTS):
+            return self.send_json({"error": "forbidden"}, 403)
         url = urlparse(self.path)
         if url.path == "/api/capacity":
-            # Only the page itself posts here: JSON content type (a cross-site form or no-cors fetch cannot send
-            # it without a preflight, and no CORS headers are ever sent) and, when the browser names an origin,
-            # this server's own.
-            origin = self.headers.get("Origin")
-            ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
-            if ctype != "application/json" or (origin and urlparse(origin).hostname not in self.LOCAL_HOSTS):
-                return self.send_json({"error": "forbidden"}, 403)
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
                 if not isinstance(body, dict):
@@ -3450,6 +3518,17 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error": repr(e)}, 500)
             return self.send_json({"ok": True, "slots": slots})
+        if url.path == "/api/mark":
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                if not isinstance(body, dict):
+                    raise BadRequest("body must be a JSON object")
+                marks = save_mark(body.get("typeId"), body.get("mark"))
+            except (BadRequest, json.JSONDecodeError) as e:
+                return self.send_json({"error": str(e) if isinstance(e, BadRequest) else "body must be JSON"}, 400)
+            except Exception as e:
+                return self.send_json({"error": repr(e)}, 500)
+            return self.send_json({"ok": True, "marks": marks})
         if url.path == "/api/party":
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
