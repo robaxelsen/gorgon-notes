@@ -177,6 +177,7 @@ const S = {
   zone: null, zoneAt: null, zoneArea: null, // /api/zone for the current (or picked next-door) area
   storage: null, storageAt: null,
   merge: null, mergeAt: null, mergeOld: false, // /api/consolidation (split stacks); mergeOld = the server has no such endpoint
+  plan: null, planAt: null, planOld: false,    // /api/plan (sell and store); planOld = the server has no such endpoint
   charFile: null, charPicked: false, charData: null,
   itemsFile: null, itemsPicked: false, itemsData: null,
   icons: { base: null, byName: {}, byTypeId: {}, byType: {} },
@@ -1796,17 +1797,22 @@ const vUI = {
 
 async function loadVendors() {
   const who = S.character ? `?character=${encodeURIComponent(S.character)}` : '';
-  const [v, st, m] = await Promise.all([
+  const [v, st, m, pl] = await Promise.all([
     api('/api/vendors' + who).then(x => { S.errors.vendors = null; return x; }, e => { if (isNetworkError(e)) throw e; S.errors.vendors = e; return S.vendors; }),
     api('/api/storage' + who).then(x => { S.errors.storage = null; return x; }, e => { if (isNetworkError(e)) throw e; S.errors.storage = e; return S.storage; }),
     // Split stacks: a 404 means an older server.py without the endpoint, not an error.
     api('/api/consolidation' + who).then(x => { S.errors.merge = null; S.mergeOld = false; return x; }, e => { if (isNetworkError(e)) throw e; if (e.status === 404) { S.mergeOld = true; return null; } S.errors.merge = e; return S.merge; }),
+    api('/api/plan' + who).then(x => { S.errors.plan = null; S.planOld = false; return x; }, e => { if (isNetworkError(e)) throw e; if (e.status === 404) { S.planOld = true; return null; } S.errors.plan = e; return S.plan; }),
   ]);
   if (v && !S.errors.vendors) { S.vendors = v; S.vendorsAt = NOW(); S.lastGood.vendors = NOW(); }
   if (st && !S.errors.storage) { S.storage = st; S.storageAt = NOW(); S.lastGood.storage = NOW(); }
   if (m && !S.errors.merge) {
     S.merge = m; S.mergeAt = NOW(); S.lastGood.merge = NOW();
     if (Array.isArray(m.items)) needIcons({ typeIds: m.items.map(i => String(i.typeId)) }); // merge rows carry item art
+  }
+  if (pl && !S.errors.plan) {
+    S.plan = pl; S.planAt = NOW(); S.lastGood.plan = NOW();
+    if (Array.isArray(pl.items)) needIcons({ typeIds: pl.items.map(i => String(i.typeId)) });
   }
 }
 
@@ -2157,6 +2163,7 @@ const sUI = {
   msgs: {}, // vault -> {kind, text}
   iq: '', iloc: '', isort: (store.json('pgdash.sort', {}).items) || { key: 'value', dir: 'desc' }, ilimit: 200, ifold: new Set(), imode: 'items',
   mmode: 'items', // Stacks to merge: 'items' (by item) or 'stops' (pickup plan); not persisted
+  pmode: 'stops', // Sell and store: 'stops' (the route) or 'items' (one row per stack); not persisted
 };
 const PROV = { favor: 'from favor', stat: 'from your stats', fixed: 'fixed size', manual: 'typed in by you' };
 
@@ -2259,6 +2266,7 @@ function renderStorage() {
   setFoot('w-t-pane', missing ? missL : `${footL} · ${sizeSrc}`, missing ? missR : footR);
 
   renderMerge();
+  renderPlan();
   renderItems();
 }
 
@@ -2350,6 +2358,91 @@ function mergeByStop(m) {
     }).join('');
     return `<section class="stop"><h3>${esc(head)} · ${plural(st.moves, 'move')}${st.area === here ? ' <span class="tag">you\'re here</span>' : ''}</h3>${groups}</section>`;
   }).join('');
+}
+
+/* ===================== Sell and store (Storage) ===================== */
+/* GET /api/plan: what to do with every stack in the inventory. Sell = vendor trash to the vendor with the most
+   councils left who buys it; store = everything else, to a vault with room that already holds the type if there is
+   one; gear is the player's call (worn gear can't be told from carried in the export) and is shown, not counted. */
+function renderPlan() {
+  const box = $('#t-plan');
+  if (!box) return;
+  const p = S.plan;
+  const missing = storageMissing() || p?.error === 'no items export';
+  const err = !missing && ((S.errors.plan && !p?.items) || !!p?.error);
+  const mult = p?.multiplier ? `×${(+p.multiplier).toFixed(2)}` : '';
+  const footL = `${srcAge('storage-export', 'Storage export')} · ${srcAge('character-export', 'Character export')}${mult ? ` · prices ${mult} from your stats, not checked in game` : ''}`;
+  const footR = srcFix('storage-export', 'After selling or storing:');
+  let tabsOn = false, count = '';
+  if (S.planOld) {
+    box.html = '<p class="needs">Needs a newer Gorgon Notes.</p>';
+    setFoot('w-t-plan', footL, 'The plan needs a newer Gorgon Notes');
+  } else if (missing) {
+    box.html = '<p class="needs">Needs a storage export.</p>';
+    setFoot('w-t-plan', `Storage export · ${shape('bad', 's13')}<span class="age bad">missing</span>`, esc(fixText('export-storage')));
+  } else if (S.loading && !p && !S.errors.plan) {
+    box.html = '<div class="loading-bar" style="width:100%;height:120px"></div>';
+    setFoot('w-t-plan', 'Loading the exports…', '');
+  } else if (err) {
+    box.html = blockError('the sell and store plan', S.lastGood.plan);
+    setFoot('w-t-plan', footL, footR);
+  } else if (!p.summary?.stacks) {
+    box.html = '<p class="empty">Your bags are empty in this export. Nothing to sell or store.</p>';
+    setFoot('w-t-plan', footL, footR);
+  } else {
+    tabsOn = true;
+    count = ` · ${plural(p.summary.stops, 'stop')}`;
+    const lead = planLead(p);
+    const stopsPanel = `<div id="t-plan-stops" role="tabpanel" aria-labelledby="tp-stops" ${sUI.pmode === 'stops' ? '' : 'hidden'}>${lead}${planByStop(p)}</div>`;
+    const itemsPanel = `<div id="t-plan-items" role="tabpanel" aria-labelledby="tp-items" ${sUI.pmode === 'items' ? '' : 'hidden'}>${lead}${planByItem(p)}</div>`;
+    box.html = stopsPanel + itemsPanel;
+    setFoot('w-t-plan', footL, footR);
+  }
+  $('#pmode-wrap').hidden = !tabsOn;
+  $$('#pmode [role=tab]').forEach(b => { b.setAttribute('aria-selected', String(b.dataset.m === sUI.pmode)); b.tabIndex = b.dataset.m === sUI.pmode ? 0 : -1; });
+  $('#t-plan-count').textContent = count;
+}
+function planLead(p) {
+  const s = p.summary, sell = s.sell, store = s.store, gear = s.gear;
+  const parts = [];
+  if (sell.stacks) parts.push(`sell <em class="n">${fmt(sell.stacks)}</em> ${sell.stacks === 1 ? 'stack' : 'stacks'} ${sell.vendors === 1 ? `to ${esc(p.stops.flatMap(st => st.sell).find(Boolean)?.name || 'one vendor')}` : `at ${plural(sell.vendors, 'vendor')}`} for about <em class="n">${fmt(sell.councils)}</em> councils`);
+  if (store.stacks) parts.push(`store <em class="n">${fmt(store.stacks)}</em> ${store.stacks === 1 ? 'stack' : 'stacks'} in ${plural(store.vaults, 'vault')}`);
+  let html = `<p>${parts.length ? `Empty your bags in <em class="n">${fmt(s.stops)}</em> ${s.stops === 1 ? 'stop' : 'stops'}: ${parts.join(', ')}.` : 'Nothing to sell or store from here.'}`;
+  if (gear.stacks) html += ` <em class="n">${fmt(gear.stacks)}</em> ${gear.stacks === 1 ? 'piece' : 'pieces'} of gear ${gear.stacks === 1 ? 'is' : 'are'} your call${gear.councils ? ` (about ${fmt(gear.councils)} at vendors)` : ''}.`;
+  if (s.stays) html += ` <em class="n">${fmt(s.stays)}</em> ${s.stays === 1 ? 'stack stays' : 'stacks stay'}: no vault has room.`;
+  html += '</p>';
+  const notes = [];
+  if (s.unsellable) notes.push(`${fmt(s.unsellable)} of the stored stacks no vendor buys`);
+  if (!p.sheet) notes.push('no character export, so vendors and the sale price are unknown');
+  if (gear.stacks) notes.push("worn gear can't be told from carried in the export");
+  if (s.inventoryFree != null) notes.push(`${fmt(s.inventoryFree)} free ${s.inventoryFree === 1 ? 'slot' : 'slots'} in your bags now`);
+  if (notes.length) html += `<p class="small dim" style="margin-top:4px">${esc(notes.join('. '))}.</p>`;
+  return html;
+}
+function planByStop(p) {
+  const here = loggedIn() ? S.health?.game?.area : null;
+  const stops = [...(p.stops || [])].sort((a, b) => (b.area === here) - (a.area === here));
+  const name = (t, cls = 't') => `<em class="${cls}">${esc(t)}</em>`;
+  return stops.map(st => {
+    const head = st.area === 'Anywhere' ? 'Anywhere (carried, or area unknown)' : st.area;
+    const sells = (st.sell || []).map(g => `<p class="from">Sell to ${name(g.name)} · ${plural(g.stacks, 'stack')} · about <em class="n">${fmt(g.councils)}</em> councils <span class="dim">(can still pay ${fmt(g.left)}, ${fmt(g.after)} after)</span></p>
+      <ul class="list feed-what">${g.items.map(i => `<li>${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span class="what">${i.qty > 1 ? `<em class="n">${fmt(i.qty)}</em> ` : ''}${esc(i.name)}</span><span class="n">${fmt(i.councils)}</span></li>`).join('')}</ul>`).join('');
+    const stores = (st.store || []).map(g => `<p class="from">Store at ${name(g.name)} · ${plural(g.stacks, 'stack')} <span class="dim">(${g.free == null ? 'size unknown' : `${fmt(g.free)} free, ${fmt(g.after)} after`})</span></p>
+      <ul class="list feed-what">${g.items.map(i => `<li>${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span class="what">${i.qty > 1 ? `<em class="n">${fmt(i.qty)}</em> ` : ''}${esc(i.name)}</span></li>`).join('')}</ul>`).join('');
+    return `<section class="stop"><h3>${esc(head)} · ${plural(st.stacks, 'stack')}${st.councils ? ` · about ${fmt(st.councils)} councils` : ''}${st.area === here ? ' <span class="tag">you\'re here</span>' : ''}</h3>${sells}${stores}</section>`;
+  }).join('') || '<p class="empty">No stops: nothing can be sold or stored from here.</p>';
+}
+function planByItem(p) {
+  const order = { sell: 0, store: 1, gear: 2, stays: 3 };
+  const rows = [...p.items].sort((a, b) => order[a.action] - order[b.action] || b.price - a.price).map(i => {
+    let doText, about = '';
+    if (i.action === 'sell') { doText = `Sell to <em class="t">${esc(i.sellTo.name)}</em> · ${esc(i.sellTo.area)}${i.note ? ` <span class="tag">${esc(i.note)}</span>` : ''}`; about = fmt(i.sellTo.councils); }
+    else if (i.action === 'store') { doText = `Store at <em class="t">${esc(i.storeAt.name)}</em>${i.storeAt.area ? ` · ${esc(i.storeAt.area)}` : ''}${i.storeAt.holdsSome ? ' <span class="tag">has some already</span>' : ''}${i.why ? ` <span class="tag">${esc(i.why)}</span>` : ''}${i.sellTo ? ` <span class="small dim">or ${esc(i.sellTo.name)} pays about ${fmt(i.sellTo.councils)}</span>` : ''}`; }
+    else if (i.action === 'gear') { doText = `Your call${i.sellTo ? ` · ${esc(i.sellTo.name)} pays about ${fmt(i.sellTo.councils)}` : ''}${i.storeAt ? ` · or store at ${esc(i.storeAt.name)}` : ''}`; about = i.sellTo ? fmt(i.sellTo.councils) : ''; }
+    else doText = `Stays <span class="tag">${esc(i.note || 'no room')}</span>`;
+    return `<tr class="row"><td class="m1"><span class="cell-name">${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span>${esc(i.name)}</span></span></td><td class="num">${fmt(i.qty)}</td><td>${doText}</td><td class="num m2">${about}</td><td class="m-line2">${fmt(i.qty)} · ${doText}${about ? ` · about ${about}` : ''}</td></tr>`;
+  }).join('');
+  return `<table class="tbl resp-plain" style="margin-top:10px"><thead><tr><th scope="col">Item</th><th scope="col" class="num">Qty</th><th scope="col">Do</th><th scope="col" class="num">About</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function stripHtml(v) {
@@ -2670,6 +2763,11 @@ function initStorage() {
     if (tab) { sUI.mmode = tab.dataset.m; renderMerge(); tab.focus(); }
   });
   tabKeys($('#tmode'));
+  $('#w-t-plan').addEventListener('click', e => {
+    const tab = e.target.closest('#pmode [role=tab]');
+    if (tab) { sUI.pmode = tab.dataset.m; renderPlan(); tab.focus(); }
+  });
+  tabKeys($('#pmode'));
   $('#itemq').addEventListener('input', e => { sUI.iq = e.target.value; sUI.ilimit = 200; renderItems(); });
   $('#vaultf').addEventListener('change', e => { sUI.selected = null; sUI.iloc = e.target.value; sUI.ilimit = 200; renderVaultPane(vaultRows()); renderItems(); });
   $('#isortm').addEventListener('change', e => { const [k, d] = e.target.value.split(':'); sUI.isort = { key: k, dir: d }; saveSort('items', sUI.isort); renderItems(); });

@@ -733,12 +733,13 @@ tr[aria-selected="true"] .sizein { border-color: var(--sel-text); color: var(--s
 }
 
 /* Storage: Stacks to merge (plain dark table; the pickup plan's stop heads are small titles) */
-#t-merge .stop { margin-top: 12px; }
-#t-merge .stop:first-child { margin-top: 0; }
-#t-merge .stop h3 { font-size: 15px; font-weight: 700; color: var(--title); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-#t-merge .stop .from { margin: 8px 0 2px; }
-#t-merge .list li { justify-content: flex-start; }
-@media (max-width: 639px) { #t-merge-count { display: none; } }
+#t-merge .stop, #t-plan .stop { margin-top: 12px; }
+#t-merge .stop:first-child, #t-plan .stop:first-child { margin-top: 0; }
+#t-merge .stop h3, #t-plan .stop h3 { font-size: 15px; font-weight: 700; color: var(--title); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#t-merge .stop .from, #t-plan .stop .from { margin: 8px 0 2px; }
+#t-merge .list li, #t-plan .list li { justify-content: flex-start; }
+#t-plan .list li .n { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (max-width: 639px) { #t-merge-count, #t-plan-count { display: none; } }
 
 /* ---------- Files view: file list pane + JSON tree (DESIGN.md → Components → JSON tree) ---------- */
 @media (min-width: 1180px) {
