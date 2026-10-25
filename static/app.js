@@ -4517,11 +4517,25 @@ function closePops() {
   ['body > a.sr', '#shell', '.rail', '#main', '#banner-down', '#toasts'].forEach(sel => $(sel)?.removeAttribute('inert'));
   if (popOpener) { popOpener.setAttribute('aria-expanded', 'false'); popOpener.focus(); popOpener = null; }
 }
+/* "Gorgon Notes v0.5.0 · newest release v0.5.0" from /api/health `app`; an older page or server says less. */
+function versionLine() {
+  const a = S.health?.app;
+  if (!a) return 'Version unknown until the server answers.';
+  const extra = a.source === 'git' ? [a.ahead ? `${plural(a.ahead, 'commit')} past it` : '', a.dirty ? 'uncommitted changes' : ''].filter(Boolean).join(', ') : '';
+  const mine = a.source === 'git' ? `${esc(a.version)} from this checkout${extra ? ` (${extra})` : ''}` : a.source === 'build' ? esc(a.version) : 'a development copy';
+  let out = `This is ${mine}.`;
+  if (a.latest) {
+    out += a.newer ? ` <strong>${esc(a.latest)} is out.</strong> The Windows program picks it up at its next start; on a Mac checkout, pull.`
+      : ` Newest release: ${esc(a.latest)}${a.source === 'build' && a.latest === a.version ? ', which is this one' : ''}.`;
+  } else out += ' The newest release could not be checked' + (a.error ? ` (${esc(a.error)})` : '') + '.';
+  return `${out} <a href="https://github.com/${esc(a.repo || 'robaxelsen/gorgon-notes')}/releases" target="_blank" rel="noopener">Releases</a>`;
+}
 function renderAbout() {
   const ver = S.health?.cdnVersion || 'unknown';
+  const appv = S.health?.app?.version;
   const plog = S.health ? (S.verdicts.find(v => v.source === 'player-log')?.severity === 'ok' ? 'Player.log: live inventory events found' : 'Player.log: no live inventory events on Mac') : 'Player.log: unknown';
-  $('#aboutpop').innerHTML = `<header class="win-bar"><h2 id="about-title">${esc(APP_NAME)}</h2><div class="tools"><button type="button" class="linkbtn" data-rem="close">Close</button></div></header>
-    <section><p>${esc(APP_NAME)} is ${esc(FAN_LINE)}. It reads the files the game already writes on this Mac.</p></section>
+  $('#aboutpop').innerHTML = `<header class="win-bar"><h2 id="about-title">${esc(APP_NAME)}${appv && S.health?.app?.source !== 'dev' ? ` <span class="count">${esc(appv)}</span>` : ''}</h2><div class="tools"><button type="button" class="linkbtn" data-rem="close">Close</button></div></header>
+    <section><p>${esc(APP_NAME)} is ${esc(FAN_LINE)}. It reads the files the game already writes on this computer.</p><p class="small dim" style="margin-top:6px">${versionLine()}</p></section>
     <section><h3>Where the data comes from</h3><ul>
       <li>VIP exports in Reports/ (Character and Storage JSON) · <a href="#files" data-rem="close">Inspect the files</a></li>
       <li>Chat logs in ChatLogs/ (Settings → GUI → Log All Chat)</li>

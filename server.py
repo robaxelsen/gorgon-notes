@@ -148,6 +148,69 @@ def cached_versions():
     return sorted((p.name[1:] for p in CACHE.glob("v*") if p.name[1:].isdigit()), key=int)
 
 
+# ---------------------------------------------------------------------------
+# App version (About popover, /api/health `app`, the Mac menu): build.txt beside server.py (written by the
+# Windows build), else the git tag of this checkout, else "dev". The newest release is read from GitHub once
+# an hour (the Windows launcher does the same at start; on the Mac this is the only outbound call besides the CDN).
+# ---------------------------------------------------------------------------
+APP_REPO = "robaxelsen/gorgon-notes"
+_app = {"version": None, "source": None, "ahead": 0, "dirty": False, "latest": None, "latestAt": 0.0, "latestErr": None}
+
+
+def app_version():
+    if _app["version"] is None:
+        v, src = "dev", "dev"
+        try:
+            txt = (HERE / "build.txt").read_text(encoding="utf-8").strip()
+            if txt:
+                v, src = txt, "build"
+        except OSError:
+            try:
+                r = subprocess.run(["git", "-C", str(HERE), "describe", "--tags", "--always", "--dirty"], capture_output=True, text=True, timeout=3)
+                if r.returncode == 0 and r.stdout.strip():
+                    v, src = r.stdout.strip(), "git"
+                    # "v0.5.0-1-gbfaff79-dirty" -> tag v0.5.0, 1 commit ahead, uncommitted changes
+                    if v.endswith("-dirty"):
+                        _app["dirty"], v = True, v[:-6]
+                    m = re.fullmatch(r"(v\d+\.\d+\.\d+)-(\d+)-g[0-9a-f]+", v)
+                    if m:
+                        v, _app["ahead"] = m.group(1), int(m.group(2))
+            except Exception:
+                pass
+        _app.update(version=v, source=src)
+    return _app["version"], _app["source"]
+
+
+def version_parts(v):
+    """'v0.5.0' -> (0, 5, 0); anything else -> None (dev builds never compare)."""
+    m = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", (v or "").strip().split("-")[0])
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+def app_latest():
+    """The newest release tag on GitHub, re-read every hour; None when unreachable."""
+    if time.time() - _app["latestAt"] > 3600:
+        try:
+            raw = fetch(f"https://github.com/{APP_REPO}/releases/latest/download/version.txt", 5).decode().strip()
+            if re.fullmatch(r"v\d+\.\d+\.\d+", raw):
+                _app.update(latest=raw, latestErr=None)
+            else:
+                _app["latestErr"] = "unexpected version.txt"
+        except Exception as e:
+            _app["latestErr"] = str(e)[:120]
+        _app["latestAt"] = time.time()
+    return _app["latest"]
+
+
+def app_info():
+    v, src = app_version()
+    latest = app_latest()
+    mine, theirs = version_parts(v), version_parts(latest)
+    return {"version": v, "source": src, "ahead": _app["ahead"], "dirty": _app["dirty"], "latest": latest, "repo": APP_REPO,
+            "newer": bool(mine and theirs and theirs > mine), "checkedAt": local_iso(datetime.fromtimestamp(_app["latestAt"])) if _app["latestAt"] else None,
+            "error": _app["latestErr"]}
+
+
 def cdn_version():
     """Current game data version: fileversion.txt (re-checked every 10 min), else newest cached."""
     if _ver["v"] is None or time.time() - _ver["at"] > 600:
@@ -1536,7 +1599,7 @@ def party_publish():
         key = f"{code}|{r['at']}"
         if key in _party["posted"]:
             continue
-        body = json.dumps(party_summary(r, me, "gorgon-notes"), separators=(",", ":")).encode("utf-8")
+        body = json.dumps(party_summary(r, me, f"gorgon-notes {app_version()[0]}"), separators=(",", ":")).encode("utf-8")
         try:
             ntfy(code, body, {"Content-Type": "application/json", "X-Title": f"{me}: fight at {r['start'][9:14]}", "X-Tags": "crossed_swords"})
         except Exception as e:
@@ -2695,6 +2758,7 @@ def health(character=None):
     return {"version": 1, "checkedAt": local_iso(now), "character": character,
             "server": last_in[2] if last_in else None, "cdnVersion": ver, "game": game, "settings": settings,
             "cdn": {"version": ver, "cached": cached, "reachable": _ver["reachable"], "changedAt": _ver["changedAt"]},
+            "app": app_info(),
             "thresholds": THRESHOLDS, "activityThresholds": ACTIVITY, "summary": {"worst": worst, "counts": dict(counts), "header": header},
             "items": items, "moments": moments, "characters": chars}
 

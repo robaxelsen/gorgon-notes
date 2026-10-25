@@ -212,6 +212,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     let summary = health?["summary"] as? [String: Any]
     let header = health == nil ? "Server not answering on port \(port)" : "Data: \(summary?["header"] as? String ?? "")"
     menu.addItem(disabled(header))
+    if let app = health?["app"] as? [String: Any], let v = app["version"] as? String {
+      let latest = app["latest"] as? String
+      let newer = app["newer"] as? Bool ?? false
+      var line = "Gorgon Notes \(v)"
+      if let l = latest { line += newer ? " · \(l) is out: pull and rebuild" : " · newest release \(l)" }
+      menu.addItem(disabled(line))
+    }
     if let e = lastError { menu.addItem(disabled(e)) }
 
     for item in actionable {
