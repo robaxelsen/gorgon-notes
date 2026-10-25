@@ -407,7 +407,7 @@ def consolidation(character=None):
         groups[it.get("TypeID")].append(it)
         name_locs[it.get("Name")].add(loc_of(it))
     skipped = {k: 0 for k in SKIP_KINDS}
-    split_types, out, vault_back = 0, [], Counter()
+    split_types, out, vault_back, spread = 0, [], Counter(), []
     room = {}  # free slots per vault as the plan runs: the export's free, plus stacks taken out, minus extras put in
 
     def rfree(loc):
@@ -425,11 +425,17 @@ def consolidation(character=None):
             skipped["unknownLocation"] += 1
             continue
         max_stack = entry.get("MaxStackSize") or 1
-        if max_stack <= 1:
-            skipped["unstackable"] += 1
-            continue
-        if any(f in i for i in its for f in PER_ITEM_FIELDS):
-            skipped["perItem"] += 1
+        if max_stack <= 1 or any(f in i for i in its for f in PER_ITEM_FIELDS):
+            skipped["unstackable" if max_stack <= 1 else "perItem"] += 1
+            # Same item in several places but no merge possible (gear and the like): listed, so the player can
+            # decide which copies to sell or gather (user backlog, 26 Oct).
+            places = Counter()
+            for i in its:
+                places[loc_of(i)] += i.get("StackSize") or 1
+            spread.append({"typeId": tid, "name": Counter(i.get("Name") for i in its).most_common(1)[0][0], "count": sum(places.values()),
+                           "value": sum((i.get("Value") or 0) * (i.get("StackSize") or 1) for i in its), "unit": its[0].get("Value") or 0,
+                           "gear": any(i.get("Slot") for i in its),
+                           "places": [{"vault": l, "name": vname(l), "area": varea(l), "qty": n} for l, n in places.most_common()]})
             continue
         total = sum(i.get("StackSize") or 1 for i in its)
         stacks_now, stacks_after = len(its), -(-total // max_stack)
@@ -522,7 +528,7 @@ def consolidation(character=None):
             "splitNames": sum(1 for s in name_locs.values() if len(s) > 1), "splitTypes": split_types,
             "skipped": skipped,
         },
-        "items": out, "vaults": vaults, "stops": stop_rows,
+        "items": out, "vaults": vaults, "stops": stop_rows, "spread": sorted(spread, key=lambda r: (-r["value"], r["name"])),
     }
 
 
@@ -1375,9 +1381,28 @@ def plan(character=None):
         "unsellable": sum(1 for r in out if r["action"] == "store" and r.get("why")),
         "stops": len(stop_rows),
     }
+    # Vendor trash sitting in vaults: where it is and what it would fetch, so a trip can pick it up (not routed).
+    trash_by_vault = {}
+    for it in items:
+        v = it.get("StorageVault")
+        if not v:
+            continue
+        e = cdn.get(f"item_{it.get('TypeID')}") or {}
+        if PLAN_TRASH not in item_keywords(e) or marks.get(str(it.get("TypeID"))) == "store":
+            continue
+        qty = it.get("StackSize") or 1
+        vt = next((x for x in st["vaults"] if x["vault"] == v), {})
+        g = trash_by_vault.setdefault(v, {"vault": v, "name": vt.get("name") or v, "area": vt.get("area") or "", "stacks": 0, "councils": 0, "items": []})
+        g["items"].append({"typeId": it.get("TypeID"), "name": it.get("Name"), "qty": qty, "councils": int(round((it.get("Value") or 0) * mult)) * qty})
+        g["stacks"] += 1
+        g["councils"] += g["items"][-1]["councils"]
+    vault_trash = sorted(trash_by_vault.values(), key=lambda g: -g["councils"])
+    for g in vault_trash:
+        g["items"].sort(key=lambda i: -i["councils"])
+    summary["vaultTrash"] = {"stacks": sum(g["stacks"] for g in vault_trash), "councils": sum(g["councils"] for g in vault_trash), "vaults": len(vault_trash)}
     summary["marked"] = sum(1 for r in out if r["mark"])
     return {"character": st["vaults"] and (head.get("character")), "source": head, "sheet": sheet_head, "cdnVersion": cdn_version(),
-            "multiplier": mult, "summary": summary, "stops": stop_rows, "items": out, "marks": marks}
+            "multiplier": mult, "summary": summary, "stops": stop_rows, "items": out, "marks": marks, "vaultTrash": vault_trash}
 
 
 # ---------------------------------------------------------------------------

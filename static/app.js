@@ -2184,6 +2184,7 @@ const sUI = {
   msgs: {}, // vault -> {kind, text}
   iq: '', iloc: '', isort: (store.json('pgdash.sort', {}).items) || { key: 'value', dir: 'desc' }, ilimit: 200, ifold: new Set(), imode: 'items',
   mmode: 'items', // Stacks to merge: 'items' (by item) or 'stops' (pickup plan); not persisted
+  spreadAll: false, trashAll: false, // the "held in several places" and "trash in your vaults" lists unfolded
   pmode: 'stops', // Sell and store: 'stops' (the route) or 'items' (one row per stack); not persisted
 };
 const PROV = { favor: 'from favor', stat: 'from your stats', fixed: 'fixed size', manual: 'typed in by you' };
@@ -2352,7 +2353,23 @@ function mergeByItem(m) {
       <td class="m-line2">${esc(take)} · to ${esc(i.to.name)}${i.to.area ? ` (${esc(i.to.area)})` : ''}${chips}</td></tr>`;
   }).join('');
   html += `<table class="tbl resp-plain" style="margin-top:10px"><thead><tr><th scope="col">Item</th><th scope="col">Take</th><th scope="col">Put in</th><th scope="col" class="num">Slots back</th></tr></thead><tbody>${rows}</tbody></table>`;
+  html += spreadHtml(m);
   return html;
+}
+/* Held in several places but no merge possible (gear and per-item things): where each copy is and what the lot
+   is worth at a vendor, so the player can decide which copies to sell or gather (backlog item 3, 26 Oct). */
+function spreadHtml(m) {
+  const sp = Array.isArray(m.spread) ? m.spread : [];
+  if (!sp.length) return '';
+  const gear = sp.filter(r => r.gear).length, worth = sp.reduce((a, r) => a + (r.value || 0), 0);
+  const shown = sUI.spreadAll ? sp : sp.slice(0, 8);
+  const rows = shown.map(r => `<tr class="row"><td class="m1"><span class="cell-name">${iconImg(S.icons.byTypeId[String(r.typeId)], 24)}<span>${esc(r.name)}</span></span></td>
+    <td class="num">${fmt(r.count)}</td><td>${r.places.map(p => `${p.vault === 'Inventory' ? 'your inventory' : `<em class="t">${esc(p.name)}</em>`}${p.qty > 1 ? ` ×${fmt(p.qty)}` : ''}`).join(', ')}</td>
+    <td class="num m2">${fmt(r.value)}</td><td class="m-line2">${fmt(r.count)} · ${esc(r.places.map(p => `${p.name}${p.qty > 1 ? ` ×${p.qty}` : ''}`).join(', '))} · worth ${fmt(r.value)}</td></tr>`).join('');
+  const more = sp.length > 8 ? `<p style="margin-top:8px"><button type="button" class="linkbtn" data-spreadall="1" style="text-decoration:underline">${sUI.spreadAll ? 'Show the first 8' : `Show all ${fmt(sp.length)}`}</button></p>` : '';
+  return `<h3 class="small dim" style="margin:16px 0 4px">Held in several places, but ${sp.length === 1 ? "it doesn't" : "they don't"} stack</h3>
+    <p>${plural(sp.length, 'item')}${gear ? ` (${fmt(gear)} of them gear)` : ''} with copies in more than one place, worth about <em class="n">${fmt(worth)}</em> at vendors in all. Nothing to merge; pick the copies to sell or gather.</p>
+    <table class="tbl resp-plain" style="margin-top:8px"><thead><tr><th scope="col">Item</th><th scope="col" class="num">Copies</th><th scope="col">Where</th><th scope="col" class="num">Worth</th></tr></thead><tbody>${rows}</tbody></table>${more}`;
 }
 /* BY STOP: the pickup plan, one section per area to stand in, the area you're in first. */
 function mergeByStop(m) {
@@ -2434,6 +2451,7 @@ function planLead(p) {
   html += '</p>';
   const notes = [];
   if (s.marked) notes.push(`${plural(s.marked, 'type')} marked by you (Sell / Store in By item; a mark applies to every stack of the type, now and later)`);
+  if (s.vaultTrash?.stacks) notes.push(`${plural(s.vaultTrash.stacks, 'stack')} of vendor trash sit in your vaults, about ${fmt(s.vaultTrash.councils)} councils (listed under the stops)`);
   if (s.unsellable) notes.push(`${fmt(s.unsellable)} of the stored stacks no vendor buys`);
   if (!p.sheet) notes.push('no character export, so vendors and the sale price are unknown');
   if (gear.stacks) notes.push("worn gear can't be told from carried in the export");
@@ -2445,7 +2463,7 @@ function planByStop(p) {
   const here = loggedIn() ? S.health?.game?.area : null;
   const stops = [...(p.stops || [])].sort((a, b) => (b.area === here) - (a.area === here));
   const name = (t, cls = 't') => `<em class="${cls}">${esc(t)}</em>`;
-  return stops.map(st => {
+  const html = stops.map(st => {
     const head = st.area === 'Anywhere' ? 'Anywhere (carried, or area unknown)' : st.area;
     const sells = (st.sell || []).map(g => `<p class="from">Sell to ${name(g.name)} · ${plural(g.stacks, 'stack')} · about <em class="n">${fmt(g.councils)}</em> councils <span class="dim">(can still pay ${fmt(g.left)}, ${fmt(g.after)} after)</span></p>
       <ul class="list feed-what">${g.items.map(i => `<li>${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span class="what">${i.qty > 1 ? `<em class="n">${fmt(i.qty)}</em> ` : ''}${esc(i.name)}</span><span class="n">${fmt(i.councils)}</span></li>`).join('')}</ul>`).join('');
@@ -2453,6 +2471,19 @@ function planByStop(p) {
       <ul class="list feed-what">${g.items.map(i => `<li>${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span class="what">${i.qty > 1 ? `<em class="n">${fmt(i.qty)}</em> ` : ''}${esc(i.name)}</span></li>`).join('')}</ul>`).join('');
     return `<section class="stop"><h3>${esc(head)} · ${plural(st.stacks, 'stack')}${st.councils ? ` · about ${fmt(st.councils)} councils` : ''}${st.area === here ? ' <span class="tag">you\'re here</span>' : ''}</h3>${sells}${stores}</section>`;
   }).join('') || '<p class="empty">No stops: nothing can be sold or stored from here.</p>';
+  return html + vaultTrashHtml(p);
+}
+/* Vendor trash sitting in vaults: where it is and what it would fetch, so a trip can pick it up on the way.
+   Not routed (picking up and selling is two stops); a Store mark on the type keeps it out of here. */
+function vaultTrashHtml(p) {
+  const vt = Array.isArray(p.vaultTrash) ? p.vaultTrash : [], sum = p.summary?.vaultTrash;
+  if (!vt.length || !sum) return '';
+  const shown = sUI.trashAll ? vt : vt.slice(0, 4);
+  const groups = shown.map(g => `<p class="from">${esc(g.name)}${g.area ? ` · ${esc(g.area)}` : ''} · ${plural(g.stacks, 'stack')} · about <em class="n">${fmt(g.councils)}</em> councils</p>
+    <ul class="list feed-what">${g.items.slice(0, 6).map(i => `<li>${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span class="what">${i.qty > 1 ? `<em class="n">${fmt(i.qty)}</em> ` : ''}${esc(i.name)}</span><span class="n">${fmt(i.councils)}</span></li>`).join('')}${g.items.length > 6 ? `<li><span class="what dim">and ${plural(g.items.length - 6, 'more stack')}</span></li>` : ''}</ul>`).join('');
+  const more = vt.length > 4 ? `<p style="margin-top:8px"><button type="button" class="linkbtn" data-trashall="1" style="text-decoration:underline">${sUI.trashAll ? 'Show the first 4 vaults' : `Show all ${fmt(vt.length)} vaults`}</button></p>` : '';
+  return `<section class="stop"><h3>Trash in your vaults · ${plural(sum.stacks, 'stack')} · about ${fmt(sum.councils)} councils</h3>
+    <p class="small dim" style="margin:0 0 4px">Vendor trash sitting in ${plural(sum.vaults, 'vault')}. Not in the route: it has to be picked up first. Mark a type Store in By item to keep it.</p>${groups}${more}</section>`;
 }
 /* The keep list control: Sell / Store per item type. Only sellable types get it (nothing can be sold otherwise);
    the current state is the row's action, a mark shows as the checked option. */
@@ -2796,14 +2827,16 @@ function initStorage() {
   tabKeys($('#imode'));
   $('#w-t-merge').addEventListener('click', e => {
     const tab = e.target.closest('#tmode [role=tab]');
-    if (tab) { sUI.mmode = tab.dataset.m; renderMerge(); tab.focus(); }
+    if (tab) { sUI.mmode = tab.dataset.m; renderMerge(); tab.focus(); return; }
+    if (e.target.closest('[data-spreadall]')) { sUI.spreadAll = !sUI.spreadAll; renderMerge(); $('#t-merge [data-spreadall]')?.focus(); }
   });
   tabKeys($('#tmode'));
   $('#w-t-plan').addEventListener('click', e => {
     const tab = e.target.closest('#pmode [role=tab]');
     if (tab) { sUI.pmode = tab.dataset.m; renderPlan(); tab.focus(); return; }
     const m = e.target.closest('[data-mark]');
-    if (m && m.getAttribute('aria-checked') !== 'true') setMark(m.dataset.tid, m.dataset.mark);
+    if (m && m.getAttribute('aria-checked') !== 'true') { setMark(m.dataset.tid, m.dataset.mark); return; }
+    if (e.target.closest('[data-trashall]')) { sUI.trashAll = !sUI.trashAll; renderPlan(); $('#t-plan [data-trashall]')?.focus(); }
   });
   $('#w-t-plan').addEventListener('keydown', e => {
     const m = e.target.closest('.seg.mark [role=radio]');
