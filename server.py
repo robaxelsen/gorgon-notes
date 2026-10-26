@@ -2257,7 +2257,7 @@ def discord_card(row=None, me=None, pf=None):
         kills = row["kills"] + row["petKills"]
         facts = [("Damage", f"{nfmt(row['dmg'])} ({nfmt(row['dps'])}/s)"),
                  ("Kills", nfmt(kills) + (f" ({nfmt(row['petKills'])} by pets)" if row["petKills"] else "")),
-                 ("Taken", nfmt(row["taken"])), ("Deaths", nfmt(row["deaths"]))]
+                 ("Taken · deaths", f"{nfmt(row['taken'])} · {nfmt(row['deaths'])}")]
         if row.get("top"):
             facts.append(("Fought", f"{row['top']}{f' +{nfmt(row['targetCount'] - 1)}' if row['targetCount'] > 1 else ''}"))
         top = " · ".join(f"{'' if a['who'] == 'you' else a['who'] + ' '}{pretty_name(a['name'])} {nfmt(a['dmg'])}" for a in row["abilities"][:3])
@@ -2272,23 +2272,26 @@ def discord_card(row=None, me=None, pf=None):
 
 
 def discord_table_text(card, party):
-    """The card's rows as an aligned monospace table (Discord has no markdown tables; a code block keeps columns)."""
-    cells = [list(card["columns"])]
+    """The card's rows as an aligned monospace table for a post without the picture (Discord has no markdown tables;
+    a code block keeps columns, but an embed wraps it at about 45 characters, so four columns only)."""
+    cells = [["Player", "Damage", "/s", "Share"]]
     for r in card["rows"]:
-        name = r["who"] if not r["owner"] else (f"{r['who']} ({r['owner']}'s pet)" if party else f"{r['who']} (pet)")
-        cells.append([name[:26], nfmt(r["health"]) if r["health"] is not None else "–", nfmt(r["armor"]) if r["armor"] is not None else "–",
-                      nfmt(r["dmg"]), nfmt(r["dps"]), f"{round(r['share'] * 100)}%", nfmt(r["kills"])])
+        name = r["who"] if not r["owner"] else f"{r['who']} (pet)"
+        cells.append([name[:18], nfmt(r["dmg"]), nfmt(r["dps"]), f"{round(r['share'] * 100)}%"])
     widths = [max(len(c[i]) for c in cells) for i in range(len(cells[0]))]
     lines = ["  ".join(c[i].ljust(widths[i]) if i == 0 else c[i].rjust(widths[i]) for i in range(len(c))).rstrip() for c in cells]
     return "```\n" + "\n".join(lines) + "\n```"
 
 
 def discord_embed(card, party, with_image):
-    e = {"title": card["title"][:256], "description": discord_table_text(card, party)[:4096], "color": DISCORD_COLOR,
+    """With the picture: title, facts, picture, note (the picture is the table). Without: the narrow text table too."""
+    e = {"title": card["title"][:256], "color": DISCORD_COLOR,
          "fields": [{"name": k, "value": v[:1024], "inline": k not in ("Top", "Fought")} for k, v in card["facts"]],
          "footer": {"text": card["note"][:2048]}}
     if with_image:
         e["image"] = {"url": "attachment://fight.png"}
+    else:
+        e["description"] = discord_table_text(card, party)[:4096]
     return e
 
 
@@ -2383,7 +2386,7 @@ def discord_fight(fight_id=None, party_id=None, image=None, preview=False):
     img = discord_image_bytes(image)
     embed = discord_embed(card, party, bool(img))
     msg_id = discord_post({"embeds": [embed]}, img)
-    return {"ok": True, "at": _discord["lastPostAt"], "messageId": msg_id, "withImage": bool(img), "chars": len(embed["description"]), "discord": discord_info()}
+    return {"ok": True, "at": _discord["lastPostAt"], "messageId": msg_id, "withImage": bool(img), "chars": len(embed.get("description", "")), "discord": discord_info()}
 
 
 def gaming_receipt(gaming, t, amount, run=False):
