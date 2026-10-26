@@ -178,7 +178,7 @@ const S = {
   zone: null, zoneAt: null, zoneArea: null, // /api/zone for the current (or picked next-door) area
   storage: null, storageAt: null,
   merge: null, mergeAt: null, mergeOld: false, // /api/consolidation (split stacks); mergeOld = the server has no such endpoint
-  plan: null, planAt: null, planOld: false,    // /api/plan (sell and store); planOld = the server has no such endpoint
+  plan: null, planAt: null, planOld: false,    // /api/plan (the Sell window in Vendors); planOld = the server has no such endpoint
   charFile: null, charPicked: false, charData: null,
   itemsFile: null, itemsPicked: false, itemsData: null,
   icons: { base: null, byName: {}, byTypeId: {}, byType: {} },
@@ -2074,6 +2074,8 @@ const vUI = {
   mode: 'area', q: '', area: '', hide: false, type: '', selected: null,
   qTypes: null,      // the search box's item lookup: { query, items, examples, types: [{ type, items }] } for vUI.q
   moreTypes: false,  // What they buy: the types past the first twelve are shown
+  pmode: 'stops',    // Sell: 'stops' (the route) or 'items' (one row per stack); not persisted
+  trashAll: false, unsoldAll: false, // Sell: the "trash in your vaults" and "no vendor buys" lists unfolded
   sort: (store.json('pgdash.sort', {}).vendors) || { key: 'remaining', dir: 'desc' },
   open: (store.json('pgdash.open', {}).vendors) || null,
 };
@@ -2251,6 +2253,8 @@ function renderVendors() {
   if (oldServerVendors()) fr += ' · Resets since the export need a newer server.py';
   setFoot('w-v-pane', missing ? `Character export · ${shape('bad', 's13')}<span class="age bad">missing</span>` : `${footL} · caps from game data v${esc(ver)}`, missing ? esc(fixText('export-character')) : fr);
   if (missing) { setFoot('w-v-where', `Character export · ${shape('bad', 's13')}<span class="age bad">missing</span>`, esc(fixText('export-character'))); setFoot('w-v-buy', `Character export · ${shape('bad', 's13')}<span class="age bad">missing</span>`, esc(fixText('export-character'))); }
+
+  renderSell();
 }
 
 /* The item lookup that belongs to the current search text, else null (a stale answer never filters). */
@@ -2378,6 +2382,24 @@ function renderVendorPane(rows) {
 
 function initVendors() {
   vUI.mode = 'area';
+  // Sell window: tab strip, the keep list's Sell / Keep control, the folded lists
+  $('#w-v-sell').addEventListener('click', e => {
+    const tab = e.target.closest('#vsmode [role=tab]');
+    if (tab) { vUI.pmode = tab.dataset.m; renderSell(); tab.focus(); return; }
+    const m = e.target.closest('[data-mark]');
+    if (m && m.getAttribute('aria-checked') !== 'true') { setMark(m.dataset.tid, m.dataset.mark); return; }
+    if (e.target.closest('[data-trashall]')) { vUI.trashAll = !vUI.trashAll; renderSell(); $('#v-sell [data-trashall]')?.focus(); return; }
+    if (e.target.closest('[data-unsold]')) { vUI.unsoldAll = !vUI.unsoldAll; renderSell(); $('#v-sell [data-unsold]')?.focus(); }
+  });
+  $('#w-v-sell').addEventListener('keydown', e => {
+    const m = e.target.closest('.seg.mark [role=radio]');
+    if (!m || !['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+    e.preventDefault();
+    const other = m.dataset.mark === 'sell' ? 'store' : 'sell';
+    m.parentElement.querySelector(`[data-mark="${other}"]`)?.focus();
+    setMark(m.dataset.tid, other);
+  });
+  tabKeys($('#vsmode'));
   let lookupTimer = null;
   $('#vq').addEventListener('input', e => {
     vUI.q = e.target.value; renderVendors();
@@ -2446,8 +2468,7 @@ const sUI = {
   msgs: {}, // vault -> {kind, text}
   iq: '', iloc: '', isort: (store.json('pgdash.sort', {}).items) || { key: 'value', dir: 'desc' }, ilimit: 200, ifold: new Set(), imode: 'items',
   mmode: 'items', // Stacks to merge: 'items' (by item) or 'stops' (pickup plan); not persisted
-  spreadAll: false, trashAll: false, // the "held in several places" and "trash in your vaults" lists unfolded
-  pmode: 'stops', // Sell and store: 'stops' (the route) or 'items' (one row per stack); not persisted
+  spreadAll: false, // the "held in several places" list unfolded
 };
 const PROV = { favor: 'from favor', stat: 'from your stats', fixed: 'fixed size', manual: 'typed in by you' };
 
@@ -2550,7 +2571,6 @@ function renderStorage() {
   setFoot('w-t-pane', missing ? missL : `${footL} · ${sizeSrc}`, missing ? missR : footR);
 
   renderMerge();
-  renderPlan();
   renderItems();
 }
 
@@ -2660,68 +2680,72 @@ function mergeByStop(m) {
   }).join('');
 }
 
-/* ===================== Sell and store (Storage) ===================== */
-/* GET /api/plan: what to do with every stack in the inventory. Sell = vendor trash to the vendor with the most
-   councils left who buys it; store = everything else, to a vault with room that already holds the type if there is
-   one; gear is the player's call (worn gear can't be told from carried in the export) and is shown, not counted. */
-function renderPlan() {
-  const box = $('#t-plan');
+/* ===================== Sell (Vendors) ===================== */
+/* GET /api/plan: what the bags hold that a vendor would pay for. Sell = vendor trash (or a type marked Sell) to the
+   vendor with the most councils left who buys it; gear is the player's call (worn gear can't be told from carried in
+   the export) and is shown, not counted; everything else is kept (Keep: it stays in the bags, where it goes is up to
+   you; the app no longer suggests a vault, since it never knew what a vault accepts). */
+function renderSell() {
+  const box = $('#v-sell');
   if (!box) return;
   const p = S.plan;
   const missing = storageMissing() || p?.error === 'no items export';
+  const noSheet = !missing && vendorsMissing();
   const err = !missing && ((S.errors.plan && !p?.items) || !!p?.error);
   const mult = p?.multiplier ? `×${(+p.multiplier).toFixed(2)}` : '';
-  const footL = `${srcAge('storage-export', 'Storage export')} · ${srcAge('character-export', 'Character export')}${mult ? ` · prices ${mult} from your stats, not checked in game` : ''}`;
-  const footR = srcFix('storage-export', 'After selling or storing:');
+  const footL = `${srcAge('storage-export', 'Storage export')} · ${srcAge('character-export', 'Character export')}${mult && !noSheet ? ` · prices ${mult} from your stats, not checked in game` : ''}`;
+  const footR = srcFix('storage-export', 'After selling:');
   let tabsOn = false, count = '';
   if (S.planOld) {
     box.html = '<p class="needs">Needs a newer Gorgon Notes.</p>';
-    setFoot('w-t-plan', footL, 'The plan needs a newer Gorgon Notes');
+    setFoot('w-v-sell', footL, 'The sell plan needs a newer Gorgon Notes');
   } else if (missing) {
     box.html = '<p class="needs">Needs a storage export.</p>';
-    setFoot('w-t-plan', `Storage export · ${shape('bad', 's13')}<span class="age bad">missing</span>`, esc(fixText('export-storage')));
+    setFoot('w-v-sell', `Storage export · ${shape('bad', 's13')}<span class="age bad">missing</span>`, esc(fixText('export-storage')));
   } else if (S.loading && !p && !S.errors.plan) {
     box.html = '<div class="loading-bar" style="width:100%;height:120px"></div>';
-    setFoot('w-t-plan', 'Loading the exports…', '');
+    setFoot('w-v-sell', 'Loading the exports…', '');
   } else if (err) {
-    box.html = blockError('the sell and store plan', S.lastGood.plan);
-    setFoot('w-t-plan', footL, footR);
+    box.html = blockError('the sell plan', S.lastGood.plan);
+    setFoot('w-v-sell', footL, footR);
+  } else if (noSheet) {
+    box.html = `<p class="needs">Nothing to sell yet: no character export, so vendors and the sale price are unknown.</p>${vaultTrashHtml(p)}`;
+    setFoot('w-v-sell', footL, esc(fixText('export-character')));
   } else if (!p.summary?.stacks) {
-    box.html = '<p class="empty">Your bags are empty in this export. Nothing to sell or store.</p>';
-    setFoot('w-t-plan', footL, footR);
+    box.html = '<p class="empty">Your bags are empty in this export. Nothing to sell.</p>';
+    setFoot('w-v-sell', footL, footR);
   } else {
     tabsOn = true;
-    count = ` · ${plural(p.summary.stops, 'stop')}`;
-    const lead = planLead(p);
-    const stopsPanel = `<div id="t-plan-stops" role="tabpanel" aria-labelledby="tp-stops" ${sUI.pmode === 'stops' ? '' : 'hidden'}>${lead}${planByStop(p)}</div>`;
-    const itemsPanel = `<div id="t-plan-items" role="tabpanel" aria-labelledby="tp-items" ${sUI.pmode === 'items' ? '' : 'hidden'}>${lead}${planByItem(p)}</div>`;
+    count = p.summary.stops ? ` · ${plural(p.summary.stops, 'stop')}` : '';
+    const lead = sellLead(p);
+    const stopsPanel = `<div id="v-sell-stops" role="tabpanel" aria-labelledby="vs-stops" ${vUI.pmode === 'stops' ? '' : 'hidden'}>${lead}${sellByStop(p)}</div>`;
+    const itemsPanel = `<div id="v-sell-items" role="tabpanel" aria-labelledby="vs-items" ${vUI.pmode === 'items' ? '' : 'hidden'}>${lead}${sellByItem(p)}</div>`;
     box.html = stopsPanel + itemsPanel;
-    setFoot('w-t-plan', footL, footR);
+    setFoot('w-v-sell', footL, footR);
   }
-  $('#pmode-wrap').hidden = !tabsOn;
-  $$('#pmode [role=tab]').forEach(b => { b.setAttribute('aria-selected', String(b.dataset.m === sUI.pmode)); b.tabIndex = b.dataset.m === sUI.pmode ? 0 : -1; });
-  $('#t-plan-count').textContent = count;
+  $('#vsmode-wrap').hidden = !tabsOn;
+  $$('#vsmode [role=tab]').forEach(b => { b.setAttribute('aria-selected', String(b.dataset.m === vUI.pmode)); b.tabIndex = b.dataset.m === vUI.pmode ? 0 : -1; });
+  $('#v-sell-count').textContent = count;
 }
-function planLead(p) {
-  const s = p.summary, sell = s.sell, store = s.store, gear = s.gear;
-  const parts = [];
-  if (sell.stacks) parts.push(`sell <em class="n">${fmt(sell.stacks)}</em> ${sell.stacks === 1 ? 'stack' : 'stacks'} ${sell.vendors === 1 ? `to ${esc(p.stops.flatMap(st => st.sell).find(Boolean)?.name || 'one vendor')}` : `at ${plural(sell.vendors, 'vendor')}`} for about <em class="n">${fmt(sell.councils)}</em> councils`);
-  if (store.stacks) parts.push(`store <em class="n">${fmt(store.stacks)}</em> ${store.stacks === 1 ? 'stack' : 'stacks'} in ${plural(store.vaults, 'vault')}`);
-  let html = `<p>${parts.length ? `Empty your bags in <em class="n">${fmt(s.stops)}</em> ${s.stops === 1 ? 'stop' : 'stops'}: ${parts.join(', ')}.` : 'Nothing to sell or store from here.'}`;
+function sellLead(p) {
+  const s = p.summary, sell = s.sell, gear = s.gear, keep = s.keep || { stacks: 0 };
+  let html = '<p>';
+  if (sell.stacks) {
+    const where = sell.vendors === 1 ? `to ${esc(p.stops.flatMap(st => st.sell).find(Boolean)?.name || 'one vendor')}` : `at <em class="n">${fmt(s.stops)}</em> ${s.stops === 1 ? 'stop' : 'stops'}`;
+    html += `Sell <em class="n">${fmt(sell.stacks)}</em> ${sell.stacks === 1 ? 'stack' : 'stacks'} ${where} for about <em class="n">${fmt(sell.councils)}</em> councils.`;
+  } else html += 'Nothing in your bags to sell right now.';
   if (gear.stacks) html += ` <em class="n">${fmt(gear.stacks)}</em> ${gear.stacks === 1 ? 'piece' : 'pieces'} of gear ${gear.stacks === 1 ? 'is' : 'are'} your call${gear.councils ? ` (about ${fmt(gear.councils)} at vendors)` : ''}.`;
-  if (s.stays) html += ` <em class="n">${fmt(s.stays)}</em> ${s.stays === 1 ? 'stack stays' : 'stacks stay'}: no vault has room.`;
+  if (keep.stacks) html += ` <em class="n">${fmt(keep.stacks)}</em> ${keep.stacks === 1 ? 'stack stays' : 'stacks stay'} in your bags.`;
   html += '</p>';
   const notes = [];
-  if (s.marked) notes.push(`${plural(s.marked, 'type')} marked by you (Sell / Store in By item; a mark applies to every stack of the type, now and later)`);
+  if (s.marked) notes.push(`${plural(s.marked, 'type')} marked by you (Sell / Keep in By item; a mark applies to every stack of the type, now and later)`);
   if (s.vaultTrash?.stacks) notes.push(`${plural(s.vaultTrash.stacks, 'stack')} of vendor trash sit in your vaults, about ${fmt(s.vaultTrash.councils)} councils (listed under the stops)`);
-  if (s.unsellable) notes.push(`${fmt(s.unsellable)} of the stored stacks no vendor buys`);
-  if (!p.sheet) notes.push('no character export, so vendors and the sale price are unknown');
+  if (s.unsellable) notes.push(`${fmt(s.unsellable)} of the kept stacks no vendor buys`);
   if (gear.stacks) notes.push("worn gear can't be told from carried in the export");
-  if (s.inventoryFree != null) notes.push(`${fmt(s.inventoryFree)} free ${s.inventoryFree === 1 ? 'slot' : 'slots'} in your bags now`);
   if (notes.length) html += `<p class="small dim" style="margin-top:4px">${esc(notes.join('. '))}.</p>`;
   return html;
 }
-function planByStop(p) {
+function sellByStop(p) {
   const here = loggedIn() ? S.health?.game?.area : null;
   const stops = [...(p.stops || [])].sort((a, b) => (b.area === here) - (a.area === here));
   const name = (t, cls = 't') => `<em class="${cls}">${esc(t)}</em>`;
@@ -2729,49 +2753,52 @@ function planByStop(p) {
     const head = st.area === 'Anywhere' ? 'Anywhere (carried, or area unknown)' : st.area;
     const sells = (st.sell || []).map(g => `<p class="from">Sell to ${name(g.name)} · ${plural(g.stacks, 'stack')} · about <em class="n">${fmt(g.councils)}</em> councils <span class="dim">(can still pay ${fmt(g.left)}, ${fmt(g.after)} after)</span></p>
       <ul class="list feed-what">${g.items.map(i => `<li>${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span class="what">${i.qty > 1 ? `<em class="n">${fmt(i.qty)}</em> ` : ''}${esc(i.name)}</span><span class="n">${fmt(i.councils)}</span></li>`).join('')}</ul>`).join('');
-    const stores = (st.store || []).map(g => `<p class="from">Store at ${name(g.name)} · ${plural(g.stacks, 'stack')} <span class="dim">(${g.free == null ? 'size unknown' : `${fmt(g.free)} free, ${fmt(g.after)} after`})</span></p>
-      <ul class="list feed-what">${g.items.map(i => `<li>${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span class="what">${i.qty > 1 ? `<em class="n">${fmt(i.qty)}</em> ` : ''}${esc(i.name)}</span></li>`).join('')}</ul>`).join('');
-    return `<section class="stop"><h3>${esc(head)} · ${plural(st.stacks, 'stack')}${st.councils ? ` · about ${fmt(st.councils)} councils` : ''}${st.area === here ? ' <span class="tag">you\'re here</span>' : ''}</h3>${sells}${stores}</section>`;
-  }).join('') || '<p class="empty">No stops: nothing can be sold or stored from here.</p>';
+    return `<section class="stop"><h3>${esc(head)} · ${plural(st.stacks, 'stack')}${st.councils ? ` · about ${fmt(st.councils)} councils` : ''}${st.area === here ? ' <span class="tag">you\'re here</span>' : ''}</h3>${sells}</section>`;
+  }).join('') || '<p class="empty">No stops: nothing in your bags sells right now.</p>';
   return html + vaultTrashHtml(p);
 }
 /* Vendor trash sitting in vaults: where it is and what it would fetch, so a trip can pick it up on the way.
-   Not routed (picking up and selling is two stops); a Store mark on the type keeps it out of here. */
+   Not routed (picking up and selling is two stops); a Keep mark on the type keeps it out of here. */
 function vaultTrashHtml(p) {
-  const vt = Array.isArray(p.vaultTrash) ? p.vaultTrash : [], sum = p.summary?.vaultTrash;
+  const vt = Array.isArray(p?.vaultTrash) ? p.vaultTrash : [], sum = p?.summary?.vaultTrash;
   if (!vt.length || !sum) return '';
-  const shown = sUI.trashAll ? vt : vt.slice(0, 4);
+  const shown = vUI.trashAll ? vt : vt.slice(0, 4);
   const groups = shown.map(g => `<p class="from">${esc(g.name)}${g.area ? ` · ${esc(g.area)}` : ''} · ${plural(g.stacks, 'stack')} · about <em class="n">${fmt(g.councils)}</em> councils</p>
     <ul class="list feed-what">${g.items.slice(0, 6).map(i => `<li>${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span class="what">${i.qty > 1 ? `<em class="n">${fmt(i.qty)}</em> ` : ''}${esc(i.name)}</span><span class="n">${fmt(i.councils)}</span></li>`).join('')}${g.items.length > 6 ? `<li><span class="what dim">and ${plural(g.items.length - 6, 'more stack')}</span></li>` : ''}</ul>`).join('');
-  const more = vt.length > 4 ? `<p style="margin-top:8px"><button type="button" class="linkbtn" data-trashall="1" style="text-decoration:underline">${sUI.trashAll ? 'Show the first 4 vaults' : `Show all ${fmt(vt.length)} vaults`}</button></p>` : '';
+  const more = vt.length > 4 ? `<p style="margin-top:8px"><button type="button" class="linkbtn" data-trashall="1" style="text-decoration:underline">${vUI.trashAll ? 'Show the first 4 vaults' : `Show all ${fmt(vt.length)} vaults`}</button></p>` : '';
   return `<section class="stop"><h3>Trash in your vaults · ${plural(sum.stacks, 'stack')} · about ${fmt(sum.councils)} councils</h3>
-    <p class="small dim" style="margin:0 0 4px">Vendor trash sitting in ${plural(sum.vaults, 'vault')}. Not in the route: it has to be picked up first. Mark a type Store in By item to keep it.</p>${groups}${more}</section>`;
+    <p class="small dim" style="margin:0 0 4px">Vendor trash sitting in ${plural(sum.vaults, 'vault')}. Not in the route: it has to be picked up first. Mark a type Keep in By item to keep it.</p>${groups}${more}</section>`;
 }
-/* The keep list control: Sell / Store per item type. Only sellable types get it (nothing can be sold otherwise);
-   the current state is the row's action, a mark shows as the checked option. */
+/* The keep list control: Sell / Keep per item type. Only sellable types get it (nothing can be sold otherwise);
+   the current state is the row's action, a mark shows as the checked option. Keep is sent as "store" (the mark's
+   name in marks.json since 26 Oct morning; the UI never says Store). */
 function markSeg(i) {
   if (!i.sellable) return '';
   const cur = i.mark || (i.kind === 'sell' ? 'sell' : 'store');
   const opt = (v, label) => `<button type="button" role="radio" aria-checked="${cur === v}" data-mark="${v}" data-tid="${esc(String(i.typeId))}" ${cur === v ? 'tabindex="0"' : 'tabindex="-1"'}>${label}</button>`;
-  return `<span class="seg mark" role="radiogroup" aria-label="${esc(i.name)}: sell or store">${opt('sell', 'Sell')}${opt('store', 'Store')}</span>`;
+  return `<span class="seg mark" role="radiogroup" aria-label="${esc(i.name)}: sell or keep">${opt('sell', 'Sell')}${opt('store', 'Keep')}</span>`;
 }
 async function setMark(typeId, mark) {
   try {
     await api('/api/mark', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ typeId: Number(typeId), mark }) });
-    await loadVendors(); computeVerdicts(); renderStorage();
+    await loadVendors(); computeVerdicts(); renderVendors();
   } catch (e) { sysLine('error', `Couldn't save the mark: ${e?.message || 'the server didn\'t answer'}.`); }
 }
-function planByItem(p) {
-  const order = { sell: 0, store: 1, gear: 2, stays: 3 };
-  const rows = [...p.items].sort((a, b) => order[a.action] - order[b.action] || b.price - a.price).map(i => {
+function sellByItem(p) {
+  const order = { sell: 0, gear: 1, keep: 2 };
+  const all = [...p.items].sort((a, b) => order[a.action] - order[b.action] || b.price - a.price);
+  const unsold = all.filter(i => i.action === 'keep' && i.why);          // nobody buys these: folded under one line
+  const listed = all.filter(i => !(i.action === 'keep' && i.why));
+  const row = i => {
     let doText, about = '';
     if (i.action === 'sell') { doText = `Sell to <em class="t">${esc(i.sellTo.name)}</em> · ${esc(i.sellTo.area)}${i.note ? ` <span class="tag">${esc(i.note)}</span>` : ''}`; about = fmt(i.sellTo.councils); }
-    else if (i.action === 'store') { doText = `Store at <em class="t">${esc(i.storeAt.name)}</em>${i.storeAt.area ? ` · ${esc(i.storeAt.area)}` : ''}${i.storeAt.holdsSome ? ' <span class="tag">has some already</span>' : ''}${i.why ? ` <span class="tag">${esc(i.why)}</span>` : ''}${i.sellTo ? ` <span class="small dim">or ${esc(i.sellTo.name)} pays about ${fmt(i.sellTo.councils)}</span>` : ''}`; }
-    else if (i.action === 'gear') { doText = `Your call${i.sellTo ? ` · ${esc(i.sellTo.name)} pays about ${fmt(i.sellTo.councils)}` : ''}${i.storeAt ? ` · or store at ${esc(i.storeAt.name)}` : ''}`; about = i.sellTo ? fmt(i.sellTo.councils) : ''; }
-    else doText = `Stays <span class="tag">${esc(i.note || 'no room')}</span>`;
+    else if (i.action === 'gear') { doText = `Your call${i.sellTo ? ` · ${esc(i.sellTo.name)} pays about ${fmt(i.sellTo.councils)}` : ''}`; about = i.sellTo ? fmt(i.sellTo.councils) : ''; }
+    else doText = `Keep${i.why ? ` <span class="tag">${esc(i.why)}</span>` : ''}${i.note ? ` <span class="tag">${esc(i.note)}</span>` : ''}${i.sellTo ? ` <span class="small dim">or ${esc(i.sellTo.name)} pays about ${fmt(i.sellTo.councils)}</span>` : ''}`;
     return `<tr class="row"><td class="m1"><span class="cell-name">${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span>${esc(i.name)}</span></span></td><td class="num">${fmt(i.qty)}</td><td>${doText}</td><td class="num m2">${about}</td><td class="markcell">${markSeg(i)}</td><td class="m-line2">${fmt(i.qty)} · ${doText}${about ? ` · about ${about}` : ''}</td></tr>`;
-  }).join('');
-  return `<table class="tbl resp-plain plan-items" style="margin-top:10px"><thead><tr><th scope="col">Item</th><th scope="col" class="num">Qty</th><th scope="col">Do</th><th scope="col" class="num">About</th><th scope="col">Your mark</th></tr></thead><tbody>${rows}</tbody></table>`;
+  };
+  const fold = unsold.length ? `<tr class="row fold"><td colspan="5" class="m1"><button type="button" class="linkbtn" data-unsold="1" aria-expanded="${vUI.unsoldAll}" aria-controls="v-sell-unsold">${plural(unsold.length, 'stack')} no vendor buys${vUI.unsoldAll ? ' · Fewer' : ' · Show them'}</button></td></tr>` : '';
+  const foldRows = unsold.length && vUI.unsoldAll ? `<tbody id="v-sell-unsold">${unsold.map(row).join('')}</tbody>` : '';
+  return `<table class="tbl resp-plain plan-items" style="margin-top:10px"><thead><tr><th scope="col">Item</th><th scope="col" class="num">Qty</th><th scope="col">Do</th><th scope="col" class="num">About</th><th scope="col">Your mark</th></tr></thead><tbody>${listed.map(row).join('')}${fold}</tbody>${foldRows}</table>`;
 }
 
 function stripHtml(v) {
@@ -3093,22 +3120,6 @@ function initStorage() {
     if (e.target.closest('[data-spreadall]')) { sUI.spreadAll = !sUI.spreadAll; renderMerge(); $('#t-merge [data-spreadall]')?.focus(); }
   });
   tabKeys($('#tmode'));
-  $('#w-t-plan').addEventListener('click', e => {
-    const tab = e.target.closest('#pmode [role=tab]');
-    if (tab) { sUI.pmode = tab.dataset.m; renderPlan(); tab.focus(); return; }
-    const m = e.target.closest('[data-mark]');
-    if (m && m.getAttribute('aria-checked') !== 'true') { setMark(m.dataset.tid, m.dataset.mark); return; }
-    if (e.target.closest('[data-trashall]')) { sUI.trashAll = !sUI.trashAll; renderPlan(); $('#t-plan [data-trashall]')?.focus(); }
-  });
-  $('#w-t-plan').addEventListener('keydown', e => {
-    const m = e.target.closest('.seg.mark [role=radio]');
-    if (!m || !['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
-    e.preventDefault();
-    const other = m.dataset.mark === 'sell' ? 'store' : 'sell';
-    m.parentElement.querySelector(`[data-mark="${other}"]`)?.focus();
-    setMark(m.dataset.tid, other);
-  });
-  tabKeys($('#pmode'));
   $('#itemq').addEventListener('input', e => { sUI.iq = e.target.value; sUI.ilimit = 200; renderItems(); });
   $('#vaultf').addEventListener('change', e => { sUI.selected = null; sUI.iloc = e.target.value; sUI.ilimit = 200; renderVaultPane(vaultRows()); renderItems(); });
   $('#isortm').addEventListener('change', e => { const [k, d] = e.target.value.split(':'); sUI.isort = { key: k, dir: d }; saveSort('items', sUI.isort); renderItems(); });

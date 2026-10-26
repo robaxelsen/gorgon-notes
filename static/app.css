@@ -747,18 +747,20 @@ tr[aria-selected="true"] .sizein { border-color: var(--sel-text); color: var(--s
   .check, .m-sizelab { display: inline-flex; align-items: center; min-height: 44px; }
 }
 
-/* Storage: Stacks to merge (plain dark table; the pickup plan's stop heads are small titles) */
-#t-merge .stop, #t-plan .stop { margin-top: 12px; }
-#t-merge .stop:first-child, #t-plan .stop:first-child { margin-top: 0; }
-#t-merge .stop h3, #t-plan .stop h3 { font-size: 15px; font-weight: 700; color: var(--title); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-#t-merge .stop .from, #t-plan .stop .from { margin: 8px 0 2px; }
-#t-merge .list li, #t-plan .list li { justify-content: flex-start; }
-#t-plan .list li .n { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* Storage: Stacks to merge and Vendors: Sell (plain dark tables; the stop heads are small titles) */
+#t-merge .stop, #v-sell .stop { margin-top: 12px; }
+#t-merge .stop:first-child, #v-sell .stop:first-child { margin-top: 0; }
+#t-merge .stop h3, #v-sell .stop h3 { font-size: 15px; font-weight: 700; color: var(--title); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#t-merge .stop .from, #v-sell .stop .from { margin: 8px 0 2px; }
+#t-merge .list li, #v-sell .list li { justify-content: flex-start; }
+#v-sell .list li .n { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .seg.mark { padding: 1px 2px; }
 .seg.mark button { height: 24px; padding: 0 10px; font-size: 12px; }
 .plan-items .markcell { white-space: nowrap; width: 1%; }
+.plan-items tr.fold td { padding-top: 8px; }
+.plan-items tr.fold .linkbtn { text-decoration: underline; }
 @media (max-width: 639px) { .tbl.resp-plain tr.row td.markcell { display: block; grid-column: 1 / -1; padding-top: 4px; } .tbl.resp-plain .seg.mark { display: inline-flex; } .seg.mark button { min-height: 36px; height: 36px; } }
-@media (max-width: 639px) { #t-merge-count, #t-plan-count { display: none; } }
+@media (max-width: 639px) { #t-merge-count, #v-sell-count { display: none; } }
 
 /* ---------- Files view: file list pane + JSON tree (DESIGN.md → Components → JSON tree) ---------- */
 @media (min-width: 1180px) {
