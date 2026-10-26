@@ -6,6 +6,8 @@ Research 2026-10-26 (user: "This Discord webhook functionality is cool, but not 
 
 **Post format (26 Oct 17:00, user: "This is not easy to digest. Ideally I want a markdown table in discord, maybe also option to post a screenshot").** Discord has no markdown tables, so a post is now an embed: facts as fields, the source note as footer, and a PNG table (one row per player and pet: health, armor, damage, per second, share, kills) drawn by the page on a canvas and attached (`attachment://fight.png`); only when the page could not draw it does the embed carry a narrow four-column code-block table instead (an embed wraps text at about 45 characters, as the user's 17:05 screenshot showed). The `json` block is gone (the room shares fights now; the paste box only shows off the room). Contract in DESIGN.md → Server contract → `POST /api/discord`.
 
+**Sessions (26 Oct 19:15).** The Party window's Post session to Discord posts a whole run (manual Start/Stop, or the automatic run in one area) as the same embed + PNG card, one row per player and pet; the Breakdown's button is "Post fight to Discord".
+
 ## What exists today (v0.6.0)
 
 Combat → Party window → a webhook field. The URL is saved in `settings.json` (`POST /api/settings`), checked with `GET /webhooks/{id}/{token}` (no auth needed), and "Post to Discord" on the Breakdown or a party fight sends `{ content, username: "Gorgon Notes", allowed_mentions: { parse: [] } }` to it with `?wait=true` (`server.py` `discord_text`, `discord_party_text`, `discord_content`). First real post 26 Oct 12:54: ok, 1,220 chars.
