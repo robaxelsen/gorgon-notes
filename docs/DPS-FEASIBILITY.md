@@ -170,3 +170,21 @@ User report: people say glogger (or a fork) no longer gets damage/DPS data since
 ## Status 2026-10-24 (evening): personal DPS meter built
 
 User decision: build personal DPS now; party DPS stays out until a per-player source exists on Mac. Built: `server.py` `DpsTracker` + `GET /api/combat` (incremental read of the live log, 15 s gap, you vs pets by the behaviour heuristic above, per-ability rows, damage taken, kills, deaths, kill mechanics, unattributed indirect), the **Combat** view (`#combat`: At a glance with the live per-second figure, Fights pane, Breakdown by ability / what hit you, Copy for Discord), the sixth rail item and the Mac menu item (⌘2). Spec in `DESIGN.md` → Views → Combat and Server contract. Not built from the design above: the per-second timeline, the Mac HUD panel, DoT attribution, the multi-log group merge. Open questions 1 to 6 stand; 5 is answered by showing health + armor as the figure with health and armor kept separately in the API.
+
+## Ground truth: an in-game autopsy against the app (26 Oct 2026, 18:08)
+
+The user opened the corpse of Timothy Elerimon (Kur Caves, killed 18:08:42, "Organs liquified by poison", killer Robchew) and sent the Detailed Analysis: Akriex 7,224 health / 2,908 armor; Robchew 1,516 / 391; Cardi Bee 7,630 / 2,991. The chat log and the app for the same kill:
+
+| Attacker | Autopsy health / armor | Log, direct hits on Timothy (health / armor) | Gap |
+|---|---|---|---|
+| Robchew | 1,516 / 391 | 391 / 391 (Grappling Web 7; Gripjaw, Terrifying Bite, Spider Bite logged "Dmg: none") | 1,125 health |
+| Cardi Bee | 7,630 / 2,991 | 5,605 / 2,991 (Bee Stab ×2 crit, Bee Inject 7) | 2,025 health |
+| Akriex | 7,224 / 2,908 | nothing (a party member's hits never appear in your log) | all |
+
+- **Armor matches to the unit** for both of ours, so direct hits are logged completely and the app's per-ability figures are right.
+- **The health gap is damage over time.** The log has 32 `Timothy Elerimon #2147529: Suffered indirect dmg` ticks on him, 4,421 health + 312 armor, with no source. The autopsy assigns 1,125 of it to Robchew and 2,025 to Cardi Bee (poison from Spider Bite and Bee Inject); the remaining 1,271 health + 312 armor must be Akriex's. The app shows the whole fight's unsourced ticks as "Indirect on targets, source not logged: 6,059 (others nearby)" under the Breakdown, which is the honest line, but it cannot put them on a name.
+- **Units differ:** the app's "damage" is health + armor in one figure (Timothy's row in the fight: 9,378 = Robchew 782 + Cardi Bee 8,596 direct); the autopsy lists health and armor apart.
+- **The fight is wider than the corpse:** the app's fight (18:08:02, 40 s) spans Insatiable Werewolf, Timothy, Crazed Alpha and Bloodthirsty Werewolf, 24,689 in all; the party room merged it with Akriex's 19,802 from their copy. There is no per-target × per-attacker table yet, so the Timothy-only comparison above was done from the log by hand.
+
+What this makes possible later (ROADMAP): a per-target split in the Breakdown (attacker × target, with the unsourced ticks per target), and DoT attribution: each copy knows which of its own DoTs it applied to a target (abilities.json carries the DoT amounts), so the room could split a target's indirect ticks between members by their applied DoTs. This autopsy is the calibration case: 3,150 of 4,421 health ticks belong to this log's owner.
+
