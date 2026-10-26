@@ -1,4 +1,4 @@
-# Roadmap & status (last updated 2026-10-26, 20:15)
+# Roadmap & status (last updated 2026-10-26, 20:30)
 
 > **CRITICAL REQUIREMENT: data awareness.** The app must always make the player aware of what they need to do to get the best data (stale/broken exports, settings, activity since export), via the best channel: in-page, browser, macOS notifications, menu bar, HUD overlay, phone. Full spec in **`docs/DATA-AWARENESS.md`**. Every feature must show its data freshness and the exact fix. The in-page and browser channels are built (`/api/health`, per-view margin, window footers, Reminders); the Mac channels are next.
 
@@ -141,6 +141,7 @@ Background: Feasibility done 2026-10-23 → `docs/DPS-FEASIBILITY.md`: personal 
 Waiting on the user: in-game checks of the settings marked "not verified yet" (auto-export, combat logging, VIP). Also to confirm in game (24 Oct review fixes, inferred from the logs only): does "You evaded death!" award Dying XP by itself (the tracker now ignores a Dying line within 10 s of it), and are the small 3 to 19 councils receipts between the casino's 0 receipts slot wins (now counted as Gaming, never as sales)?
 
 ## Session log
+- **2026-10-26 (README rewrite, 20:20 to 20:30)**: user: "Improve the README.md in repo. Summarise the features, update install instructions (outdated), add a screenshot or two". New `README.md` (what it does per view, install for Windows / Mac / anywhere, in-game setup, playing with friends, how it is built, releasing); the API table moved verbatim to `docs/API.md`; three fresh 1440-wide screenshots from the live app in `docs/screenshots/` (combat, session, storage; JPEG, no party code visible); CLAUDE.md pointer. No code change.
 - **2026-10-26 (alt switch bug, 20:05 to 20:15)**: `server.py` `DpsTracker.chars`, `char_at`, per-fight `character`, `classify` skips alts, `unclassified` likewise, `party_publish` / `party_merge` (`local_names`) / `discord_fight` use the fight's character. Harness (state3, Faechew current): 3 fights all Robchew once, session rows unique; live restarted and checked; Mac app relaunched.
 - **2026-10-26 (session fixes, 19:55 to 20:00)**: `server.py` `party_sessions` overlap rule for manual sessions; `static/app.js` `sessionLabel` length, `sessionTable` empty-session copy + Forget link, handlers keep the stopped session picked. Harness: planted sessions 18:55:30 to 18:56:30 → 2 overlapping fights counted, the 7 s one empty. Live server restarted, Mac app relaunched.
 - **2026-10-26 (v0.8.0, 19:45)**: user: "tag and release". Tag pushed, workflow 40377823945 green, assets verified, `version.txt` reads v0.8.0.

@@ -20,7 +20,7 @@ Read these before working:
 - `docs/SHARING.md`: how party members could share fight data (ntfy.sh first, Cloudflare room later); research 25 Oct
 - `docs/DISCORD.md`: Discord posting today and the "Connect a channel" plan (OAuth2 webhook.incoming via the Worker); research 26 Oct
 - `docs/DISTRIBUTION.md`: plan for sharing with friends (Mac signing/notarization, Windows exe, CI); paused
-- `README.md`: how to run, API, UI tabs
+- `README.md`: what it is, install, in-game setup, playing with friends, repo layout; `docs/API.md`: every endpoint
 - `docs/DESIGN-PROCESS.md`: how the redesign was made, final screenshots, outstanding review issues
 
 Conventions:
