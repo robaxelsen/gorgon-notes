@@ -17,6 +17,7 @@ Every number in the app says where it came from, how old it is, and the exact in
 - **Storage**: slots free per vault, where there is room, and every item you hold. Stacks to merge finds the same item held in several places.
 - **Character**: skills, currencies, stats, NPC favor and active quests with readable names, from any export, partial ones labelled.
 - **Files**: every file the app reads, with a JSON tree and search for the exports and the cached game data, and a pager and search for the chat logs.
+- **Teleports**: every Teleportation Machine code from the wiki's player-kept list, one window per zone with the zone you are in first, a search over zones, landmarks and codes, and a click to copy a code; each window says when the page was fetched and when the wiki last confirmed the numbers.
 - **Reminders**: opt-in notifications at the moments that matter: logging in, arriving where your vaults are, after selling, when an export is broken or stale, when vendors reset. Native notifications in the Mac app.
 
 ![Session view: XP at a glance and the NPCs where you are](docs/screenshots/session.jpg)
@@ -82,7 +83,7 @@ A Python standard-library server (`server.py`) plus one HTML page with vanilla J
 | `cloud/` | The party room: a Cloudflare Worker with one Durable Object per party code, and the Discord connect broker |
 | `windows/` | `build.sh`, the Go launcher, the zip's README |
 | `mac/` | The menu-bar app, its build script, the launchd plist |
-| `cache/v<N>/` | Cached game data per client version (created on first run) |
+| `cache/v<N>/`, `cache/wiki/` | Cached game data per client version, and the wiki's Teleportation Machine page (created on first use) |
 | `capacity.json`, `marks.json`, `party.json`, `settings.json` | Your own data, written beside `server.py`, never shipped: vault sizes you typed in, the keep list, the party code, the Discord connection |
 | `tools/` | `compare-logs.py` (two players' logs side by side), the autopsy probe |
 | `DESIGN.md` | Design system, per-view spec and the server contracts. Follow it for any UI work |
@@ -92,4 +93,4 @@ A Python standard-library server (`server.py`) plus one HTML page with vanilla J
 
 Releasing: commit, push, tag `v0.<n>.<m>` and push the tag; `.github/workflows/release.yml` builds the exe, the zip and `version.txt` and attaches them to a GitHub release, which the Windows copies pick up at their next start. The Mac app needs no rebuild for UI changes, since it shows the page from the server.
 
-Open a view directly with a hash: `#session`, `#combat`, `#vendors`, `#storage`, `#character`, `#files`. Preview modes for development, never saved: `?sim=stale|broken|nolog|noexport|loading|down`, `?shift=72`, `?theme=dark|daylight|auto`.
+Open a view directly with a hash: `#session`, `#combat`, `#vendors`, `#storage`, `#character`, `#files`, `#teleports`. Preview modes for development, never saved: `?sim=stale|broken|nolog|noexport|loading|down`, `?shift=72`, `?theme=dark|daylight|auto`.

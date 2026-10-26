@@ -4316,6 +4316,127 @@ def file_subtree(q):
     return body, p.name
 
 
+# ---------------------------------------------------------------------------
+# Teleportation Machine codes (GET /api/teleports). The codes are not in the game data: they are a player-kept
+# list on the wiki (docs/DATA-SOURCES.md §4), read as wikitext through the MediaWiki API, parsed with regexes and
+# cached under cache/wiki/ beside the CDN cache. Re-fetched at most once a day, or on ?refresh=1; while the wiki
+# is unreachable the cached copy answers with `error` set and its own fetchedAt (the data-awareness rule).
+# ---------------------------------------------------------------------------
+WIKI_API = "https://wiki.projectgorgon.com/api.php"
+TELEPORT_PAGE = "Teleportation_Machine"
+TELEPORT_URL = f"https://wiki.projectgorgon.com/wiki/{TELEPORT_PAGE}"
+TELEPORT_CACHE = CACHE / "wiki" / "teleport-codes.json"
+TELEPORT_MAX_AGE = 86400
+TELEPORT_LOCK = threading.Lock()
+_teleports = {"data": None}   # the parsed cache file, read once per process
+
+WIKI_LINK_RE = re.compile(r"\[\[([^\]|]*)(?:\|([^\]]*))?\]\]")
+WIKI_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
+WIKI_ITEM_RE = re.compile(r"\{\{Item\|([^}|]*)[^}]*\}\}")
+WIKI_CODE_RE = re.compile(r"\b(\d{4})\b(\s*\(([^)]*)\))?")   # "0055", or "0091 (inside)"
+WIKI_CONFIRMED_RE = re.compile(r"confirmed as of ([A-Z][a-z]+ \d{1,2}, \d{4})", re.I)
+TELEPORT_HEADING = "=== Teleportation Machine Codes ==="
+
+
+def wiki_plain(s):
+    """Wikitext to plain words: [[link|text]] -> text, [[link]] -> link; bold marks, {{Item|…}} and <!-- --> dropped;
+    one trailing period removed."""
+    s = WIKI_COMMENT_RE.sub("", s)
+    s = WIKI_LINK_RE.sub(lambda m: m.group(2) if m.group(2) is not None else m.group(1), s)
+    s = WIKI_ITEM_RE.sub(r"\1", s).replace("'''", "").replace("''", "")
+    return re.sub(r"\s+", " ", s).strip().rstrip(".").strip()
+
+
+def parse_teleport_wikitext(text):
+    """The page's "Teleportation Machine Codes" section (verified 26 Oct 2026): "; [[Zone]]" starts a zone (anything
+    after the link is the zone's note, e.g. Fae Realm), ": Landmark." a landmark, ":: 0055, 3049" its codes (four
+    digits; "0091 (inside)" keeps the words as the landmark's note). Returns (confirmedAsOf, zones)."""
+    head = text.find(TELEPORT_HEADING)
+    body = text[head + len(TELEPORT_HEADING):] if head >= 0 else text
+    confirmed = None
+    m = WIKI_CONFIRMED_RE.search(body)
+    if m:
+        try:
+            confirmed = datetime.strptime(m.group(1), "%B %d, %Y").date().isoformat()
+        except ValueError:
+            confirmed = m.group(1)
+    zones, zone, landmark = [], None, None
+    for raw in body.splitlines():
+        line = raw.strip()
+        if line.startswith("::"):
+            if landmark is None:
+                continue
+            notes = []
+            for code, _, words in WIKI_CODE_RE.findall(WIKI_COMMENT_RE.sub("", line[2:])):
+                if code not in landmark["codes"]:
+                    landmark["codes"].append(code)
+                if words.strip():
+                    notes.append(f"{code} {words.strip()}")
+            if notes:
+                landmark["note"] = "; ".join(([landmark["note"]] if landmark["note"] else []) + notes)
+        elif line.startswith(";"):
+            rest = line[1:].strip()
+            link = WIKI_LINK_RE.match(rest)
+            if not link:
+                continue  # the "Numbers are confirmed as of …" note, not a zone
+            note = wiki_plain(rest[link.end():]).lstrip("-: ").strip()
+            zone = {"zone": wiki_plain(link.group(0)), "landmarks": [], "note": note or None}
+            zones.append(zone)
+            landmark = None
+        elif line.startswith(":"):
+            if zone is None:
+                continue
+            landmark = {"name": wiki_plain(line[1:]), "codes": [], "note": None}
+            zone["landmarks"].append(landmark)
+        elif line == "}}" and zones:
+            break  # end of the Spoiler template that wraps the list
+    return confirmed, zones
+
+
+def teleports(refresh=False):
+    """GET /api/teleports: the wiki's Teleportation Machine codes, parsed and cached a day under cache/wiki/."""
+    with TELEPORT_LOCK:
+        cached = _teleports["data"]
+        if cached is None and TELEPORT_CACHE.is_file():
+            try:
+                cached = _teleports["data"] = json.loads(TELEPORT_CACHE.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                cached = None
+        age = None
+        if cached and cached.get("fetchedAt"):
+            try:
+                age = time.time() - datetime.fromisoformat(cached["fetchedAt"]).timestamp()
+            except ValueError:
+                age = None
+        error = None
+        if refresh or cached is None or age is None or age >= TELEPORT_MAX_AGE:
+            try:
+                raw = fetch(f"{WIKI_API}?action=parse&page={TELEPORT_PAGE}&prop=wikitext|revid&format=json", timeout=15)
+                page = json.loads(raw)["parse"]
+                text = page["wikitext"]["*"]
+                confirmed, zones = parse_teleport_wikitext(text)
+                if not zones:
+                    raise ValueError("no code list under the Teleportation Machine Codes heading")
+                cached = {"fetchedAt": local_iso(datetime.now()), "revid": page.get("revid"), "confirmedAsOf": confirmed,
+                          "zones": zones, "wikitext": text}
+                TELEPORT_CACHE.parent.mkdir(parents=True, exist_ok=True)
+                TELEPORT_CACHE.write_text(json.dumps(cached, ensure_ascii=False), encoding="utf-8")
+                _teleports["data"] = cached
+                age = 0
+            except Exception as e:  # unreachable, a 5xx, or a page shape the parser doesn't know: the cache answers
+                reason = getattr(e, "reason", None) or e
+                error = f"The wiki didn't answer: {reason}" if isinstance(e, (OSError, HTTPError)) else f"Couldn't read the wiki page: {e}"
+        if cached is None:
+            return {"fetchedAt": None, "revid": None, "confirmedAsOf": None, "source": TELEPORT_URL, "zones": [],
+                    "counts": {"zones": 0, "landmarks": 0, "codes": 0}, "stale": True, "error": error or "No copy of the wiki page yet."}
+        zones = cached.get("zones") or []
+        return {"fetchedAt": cached.get("fetchedAt"), "revid": cached.get("revid"), "confirmedAsOf": cached.get("confirmedAsOf"),
+                "source": TELEPORT_URL, "zones": zones,
+                "counts": {"zones": len(zones), "landmarks": sum(len(z["landmarks"]) for z in zones),
+                           "codes": sum(len(l["codes"]) for z in zones for l in z["landmarks"])},
+                "stale": age is None or age >= TELEPORT_MAX_AGE, "error": error}
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=str(STATIC), **kw)
@@ -4405,6 +4526,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(icons(q))
             if url.path == "/api/lookup":
                 return self.send_json(lookup(q))
+            if url.path == "/api/teleports":
+                return self.send_json(teleports(q.get("refresh") == "1"))
             if url.path == "/api/files":
                 return self.send_json(list_files())
             if url.path == "/api/file/node":

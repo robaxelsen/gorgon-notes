@@ -1,4 +1,4 @@
-/* Gorgon Notes app. Vanilla JS, no build step. Sections: core, health, session, vendors, storage, character, reminders, main. */
+/* Gorgon Notes app. Vanilla JS, no build step. Sections: core, health, session, vendors, storage, character, files, teleports, reminders, main. */
 'use strict';
 
 /* ===================== core ===================== */
@@ -7,8 +7,8 @@
 const APP_NAME = 'Gorgon Notes';
 const PAGE_BUILD = 'dev';   // windows/build.sh stamps the release tag in here, so the page can tell a server behind it is older
 const FAN_LINE = 'fan-made, not affiliated with Elder Game';
-const VIEWS = ['session', 'combat', 'vendors', 'storage', 'character', 'files'];
-const VIEW_TITLE = { session: 'Session', combat: 'Combat', vendors: 'Vendors', storage: 'Storage', character: 'Character', files: 'Files' };
+const VIEWS = ['session', 'combat', 'vendors', 'storage', 'character', 'files', 'teleports'];
+const VIEW_TITLE = { session: 'Session', combat: 'Combat', vendors: 'Vendors', storage: 'Storage', character: 'Character', files: 'Files', teleports: 'Teleports' };
 const FAVOR = ['Despised', 'Hated', 'Disliked', 'Tolerated', 'Neutral', 'Comfortable', 'Friends', 'CloseFriends', 'BestFriends', 'LikeFamily', 'SoulMates'];
 const FAVOR_LABEL = { CloseFriends: 'Close Friends', BestFriends: 'Best Friends', LikeFamily: 'Like Family', SoulMates: 'Soul Mates' };
 const DEFAULT_CHANS = ['Status', 'Guild', 'Nearby', 'Error', 'System'];
@@ -492,6 +492,7 @@ function renderMargin() {
     const r = S.vendors.resetSummary;
     notes.push(`<div class="note positive"><span></span><div class="nt">${plural(r.count, 'vendor')} reset since the export</div><div class="ev">${fmt(r.restored)} councils already counted.</div></div>`);
   }
+  if (view === 'teleports') notes.push(teleportNote()); // the wiki source: client-side only, never a health verdict
   if (S.healthMode === 'browser') notes.push(`<div class="note">${shape('info')}<div class="nt">Some checks skipped</div><div class="ev">${esc(NEEDS_SERVER)}</div></div>`);
   $('#mnotes').html = notes.join('');
   const worst = worstOf(listed);
@@ -4897,6 +4898,205 @@ function initReminders() {
   $('#remdot').hidden = permState() !== 'on';
 }
 
+/* ===================== teleports ===================== */
+/* Teleports view: every Teleportation Machine code, from the wiki's player-kept list (GET /api/teleports).
+   One window per zone, the zone you are in first, each code a button that copies it. The source line on every
+   footer says when the page was fetched and that the wiki last confirmed the numbers on 28 Mar 2025. */
+
+const TP_WIKI = 'https://wiki.projectgorgon.com/wiki/Teleportation_Machine';
+const TP_MAX_AGE = 86400;   // the server re-fetches after a day; older than that the copy is called stale here too
+const tpUI = { q: '', open: null, busy: false, err: null, askedAt: 0 };
+
+async function loadTeleports(refresh = false) {
+  if (tpUI.busy) return false;
+  tpUI.busy = true; tpUI.askedAt = NOW();
+  if (S.view === 'teleports') renderTeleports();
+  try {
+    const t = await api('/api/teleports' + (refresh ? '?refresh=1' : ''));
+    if (t && Array.isArray(t.zones)) { S.teleports = t; S.teleportsAt = NOW(); tpUI.err = null; markUp(); }
+    else tpUI.err = new Error(t?.error || 'bad answer');
+  } catch (e) {
+    if (e.status === 404) tpUI.err = Object.assign(new Error('old server'), { old: true });
+    else { tpUI.err = e; onFetchError(e); }
+  }
+  tpUI.busy = false;
+  if (S.view === 'teleports') renderAll();
+  return !tpUI.err;
+}
+/* Refresh link in every footer, and Check again on this view: ask the wiki now and say what came back. */
+async function refreshTeleports() {
+  const before = S.teleports?.revid;
+  await loadTeleports(true);
+  const t = S.teleports;
+  if (tpUI.err?.old) return sysLine('error', 'Teleport codes need a newer server.py.');
+  if (!t) return sysLine('error', "The wiki didn't answer and there's no saved copy yet. Try again when you're online.");
+  if (t.error) return sysLine('warn', `The wiki didn't answer. Showing the copy fetched ${dateTime(parseIso(t.fetchedAt))}. ${TP_FIX}`);
+  const c = tpCounts(t);
+  sysLine('status', `Wiki page read, revision ${fmt(t.revid)}${before && before !== t.revid ? ' (changed)' : before ? ' (unchanged)' : ''}. ${plural(c.codes, 'code')} for ${plural(c.landmarks, 'landmark')} in ${plural(c.zones, 'zone')}.`);
+}
+const TP_FIX = 'Refresh here, or check the wiki.';
+function tpCounts(t) {
+  if (t?.counts) return t.counts;
+  const zones = t?.zones || [];
+  return { zones: zones.length, landmarks: zones.reduce((a, z) => a + z.landmarks.length, 0), codes: zones.reduce((a, z) => a + z.landmarks.reduce((b, l) => b + l.codes.length, 0), 0) };
+}
+/* ISO date from the server ("2025-03-28") or the page's own words; shown as "28 Mar 2025". */
+function tpConfirmed(t) {
+  const c = t?.confirmedAsOf;
+  if (!c) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(c);
+  return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]} ${m[1]}` : c;
+}
+/* Source freshness for the footers, stamp and margin: ok (fetched today), warn (wiki unreachable or stale copy), bad (nothing). */
+function tpVerdict() {
+  const t = S.teleports;
+  if (!t) return { sev: tpUI.err ? 'bad' : 'ok', at: null, age: null };
+  const at = parseIso(t.fetchedAt), age = at ? Math.max(0, (NOW() - at) / 1000) : null;
+  const sev = !t.zones.length ? 'bad' : (t.error || t.stale || age == null || age >= TP_MAX_AGE) ? 'warn' : 'ok';
+  return { sev, at, age };
+}
+/* Footer for every window on the view. Left: source, fetched when, confirmed when; right: Refresh (and the wiki when the fetch failed). */
+function tpFootHtml() {
+  if (S.down && S.downSince) return [`${shape('bad', 's13')}<span class="txt-bad">as of ${hhmm(S.downSince)} · server not answering</span>`, ''];
+  const t = S.teleports, v = tpVerdict();
+  const fetched = v.at ? `fetched ${isToday(v.at) ? hhmm(v.at) : dateTime(v.at)}` : '';
+  const conf = tpConfirmed(t);
+  const rot = 'codes rotate after major updates';
+  const refresh = `<button type="button" class="linkbtn" data-tprefresh="1"${tpUI.busy ? ' disabled' : ''}>${tpUI.busy ? 'Refreshing…' : 'Refresh'}</button>`;
+  const wiki = `<a href="${TP_WIKI}" target="_blank" rel="noopener">check the wiki</a>`;
+  if (tpUI.err?.old) return ['Project: Gorgon wiki', 'Teleport codes need a newer server.py'];
+  if (!t) return tpUI.busy ? ['Project: Gorgon wiki · reading…', ''] : [`Project: Gorgon wiki · ${shape('bad', 's13')}<span class="age bad">not reached</span> · no saved copy`, `${refresh} · or ${wiki}`];
+  if (t.error) return [`Project: Gorgon wiki · ${shape('warn', 's13')}<span class="age warn">not reachable</span> · showing the copy ${fetched}${conf ? ` · confirmed there as of ${esc(conf)}` : ''} · ${rot}`, `${refresh} · or ${wiki}`];
+  if (v.sev === 'warn') return [`Project: Gorgon wiki · ${fetched} · ${shape('warn', 's13')}<span class="age warn">${ageWord(v.age)} old</span>${conf ? ` · confirmed there as of ${esc(conf)}` : ''} · ${rot}`, refresh];
+  return [`Project: Gorgon wiki · ${fetched}${conf ? ` · confirmed there as of ${esc(conf)}` : ''} · ${rot}`, refresh];
+}
+/* Margin entry (Where these numbers come from): the wiki, its age, and the fix. Not a health verdict: the favicon and the rail never change for it. */
+function teleportNote() {
+  const t = S.teleports, v = tpVerdict();
+  if (tpUI.err?.old) return `<div class="note">${shape('bad')}<div class="nt">Project: Gorgon wiki</div><div class="ev">Teleport codes need a newer server.py.</div></div>`;
+  if (!t && tpUI.busy) return `<div class="note">${shape('info')}<div class="nt">Project: Gorgon wiki</div><div class="ev">Reading the Teleportation Machine page…</div></div>`;
+  const conf = tpConfirmed(t);
+  const age = v.at ? ` · <span class="age ${v.sev === 'warn' ? 'warn' : ''}">${ago(v.at)}</span>` : v.sev === 'bad' ? ` · <span class="age bad">missing</span>` : '';
+  let ev, fx;
+  if (!t) { ev = "The wiki didn't answer and there's no saved copy of its Teleportation Machine page yet."; fx = 'When you\'re online: Refresh in any window here, or open the wiki page.'; }
+  else if (t.error) { ev = `The wiki didn't answer just now, so this is the copy fetched ${dateTime(v.at)}.${conf ? ` The page said its numbers were confirmed as of ${conf}.` : ''}`; fx = TP_FIX; }
+  else if (v.sev === 'warn') { ev = `The copy of the wiki page is ${ageLong(v.age)} old.${conf ? ` The page said its numbers were confirmed as of ${conf}.` : ''}`; fx = TP_FIX; }
+  else { ev = `Teleportation Machine codes are a player-kept list on the wiki, not game data.${conf ? ` The page says its numbers were confirmed as of ${conf}; most codes rotate when a zone or dungeon is added.` : ''}`; fx = 'To refresh: Refresh in any window here.'; }
+  const cls = v.sev === 'warn' ? 'txt-warn' : v.sev === 'bad' ? 'txt-bad' : '';
+  return `<div class="note" data-src="wiki-teleports">${shape(v.sev)}<div class="nt">Project: Gorgon wiki${age}</div><div class="ev">${esc(ev)}</div><div class="fx-wrap" style="grid-column:2"><div class="fx ${cls}">${esc(fx)}</div></div></div>`;
+}
+/* The zone the player stands in, as the wiki names it: "Ilmari Desert" is the wiki's "Ilmari", "Anagoge" its "Anagoge Island",
+   "Gazluk Caves" sits under "Gazluk"; a dungeon the chat log names and a landmark mentions counts too. Logged out: nothing is promoted. */
+function tpHereZone(zones) {
+  const area = loggedIn() ? (S.health?.game?.area || S.session?.currentArea) : null;
+  if (!area) return null;
+  const norm = s => String(s).toLowerCase().replace(/^the /, '').trim();
+  const a = norm(area), words = a.split(' ');
+  const exact = zones.find(z => norm(z.zone) === a);
+  if (exact) return exact.zone;
+  const prefix = zones.filter(z => { const w = norm(z.zone).split(' '); return w.every((x, i) => words[i] === x); }).sort((x, y) => y.zone.length - x.zone.length)[0];
+  if (prefix) return prefix.zone;
+  const inside = zones.find(z => { const w = norm(z.zone).split(' '); return words.every((x, i) => w[i] === x) || w.includes(a); });
+  if (inside) return inside.zone;
+  // A dungeon only counts through an "Inside <it>" / "Outside <it>" landmark: "Portal to Mysterious Locale" is in Rahu,
+  // not the Locale, and the shared short name "Caves" names no zone at all.
+  const named = zones.find(z => z.landmarks.some(l => new RegExp(`^(inside|outside) (the )?${a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(norm(l.name))));
+  return named ? named.zone : null;
+}
+function tpMatch(z, l, q) {
+  if (!q) return true;
+  return z.zone.toLowerCase().includes(q) || l.name.toLowerCase().includes(q) || (l.note || '').toLowerCase().includes(q) || l.codes.some(c => c.includes(q));
+}
+function tpSlug(name) { return 'w-tp-' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-'); }
+
+function renderTeleports() {
+  const t = S.teleports, v = tpVerdict();
+  const old = !!tpUI.err?.old;
+  const loading = !t && (tpUI.busy || (!tpUI.err && !S.down));
+  // Entering the view fetches the codes at once; a failed fetch waits for Retry or the next entry, never loops.
+  if (S.view === 'teleports' && !t && !tpUI.busy && !tpUI.err && !S.down && PREVIEW.sim !== 'loading') loadTeleports();
+  const c = tpCounts(t);
+  const conf = tpConfirmed(t);
+  if (S.view === 'teleports') {
+    $('#h1').textContent = 'Teleports';
+    $('#title-extra').hidden = true;
+    if (old) { $('#finding').textContent = 'Needs a newer server.py to read the wiki.'; setStamp('Teleport codes', 'not available', 'bad'); }
+    else if (loading) { $('#finding').html = '<span class="dim">Reading the Teleportation Machine page on the wiki…</span>'; setStamp('From the Project: Gorgon wiki', '…', 'ok'); }
+    else if (!t) { $('#finding').textContent = "Couldn't reach the wiki, and there's no saved copy of its code list yet. Refresh when you're online."; setStamp('No code list yet', 'missing', 'bad'); }
+    else {
+      let f = `<em class="n">${fmt(c.codes)}</em> codes for <em class="n">${fmt(c.landmarks)}</em> landmarks in <em class="n">${fmt(c.zones)}</em> zones, from the wiki${conf ? `, confirmed there as of ${esc(conf)}` : ''}.`;
+      if (t.error) f += ` <span class="suffix">The wiki didn't answer just now; this is the copy fetched ${dateTime(v.at)}.</span>`;
+      else if (v.sev === 'warn') f += ` <span class="suffix">This copy of the page is ${ageLong(v.age)} old.</span>`;
+      $('#finding').html = f;
+      if (S.down && S.downSince) setStamp('From the Project: Gorgon wiki', `as of ${hhmm(S.downSince)}`, 'bad');
+      else setStamp(`From the Project: Gorgon wiki, fetched ${dayMon(v.at)}, ${hhmm(v.at)}`, t.error ? 'wiki not reachable' : ago(v.at), v.sev);
+    }
+  }
+  const q = tpUI.q.trim().toLowerCase();
+  const inp = $('#tpq');
+  inp.disabled = !t || !t.zones.length;
+  if (inp.value !== tpUI.q) inp.value = tpUI.q;
+  $('#tp-count').textContent = t && t.zones.length ? `${fmt(c.codes)} codes` : '';
+  // State line in the first window: loading, error, empty.
+  const st = $('#tp-state');
+  if (old) st.html = '<p class="empty">Needs a newer server.py.</p>';
+  else if (loading) st.html = '<p><span class="loading-bar"></span></p>';
+  else if (!t) st.html = `<p class="txt-bad" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${shape('bad')}<span>Couldn't read the wiki page.${tpUI.err && !isNetworkError(tpUI.err) ? ` ${esc(tpUI.err.message)}` : ''}</span><button type="button" class="btn" data-tpretry="1">Retry</button> <a class="btn" href="${TP_WIKI}" target="_blank" rel="noopener">Open the wiki page</a></p>`;
+  else if (!t.zones.length) st.html = `<p class="empty">The wiki page has no code list the app can read. ${esc(t.error || '')}</p>`;
+  else st.html = '';
+  // Zone windows.
+  const zones = t?.zones || [];
+  const here = tpHereZone(zones);
+  const ordered = [...zones].sort((a, b) => (b.zone === here) - (a.zone === here));
+  if (!tpUI.open && zones.length) tpUI.open = new Set(here ? [here] : ordered.slice(0, 3).map(z => z.zone));
+  let shownZones = 0, shownRows = 0;
+  const html = ordered.map(z => {
+    const rows = z.landmarks.filter(l => tpMatch(z, l, q));
+    if (q && !rows.length) return '';
+    shownZones++; shownRows += rows.length;
+    const codes = rows.reduce((a, l) => a + l.codes.length, 0);
+    const open = !!q || tpUI.open.has(z.zone);
+    const id = tpSlug(z.zone);
+    const body = rows.length
+      ? rows.map(l => `<div class="tprow"><div class="tpname">${esc(l.name)}${l.note ? `<span class="sub">${esc(l.note)}</span>` : ''}</div><div class="tpcodes">${l.codes.map(cd => `<button type="button" class="tpcode" data-tpcode="${esc(cd)}" title="Copy ${esc(cd)}" aria-label="Copy ${esc(cd)}, ${esc(l.name)}">${esc(cd)}</button>`).join('')}</div></div>`).join('')
+      : `<p class="tpzone-note">${esc(z.note ? `No codes: ${z.note}` : 'No codes listed on the wiki for this zone.')}</p>`;
+    const count = rows.length ? `${plural(rows.length, 'landmark')} · ${plural(codes, 'code')}` : 'no codes';
+    const [fl, fr] = tpFootHtml();
+    return `<section class="win${open ? '' : ' folded'}" id="${id}" aria-labelledby="t-${id}">
+      <header class="win-bar"><h2 id="t-${id}"><button type="button" class="tpfold" data-tpzone="${esc(z.zone)}" aria-expanded="${open}" aria-controls="b-${id}">${TRI(open)}<span>${esc(z.zone)}</span></button> <span class="count">${count}</span>${z.zone === here ? ' <span class="tag">you\'re here</span>' : ''}</h2></header>
+      <div class="win-body" id="b-${id}">${body}</div>
+      <footer class="win-foot"><span class="fl">${fl}</span><span class="fr">${fr}</span></footer>
+    </section>`;
+  }).join('');
+  $('#tp-zones').html = html;
+  const note = $('#tpq-note');
+  if (q && t) {
+    note.hidden = false;
+    note.textContent = shownRows ? `${plural(shownRows, 'landmark')} in ${plural(shownZones, 'zone')} match "${tpUI.q.trim()}".` : `No zone, landmark or code matches "${tpUI.q.trim()}". Codes are four digits, like 0055.`;
+  } else { note.hidden = true; note.textContent = ''; }
+  const [fl, fr] = tpFootHtml();
+  setFoot('w-tp-find', fl, fr);
+}
+
+function initTeleports() {
+  $('#tpq').addEventListener('input', e => { tpUI.q = e.target.value; renderTeleports(); });
+  $('#v-teleports').addEventListener('click', async e => {
+    const code = e.target.closest('[data-tpcode]');
+    if (code) { copyText(code.dataset.tpcode, code.dataset.tpcode); return; }
+    const fold = e.target.closest('[data-tpzone]');
+    if (fold) {
+      const z = fold.dataset.tpzone;
+      if (tpUI.q.trim()) return;  // a search opens every matching zone; folding waits until it is cleared
+      tpUI.open.has(z) ? tpUI.open.delete(z) : tpUI.open.add(z);
+      renderTeleports();
+      $(`#v-teleports [data-tpzone="${CSS.escape(z)}"]`)?.focus();
+      return;
+    }
+    if (e.target.closest('[data-tprefresh]')) { e.stopPropagation(); refreshTeleports(); return; }
+    if (e.target.closest('[data-tpretry]')) { e.stopPropagation(); tpUI.err = null; loadTeleports(); return; }
+  });
+}
+
 /* ===================== main ===================== */
 /* Boot, routing, polling, Check again, shared helpers. */
 
@@ -4975,7 +5175,7 @@ async function fetchLookup() {
 }
 
 /* ---------- rendering ---------- */
-const RENDER = { session: () => renderSession(), combat: () => renderCombatView(), vendors: () => renderVendors(), storage: () => renderStorage(), character: () => renderCharacter(), files: () => renderFiles() };
+const RENDER = { session: () => renderSession(), combat: () => renderCombatView(), vendors: () => renderVendors(), storage: () => renderStorage(), character: () => renderCharacter(), files: () => renderFiles(), teleports: () => renderTeleports() };
 function renderView() {
   plaqueInView = null;
   try { RENDER[S.view](); } catch (e) { console.error(e); }
@@ -5213,6 +5413,7 @@ async function checkAgain(source) {
   if (failed && S.down) { sysLine('error', "The dashboard server isn't answering. Start it again: python3 server.py"); return; }
   const after = exportSnapshot();
   if (S.view === 'files' && !source) return filesChecked(filesBefore);
+  if (S.view === 'teleports' && !source) return refreshTeleports();
   const view = source === 'export-storage' ? 'storage' : source === 'export-character' || source === 'export-again' ? 'vendors' : source === 'chat-logging' ? 'session' : S.view;
   if (view === 'session') {
     const newLines = sessUI.feed.length - tailBefore;
@@ -5247,7 +5448,7 @@ function boot() {
   $$('[data-fan-aria]').forEach(el => el.setAttribute('aria-label', `About: ${APP_NAME} is ${FAN_LINE}`));
   $$('[data-brand-aria]').forEach(el => el.setAttribute('aria-label', `${APP_NAME}, Session`));
   $('#favicon').href = FAVICONS.ok;
-  initSession(); initCombat(); initVendors(); initStorage(); initCharacter(); initFiles(); initReminders();
+  initSession(); initCombat(); initVendors(); initStorage(); initCharacter(); initFiles(); initTeleports(); initReminders();
   $('#checkbtn').addEventListener('click', () => checkAgain());
   document.addEventListener('click', e => {
     const p = e.target.closest('[data-fix]');
@@ -5272,7 +5473,7 @@ function boot() {
   PHONE_MQ.addEventListener('change', () => { renderMargin(); if (!PHONE_MQ.matches && document.querySelector('.pop[aria-modal]')) closePops(); });
   document.addEventListener('keydown', e => {
     if (e.key === '/' && !e.target.closest('input, select, textarea')) {
-      const s = { session: '#lootq', vendors: '#vq', storage: '#sq', character: '#skillq', files: '#fileq' }[S.view];
+      const s = { session: '#lootq', vendors: '#vq', storage: '#sq', character: '#skillq', files: '#fileq', teleports: '#tpq' }[S.view];
       if (s && !$(s).disabled) { e.preventDefault(); $(s).focus(); }
     }
     if (e.key === 'Escape' && e.target.matches('input[type=search]') && e.target.value) { e.target.value = ''; e.target.dispatchEvent(new Event('input')); }
