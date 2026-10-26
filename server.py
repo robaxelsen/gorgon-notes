@@ -4,6 +4,7 @@
 Reads VIP exports (Reports/*.json) and live chat logs from the game's
 Application Support folder and serves a small JSON API + static UI.
 """
+import base64
 import bisect
 import json
 import os
@@ -2225,78 +2226,108 @@ def join_names(names):
     return names[0] if len(names) == 1 else (", ".join(names[:-1]) + " and " + names[-1] if names else "")
 
 
-def discord_text(row, me):
-    """The same lines as the page's Copy for Discord (static/app.js discordText), built here from the fight row."""
-    who = me or "You"
-    pets = Counter()
-    for a in row["abilities"]:
-        if a["who"] != "you":
-            pets[a["who"]] += a["dmg"]
-    pet_line = " · ".join(f"{p} {nfmt(d)} ({nfmt(d / row['dur'])}/s)" for p, d in pets.most_common())
-    top = " · ".join(f"{'' if a['who'] == 'you' else a['who'] + ' '}{pretty_name(a['name'])} {nfmt(a['dmg'])}" for a in row["abilities"][:5])
-    kills = row["kills"] + row["petKills"]
-    party = row.get("party") or []
-    lines = [
-        f"{who} · {day_time(chat_dt(row['start']))}{' · ' + row['area'] if row.get('area') else ''} · {secs_text(row['dur'])}{' (still going)' if row.get('open') else ''}",
-        f"Damage {nfmt(row['dmg'])} ({nfmt(row['dps'])}/s) · you {nfmt(row['me'])} ({nfmt(row['dpsMe'])}/s){' · ' + pet_line if pet_line else ''}",
-        f"Kills {nfmt(kills)}{f' ({nfmt(row['petKills'])} by pets)' if row['petKills'] else ''} · taken {nfmt(row['taken'])} · deaths {nfmt(row['deaths'])}"
-        + (f" · fought {row['top']}{f' +{nfmt(row['targetCount'] - 1)}' if row['targetCount'] > 1 else ''}" if row.get("top") else ""),
-        f"Top: {top}" if top else "",
-        f"Indirect on targets, source not logged: {nfmt(row['indirectUnattributed'])}{' (others nearby)' if row.get('shared') else ''}" if row.get("indirectUnattributed") else "",
-        f"In a party with {join_names(party)}." if party else "",
-        f"From {who}'s chat log via Gorgon Notes. Party members' hits aren't in it.",
-    ]
-    return "\n".join(x for x in lines if x)
+DISCORD_COLOR = 0xB8934F          # the app's gold (--selection), the embed's side stripe
+DISCORD_IMAGE_MAX = 2 * 1024 * 1024
+DISCORD_ROWS = 12
 
 
-def discord_party_text(pf):
-    """A merged party fight: one line per player, by damage."""
-    start = iso_dt(pf["start"])
-    head = f"Party fight · {day_time(start)}{' · ' + pf['area'] if pf.get('area') else ''} · {secs_text(pf['dur'])} · {nfmt(pf['total'])} damage · {plural(len(pf['members']), 'player')}"
-    lines = [head]
-    for m in pf["members"]:
-        parts = [f"{m['who']} {nfmt(m['dmg'])} ({nfmt(m['dps'])}/s · {round((m.get('share') or 0) * 100)}%)"]
-        pets = m.get("pets") or {}
-        if pets:
-            parts.append(f"own hits {nfmt(m['me'])} · " + " · ".join(f"{p} {nfmt(d)}" for p, d in sorted(pets.items(), key=lambda x: -x[1])))
-        if m.get("kills"):
-            parts.append(plural(m["kills"], "kill"))
-        if m.get("deaths"):
-            parts.append(plural(m["deaths"], "death"))
-        if m.get("taken"):
-            parts.append(f"took {nfmt(m['taken'])}")
-        lines.append(" · ".join(parts))
-    lines.append(f"From {plural(len(pf['members']), 'chat log')} via Gorgon Notes" + (", matched by party roster." if pf.get("byRoster") else ", matched by time."))
-    return "\n".join(lines)
+def discord_card(row=None, me=None, pf=None):
+    """What a Discord post shows, and what the client draws as a PNG: a title, one row per player and pet (health,
+    armor, damage, per second, share, kills), a few facts and a source note. Solo rows come from the fight's
+    abilities (you and each pet), party rows from every member's own `by` rows."""
+    if pf is not None:
+        dur, total = max(pf["dur"], 1), pf["total"] or 1
+        rows = []
+        for m in pf["members"]:
+            by = m.get("by") or [{"who": m["who"], "dmg": m["dmg"], "health": None, "armor": None, "kills": m.get("kills") or 0, "pet": False}]
+            for b_ in by:
+                rows.append({"who": b_["who"], "owner": m["who"] if b_.get("pet") else None, "dmg": b_["dmg"] or 0,
+                             "health": b_.get("health"), "armor": b_.get("armor"), "kills": b_.get("kills") or 0})
+        title = f"Party fight · {day_time(iso_dt(pf['start']))}{' · ' + pf['area'] if pf.get('area') else ''} · {secs_text(pf['dur'])}"
+        facts = [("Damage", f"{nfmt(pf['total'])} ({nfmt(pf['total'] / dur)}/s)"), ("Players", str(len(pf["members"]))),
+                 ("Kills", nfmt(sum(m.get("kills") or 0 for m in pf["members"])))]
+        note = f"From {plural(len(pf['members']), 'chat log')} via Gorgon Notes" + (", matched by party roster." if pf.get("byRoster") else ", matched by time.")
+    else:
+        who = me or "You"
+        summ = party_summary(row, who, "")
+        dur, total = max(row["dur"], 1), row["dmg"] or 1
+        rows = [{"who": b_["who"], "owner": who if b_["pet"] else None, "dmg": b_["dmg"], "health": b_["health"], "armor": b_["armor"], "kills": b_["kills"]}
+                for b_ in summ["by"]]
+        title = f"{who} · {day_time(chat_dt(row['start']))}{' · ' + row['area'] if row.get('area') else ''} · {secs_text(row['dur'])}{' (still going)' if row.get('open') else ''}"
+        kills = row["kills"] + row["petKills"]
+        facts = [("Damage", f"{nfmt(row['dmg'])} ({nfmt(row['dps'])}/s)"),
+                 ("Kills", nfmt(kills) + (f" ({nfmt(row['petKills'])} by pets)" if row["petKills"] else "")),
+                 ("Taken", nfmt(row["taken"])), ("Deaths", nfmt(row["deaths"]))]
+        if row.get("top"):
+            facts.append(("Fought", f"{row['top']}{f' +{nfmt(row['targetCount'] - 1)}' if row['targetCount'] > 1 else ''}"))
+        top = " · ".join(f"{'' if a['who'] == 'you' else a['who'] + ' '}{pretty_name(a['name'])} {nfmt(a['dmg'])}" for a in row["abilities"][:3])
+        if top:
+            facts.append(("Top", top))
+        note = f"From {who}'s chat log via Gorgon Notes. Party members' hits aren't in it."
+    for r in rows:
+        r["dps"] = r["dmg"] / dur
+        r["share"] = r["dmg"] / total
+    rows.sort(key=lambda r: -r["dmg"])
+    return {"title": title, "columns": ["Player", "Health", "Armor", "Damage", "/s", "Share", "Kills"], "rows": rows[:DISCORD_ROWS], "facts": facts, "note": note}
 
 
-def discord_content(text, summaries):
-    """Text plus a ```json block of the summaries (enemy ids left out: they are the bulk and decide nothing yet),
-    cut to Discord's limit: first the block loses abilities and targets, then it goes."""
-    def block(level):
-        out = []
-        for s_ in summaries:
-            d = {k: v for k, v in s_.items() if k not in ("enemies", "mine", "share", "ntfyAt", "pasted")}
-            if level >= 1:
-                d.pop("top", None); d.pop("targets", None); d.pop("pets", None)
-            out.append(d)
-        return "\n```json\n" + json.dumps(out if len(out) > 1 else out[0], separators=(",", ":")) + "\n```"
-    for level in (0, 1):
-        content = text + block(level)
-        if len(content) <= DISCORD_MAX:
-            return content, True
-    return text[:DISCORD_MAX], False
+def discord_table_text(card, party):
+    """The card's rows as an aligned monospace table (Discord has no markdown tables; a code block keeps columns)."""
+    cells = [list(card["columns"])]
+    for r in card["rows"]:
+        name = r["who"] if not r["owner"] else (f"{r['who']} ({r['owner']}'s pet)" if party else f"{r['who']} (pet)")
+        cells.append([name[:26], nfmt(r["health"]) if r["health"] is not None else "–", nfmt(r["armor"]) if r["armor"] is not None else "–",
+                      nfmt(r["dmg"]), nfmt(r["dps"]), f"{round(r['share'] * 100)}%", nfmt(r["kills"])])
+    widths = [max(len(c[i]) for c in cells) for i in range(len(cells[0]))]
+    lines = ["  ".join(c[i].ljust(widths[i]) if i == 0 else c[i].rjust(widths[i]) for i in range(len(c))).rstrip() for c in cells]
+    return "```\n" + "\n".join(lines) + "\n```"
 
 
-def discord_post(content):
+def discord_embed(card, party, with_image):
+    e = {"title": card["title"][:256], "description": discord_table_text(card, party)[:4096], "color": DISCORD_COLOR,
+         "fields": [{"name": k, "value": v[:1024], "inline": k not in ("Top", "Fought")} for k, v in card["facts"]],
+         "footer": {"text": card["note"][:2048]}}
+    if with_image:
+        e["image"] = {"url": "attachment://fight.png"}
+    return e
+
+
+def discord_image_bytes(data_url):
+    """The client's PNG card as bytes, or None when it is not a small PNG data URL."""
+    if not isinstance(data_url, str) or not data_url.startswith("data:image/png;base64,"):
+        return None
+    try:
+        raw = base64.b64decode(data_url[len("data:image/png;base64,"):], validate=True)
+    except Exception:
+        return None
+    return raw if raw[:8] == b"\x89PNG\r\n\x1a\n" and len(raw) <= DISCORD_IMAGE_MAX else None
+
+
+def multipart_body(payload, files):
+    """multipart/form-data for a webhook: payload_json plus files[n]."""
+    b = "gorgon-notes-" + secrets.token_hex(12)
+    parts = [f'--{b}\r\nContent-Disposition: form-data; name="payload_json"\r\nContent-Type: application/json\r\n\r\n'.encode("utf-8")
+             + json.dumps(payload).encode("utf-8") + b"\r\n"]
+    for i, (fname, ctype, data) in enumerate(files):
+        parts.append(f'--{b}\r\nContent-Disposition: form-data; name="files[{i}]"; filename="{fname}"\r\nContent-Type: {ctype}\r\n\r\n'.encode("utf-8") + data + b"\r\n")
+    parts.append(f"--{b}--\r\n".encode("utf-8"))
+    return b"".join(parts), f"multipart/form-data; boundary={b}"
+
+
+def discord_post(payload, image=None):
+    """Send one webhook message: JSON, or multipart with the PNG card attached. Returns Discord's message id."""
     url = discord_webhook()
     if not url:
         raise BadRequest("Discord isn't connected yet. Press Connect Discord in the Party window first.")
-    body = json.dumps({"content": content, "username": "Gorgon Notes", "allowed_mentions": {"parse": []}}).encode("utf-8")
-    req = Request(url + "?wait=true", data=body, headers={"Content-Type": "application/json", "User-Agent": "gorgon-notes/" + str(PARTY_VERSION)}, method="POST")
+    payload = dict(payload, username="Gorgon Notes", allowed_mentions={"parse": []})
+    if image:
+        body, ctype = multipart_body(payload, [("fight.png", "image/png", image)])
+    else:
+        body, ctype = json.dumps(payload).encode("utf-8"), "application/json"
+    req = Request(url + "?wait=true", data=body, headers={"Content-Type": ctype, "User-Agent": "gorgon-notes/" + str(PARTY_VERSION)}, method="POST")
     now = local_iso(datetime.now())
     try:
-        raw = urlopen(req, timeout=DISCORD_HTTP_SEC).read()
+        raw = urlopen(req, timeout=DISCORD_HTTP_SEC * (3 if image else 1)).read()
     except HTTPError as e:
         if e.code in (401, 403, 404):
             # Discord's rule: a webhook that answers 404 must not be tried again. Forget it; the Party window asks anew.
@@ -2323,8 +2354,10 @@ def discord_post(content):
         return None
 
 
-def discord_fight(fight_id=None, party_id=None):
-    """Post one of this log's fights (by its start, the Fights table id) or a merged party fight (its id)."""
+def discord_fight(fight_id=None, party_id=None, image=None, preview=False):
+    """Post one of this log's fights (by its start, the Fights table id) or a merged party fight (its id) as an
+    embed: the table of players and pets, a few facts, the source note, and the client's PNG of the same table
+    when it sent one. `preview` only answers the card, so the client can draw it first."""
     with PARTY_LOCK:
         me, rows = party_local_rows()
         if party_id is not None:
@@ -2333,8 +2366,7 @@ def discord_fight(fight_id=None, party_id=None):
             pf = next((f for f in fights if f["id"] == party_id), None)
             if pf is None:
                 raise BadRequest("That party fight isn't in the table any more.")
-            text = discord_party_text(pf)
-            content, with_block = discord_content(text, pf["members"])
+            card, party = discord_card(pf=pf), True
         else:
             log = latest_chatlog()
             row = None
@@ -2345,10 +2377,13 @@ def discord_fight(fight_id=None, party_id=None):
                 row = next((r for r in rep_["fights"] if r["id"] == fight_id or r["at"] == fight_id), None)
             if row is None:
                 raise BadRequest("That fight isn't in today's log any more.")
-            text = discord_text(row, me)
-            content, with_block = discord_content(text, [party_summary(row, me, f"gorgon-notes {app_version()[0]}")])
-    msg_id = discord_post(content)
-    return {"ok": True, "at": _discord["lastPostAt"], "messageId": msg_id, "withBlock": with_block, "chars": len(content), "discord": discord_info()}
+            card, party = discord_card(row=row, me=me), False
+    if preview:
+        return {"ok": True, "card": card}
+    img = discord_image_bytes(image)
+    embed = discord_embed(card, party, bool(img))
+    msg_id = discord_post({"embeds": [embed]}, img)
+    return {"ok": True, "at": _discord["lastPostAt"], "messageId": msg_id, "withImage": bool(img), "chars": len(embed["description"]), "discord": discord_info()}
 
 
 def gaming_receipt(gaming, t, amount, run=False):
@@ -4299,7 +4334,7 @@ class Handler(SimpleHTTPRequestHandler):
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
                 if not isinstance(body, dict) or not (isinstance(body.get("fight"), str) or isinstance(body.get("party"), str)):
                     raise BadRequest("body must name a fight or a party fight")
-                res = discord_fight(body.get("fight"), body.get("party"))
+                res = discord_fight(body.get("fight"), body.get("party"), image=body.get("image"), preview=bool(body.get("preview")))
             except (BadRequest, json.JSONDecodeError) as e:
                 return self.send_json({"error": str(e) if isinstance(e, BadRequest) else "body must be JSON"}, 400)
             except Exception as e:

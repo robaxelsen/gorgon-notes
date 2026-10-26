@@ -1391,7 +1391,58 @@ function partyState(kind, text, btn = null, row = 'p') {
   else { inp.removeAttribute('aria-invalid'); inp.removeAttribute('aria-describedby'); }
 }
 const discordState = (kind, text) => partyState(kind, text, null, 'd');
-/* Post a fight (by its id) or a merged party fight to the Discord webhook; the server builds the text. */
+/* The Discord card as a PNG data URL: the same table the embed carries, drawn with the app's dark palette so it
+   reads at a glance in the channel (Discord has no tables; the embed's code block is the searchable copy). */
+const CARD = { bg: '#161111', panel: '#211B1B', line: '#3A302C', text: '#E8E2DA', dim: '#A88E78', title: '#DFC9A0', gold: '#B8934F',
+  font: 'Carlito, Calibri, "Segoe UI", sans-serif' };
+function fightCardPng(card) {
+  const W = 1000, P = 32, ROW = 38, dpr = 2;
+  const rows = card.rows || [], facts = card.facts || [];
+  const c = document.createElement('canvas'), x = c.getContext('2d');
+  x.font = `15px ${CARD.font}`;
+  const factLines = wrapText(x, facts.map(([k, v]) => `${k} ${v}`).join('   ·   '), W - 2 * P);
+  const H = P + 34 + 22 + 30 + rows.length * ROW + 16 + factLines.length * 22 + 14 + 20 + P;
+  c.width = W * dpr; c.height = H * dpr; x.scale(dpr, dpr);
+  x.fillStyle = CARD.bg; x.fillRect(0, 0, W, H);
+  x.fillStyle = CARD.panel; roundRect(x, 10, 10, W - 20, H - 20, 12); x.fill();
+  let y = P + 6;
+  x.fillStyle = CARD.title; x.font = `700 24px ${CARD.font}`; x.textBaseline = 'alphabetic'; x.fillText(card.title, P, y + 16);
+  y += 34 + 22;
+  const cols = card.columns, nameW = 330, numW = (W - 2 * P - nameW - 14) / (cols.length - 1);
+  const colX = i => (i === 0 ? P : P + nameW + numW * i);   // numeric columns end at colX(i), 14 px short of the edge
+  x.fillStyle = CARD.dim; x.font = `600 13px ${CARD.font}`;
+  cols.forEach((h, i) => { x.textAlign = i === 0 ? 'left' : 'right'; x.fillText(h.toUpperCase(), colX(i), y); });
+  y += 14;
+  x.strokeStyle = CARD.line; x.lineWidth = 1; x.beginPath(); x.moveTo(P, y + 0.5); x.lineTo(W - P, y + 0.5); x.stroke();
+  const max = Math.max(1, ...rows.map(r => r.dmg || 0));
+  for (const r of rows) {
+    // a faint share bar behind the row, like the Party window's bars
+    x.fillStyle = 'rgba(184,147,79,0.13)'; x.fillRect(P, y + 6, (W - 2 * P) * Math.max(0.01, (r.dmg || 0) / max), ROW - 12);
+    const base = y + ROW / 2 + 5;
+    x.textAlign = 'left'; x.fillStyle = CARD.text; x.font = `600 16px ${CARD.font}`; x.fillText(r.who, P + 10, base);
+    if (r.owner) { const w = x.measureText(r.who).width; x.fillStyle = CARD.dim; x.font = `14px ${CARD.font}`; x.fillText(` · ${r.owner}'s pet`, P + 10 + w, base); }
+    const vals = [null, numOrDash(r.health), numOrDash(r.armor), fmt(r.dmg), fmt(r.dps), `${Math.round((r.share || 0) * 100)}%`, fmt(r.kills)];
+    x.textAlign = 'right';
+    for (let i = 1; i < vals.length; i++) { x.fillStyle = i === 3 ? CARD.text : CARD.dim; x.font = `${i === 3 ? 700 : 400} 16px ${CARD.font}`; x.fillText(vals[i], colX(i), base); }
+    y += ROW;
+    x.strokeStyle = CARD.line; x.beginPath(); x.moveTo(P, y + 0.5); x.lineTo(W - P, y + 0.5); x.stroke();
+  }
+  y += 16 + 14;
+  x.textAlign = 'left'; x.fillStyle = CARD.text; x.font = `15px ${CARD.font}`;
+  for (const l of factLines) { x.fillText(l, P, y); y += 22; }
+  y += 14;
+  x.fillStyle = CARD.dim; x.font = `13px ${CARD.font}`; x.fillText(card.note, P, y + 4);
+  return c.toDataURL('image/png');
+}
+const numOrDash = n => n == null ? '–' : fmt(n);
+function roundRect(x, l, t, w, h, r) { x.beginPath(); x.moveTo(l + r, t); x.arcTo(l + w, t, l + w, t + h, r); x.arcTo(l + w, t + h, l, t + h, r); x.arcTo(l, t + h, l, t, r); x.arcTo(l, t, l + w, t, r); x.closePath(); }
+function wrapText(x, text, width) {
+  const out = []; let line = '';
+  for (const w of text.split(' ')) { const t = line ? `${line} ${w}` : w; if (x.measureText(t).width > width && line) { out.push(line); line = w; } else line = t; }
+  if (line) out.push(line);
+  return out;
+}
+/* Post a fight (by its id) or a merged party fight to the Discord webhook; the server builds the embed. */
 async function postDiscord(body, what) {
   if (!S.party?.discord?.webhook) {
     const w = $('#w-d-party'); w.scrollIntoView({ block: 'start', behavior: 'smooth' });
@@ -1402,9 +1453,13 @@ async function postDiscord(body, what) {
   if (pUI.posting) return null;
   pUI.posting = true; renderPostButtons();
   try {
-    const r = await api('/api/discord', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    // Two steps: the server describes the card, this page draws it (canvas → PNG) and sends the picture with the post.
+    const pv = await api('/api/discord', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, preview: true }) });
+    let image = null;
+    try { image = fightCardPng(pv.card); } catch { image = null; }
+    const r = await api('/api/discord', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, image }) });
     if (S.party && r.discord) S.party.discord = r.discord;
-    sysLine('status', `Posted ${what} to Discord${r.withBlock ? '' : ' (text only: the fight was too long for the json block)'}.`);
+    sysLine('status', `Posted ${what} to Discord${r.withImage ? ' with a picture of the table' : ' (table as text; the picture could not be drawn here)'}.`);
     return r;
   } catch (e) {
     sysLine('error', e?.status === 400 ? e.message : "Couldn't post to Discord. The server didn't answer; try again.");
@@ -1514,7 +1569,8 @@ function rosterLine(p) {
   const fix = quiet.length ? (p.code ? ` Not sharing yet: ${esc(joinNames(quiet))}. Send them the code.` : '') : (p.code ? ' All of them are sharing.' : '');
   return `In your party per the chat log: ${esc(joinNames(names))}.${fix}`;
 }
-const pasteLink = () => pUI.paste ? '' : '<button type="button" class="linkbtn" data-ppaste>Paste a fight from Discord</button>';
+// Posts stopped carrying the json block on 26 Oct (the room shares fights); the paste box stays for older posts, behind the room's absence.
+const pasteLink = () => pUI.paste || S.party?.transport?.kind === 'room' ? '' : '<button type="button" class="linkbtn" data-ppaste>Paste a fight from Discord</button>';
 /* The Discord row has three looks: nothing yet (Connect Discord), waiting for the browser (Cancel), connected
    (Change channel + Remove). A webhook pasted in an older version counts as connected until it is removed. */
 function renderDiscordForm(p, old) {
