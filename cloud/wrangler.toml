@@ -5,10 +5,24 @@ main = "src/worker.js"
 compatibility_date = "2025-11-01"
 workers_dev = true
 
+# Discord "Connect a channel" (docs/DISCORD.md): the application's client id is public; the secret is set once with
+# `npx wrangler secret put DISCORD_CLIENT_SECRET`, never written here. Register the redirect
+# https://<this worker>/discord/callback on the application's OAuth2 page in the Discord Developer Portal.
+[vars]
+DISCORD_CLIENT_ID = ""
+
 [[durable_objects.bindings]]
 name = "ROOM"
 class_name = "Room"
 
+[[durable_objects.bindings]]
+name = "BROKER"
+class_name = "Broker"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Room"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Broker"]

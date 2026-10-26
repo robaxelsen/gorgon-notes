@@ -714,7 +714,8 @@ tr[aria-selected="true"] .sizein { border-color: var(--sel-text); color: var(--s
 #d-pstate .tagw.status, #d-dstate .tagw.status, #d-pastestate .tagw.status { color: var(--status); }
 #d-pstate .tagw.error, #d-dstate .tagw.error, #d-pastestate .tagw.error { color: var(--error); }
 #d-pstate .linkbtn { margin-left: 4px; }
-#dhook { width: 34ch; }
+#dhook { width: 30ch; }
+#dhook[hidden] { display: none; }
 #d-dform[hidden] { display: none; }
 .party-roster { margin: 0 0 10px; max-width: 75ch; }
 .party-live { margin: 0 0 8px; }

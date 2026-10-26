@@ -8,6 +8,7 @@ import bisect
 import json
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -1925,6 +1926,7 @@ def party_thread():
         i = 0
         while True:
             time.sleep(ROOM_LIVE_SEC)
+            discord_claim_tick()
             if not _party["code"]:
                 continue
             i += 1
@@ -2060,7 +2062,9 @@ DISCORD_TEST_HOSTS = set(filter(None, os.environ.get("PG_DISCORD_HOSTS", "").spl
 DISCORD_WEBHOOK_RE = re.compile(r"^(https?)://([^/?#]+)/api/webhooks/(\d{5,30})/([A-Za-z0-9_.-]{20,200})$")
 DISCORD_MAX = 2000           # characters in one webhook message
 DISCORD_HTTP_SEC = 8
-_discord = {"lastPostAt": None, "lastErr": None, "lastErrAt": None}
+_discord = {"lastPostAt": None, "lastErr": None, "lastErrAt": None,
+            "pending": None}   # {"state", "startedAt", "until"} while a Connect Discord waits for the browser
+DISCORD_CONNECT_SEC = 10 * 60  # the room keeps a finished connection this long; so does our wait
 
 
 def load_settings():
@@ -2088,10 +2092,62 @@ def discord_hint(url):
     return f"{m.group(1)}://{m.group(2)}/api/webhooks/{m.group(3)}/…" if m else None
 
 
+def discord_connected():
+    """How the saved webhook came: {"channelId", "guildId", "name", "at"} when it was connected through Discord's own
+    channel picker (docs/DISCORD.md option B), None when it was pasted."""
+    c = load_settings().get("discordConnected")
+    return c if isinstance(c, dict) and discord_webhook() else None
+
+
 def discord_info():
     url = discord_webhook()
-    return {"webhook": bool(url), "hint": discord_hint(url), "lastPostAt": _discord["lastPostAt"],
+    p = _discord["pending"]
+    return {"webhook": bool(url), "hint": discord_hint(url), "connected": discord_connected(),
+            "pending": {"startedAt": p["startedAt"], "until": p["until"]} if p else None,
+            "canConnect": room_usable(), "lastPostAt": _discord["lastPostAt"],
             "lastError": _discord["lastErr"], "lastErrorAt": _discord["lastErrAt"]}
+
+
+def discord_connect(cancel=False):
+    """Start (or cancel) a Connect Discord: the browser goes to the room's /discord/start with an unguessable state,
+    the party thread then asks the room every 2 s whether the webhook has arrived (discord_claim_tick)."""
+    if cancel:
+        _discord["pending"] = None
+        return {"ok": True, "discord": discord_info()}
+    if not room_usable():
+        raise BadRequest("Connect Discord needs the party room, which this copy is not using. Paste a webhook instead.")
+    state = secrets.token_urlsafe(24)
+    now = datetime.now()
+    _discord["pending"] = {"state": state, "startedAt": local_iso(now), "until": local_iso(now + timedelta(seconds=DISCORD_CONNECT_SEC)),
+                           "untilTs": time.time() + DISCORD_CONNECT_SEC}
+    _discord.update(lastErr=None, lastErrAt=None)
+    party_thread()
+    return {"ok": True, "url": f"{ROOM_BASE}/discord/start?state={state}", "discord": discord_info()}
+
+
+def discord_claim_tick():
+    """Called from the party thread every ROOM_LIVE_SEC: while a connection is pending, ask the room for it."""
+    p = _discord["pending"]
+    if not p:
+        return
+    if time.time() > p["untilTs"]:
+        _discord["pending"] = None
+        _discord.update(lastErr="Nothing came back from Discord in 10 minutes. Press Connect Discord again.", lastErrAt=local_iso(datetime.now()))
+        return
+    try:
+        d = room_req(f"discord/claim?state={p['state']}")
+    except Exception:
+        return   # the room is down or slow: keep waiting until the deadline
+    if not isinstance(d, dict) or not d.get("ready"):
+        return
+    w = d.get("webhook") or {}
+    try:
+        set_discord_webhook(w.get("url"), connected={"channelId": w.get("channelId"), "guildId": w.get("guildId"), "name": w.get("name"),
+                                                     "at": local_iso(datetime.now())})
+    except BadRequest as e:
+        _discord.update(lastErr=f"Discord sent a webhook this copy refused: {e}", lastErrAt=local_iso(datetime.now()))
+    finally:
+        _discord["pending"] = None
 
 
 def discord_check_url(url):
@@ -2106,13 +2162,15 @@ def discord_check_url(url):
     return url
 
 
-def set_discord_webhook(url):
+def set_discord_webhook(url, connected=None):
     """Save (url) or forget (None) the webhook. A new one is asked for its name first (GET on the webhook): Discord
-    answers 404 for a deleted or mistyped one, which is refused; no answer at all saves it unchecked."""
+    answers 404 for a deleted or mistyped one, which is refused; no answer at all saves it unchecked. `connected`
+    records that it came through Connect Discord (channel picker), a pasted one clears that."""
     with APP_SETTINGS_LOCK:
         d = load_settings()
         if url is None:
             d.pop("discordWebhook", None)
+            d.pop("discordConnected", None)
             save_settings(d)
             _discord.update(lastPostAt=None, lastErr=None, lastErrAt=None)
             return {"checked": False, "name": None, "channel": None}
@@ -2128,6 +2186,10 @@ def set_discord_webhook(url):
         except Exception:
             pass
         d["discordWebhook"] = url
+        if connected:
+            d["discordConnected"] = dict(connected, name=name or connected.get("name"), channelId=channel or connected.get("channelId"))
+        else:
+            d.pop("discordConnected", None)
         save_settings(d)
         _discord.update(lastErr=None, lastErrAt=None)
         return {"checked": checked, "name": name, "channel": channel}
@@ -2229,7 +2291,7 @@ def discord_content(text, summaries):
 def discord_post(content):
     url = discord_webhook()
     if not url:
-        raise BadRequest("No Discord webhook yet. Paste one into the Party window first.")
+        raise BadRequest("Discord isn't connected yet. Press Connect Discord in the Party window first.")
     body = json.dumps({"content": content, "username": "Gorgon Notes", "allowed_mentions": {"parse": []}}).encode("utf-8")
     req = Request(url + "?wait=true", data=body, headers={"Content-Type": "application/json", "User-Agent": "gorgon-notes/" + str(PARTY_VERSION)}, method="POST")
     now = local_iso(datetime.now())
@@ -2237,7 +2299,9 @@ def discord_post(content):
         raw = urlopen(req, timeout=DISCORD_HTTP_SEC).read()
     except HTTPError as e:
         if e.code in (401, 403, 404):
-            msg = "Discord doesn't know that webhook any more. Paste a new one into the Party window."
+            # Discord's rule: a webhook that answers 404 must not be tried again. Forget it; the Party window asks anew.
+            msg = "Discord removed that webhook (someone deleted it in the channel's Integrations). Connect Discord again in the Party window."
+            set_discord_webhook(None)
         elif e.code == 429:
             try:
                 wait = json.loads(e.read().decode("utf-8", errors="replace")).get("retry_after")
@@ -4221,6 +4285,15 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error": repr(e)}, 500)
             return self.send_json(dict(res, ok=True, discord=discord_info()))
+        if url.path == "/api/discord/connect":
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                res = discord_connect(cancel=bool(isinstance(body, dict) and body.get("cancel")))
+            except (BadRequest, json.JSONDecodeError) as e:
+                return self.send_json({"error": str(e) if isinstance(e, BadRequest) else "body must be JSON"}, 400)
+            except Exception as e:
+                return self.send_json({"error": repr(e)}, 500)
+            return self.send_json(res)
         if url.path == "/api/discord":
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")

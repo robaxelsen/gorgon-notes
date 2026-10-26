@@ -2,6 +2,8 @@
 
 Research 2026-10-26 (user: "This Discord webhook functionality is cool, but not scalable as it only goes to my server's channel now. Research a scalable solution that lets a user set up this from their app to send notifications to a chosen server and channel."). Facts below were read from Discord's developer docs on 26 Oct unless marked *not verified*.
 
+**Status 26 Oct 14:00: option B is built and harness-tested, not yet deployed or released.** `cloud/src/worker.js` (`/discord/start`, `/discord/callback`, `/discord/claim`, `Broker` DO, `DISCORD_API` override for a fake), `cloud/wrangler.toml` (`[vars] DISCORD_CLIENT_ID`, `BROKER` binding, migration v2), `server.py` (`discord_connect`, `discord_claim_tick` in the party thread, `discord_connected`, `POST /api/discord/connect`, a 404 webhook is forgotten), `static/` (Connect Discord / Cancel / Change channel / Remove row, 2 s poll while pending). Waiting on the user: Client ID into `wrangler.toml`, redirect URL registered, `npx wrangler secret put DISCORD_CLIENT_SECRET`, `npx wrangler deploy`, then one real Connect.
+
 ## What exists today (v0.6.0)
 
 Combat → Party window → a webhook field. The URL is saved in `settings.json` (`POST /api/settings`), checked with `GET /webhooks/{id}/{token}` (no auth needed), and "Post to Discord" on the Breakdown or a party fight sends `{ content, username: "Gorgon Notes", allowed_mentions: { parse: [] } }` to it with `?wait=true` (`server.py` `discord_text`, `discord_party_text`, `discord_content`). First real post 26 Oct 12:54: ok, 1,220 chars.
