@@ -2780,7 +2780,8 @@ function sellLead(p) {
   html += '</p>';
   const notes = [];
   if (s.marked) notes.push(`${plural(s.marked, 'type')} marked by you (Sell / Keep in By item; a mark applies to every stack of the type, now and later)`);
-  if (s.vaultTrash?.stacks) notes.push(`${plural(s.vaultTrash.stacks, 'stack')} of vendor trash sit in your vaults, about ${fmt(s.vaultTrash.councils)} councils (listed under the stops)`);
+  if (keep.used) notes.push(`${plural(keep.used, 'stack')} of what vendors call trash ${keep.used === 1 ? 'is' : 'are'} crafting ingredients per the game's recipes and stay (By item names the skills; mark Sell to sell anyway)`);
+  if (s.vaultTrash?.stacks) notes.push(`${plural(s.vaultTrash.stacks, 'stack')} of vendor trash no recipe uses sit in your vaults, about ${fmt(s.vaultTrash.councils)} councils (listed under the stops)`);
   if (s.unsellable) notes.push(`${fmt(s.unsellable)} of the kept stacks no vendor buys`);
   if (gear.stacks) notes.push("worn gear can't be told from carried in the export");
   if (notes.length) html += `<p class="small dim" style="margin-top:4px">${esc(notes.join('. '))}.</p>`;
@@ -2808,7 +2809,7 @@ function vaultTrashHtml(p) {
     <ul class="list feed-what">${g.items.slice(0, 6).map(i => `<li>${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span class="what">${i.qty > 1 ? `<em class="n">${fmt(i.qty)}</em> ` : ''}${esc(i.name)}</span><span class="n">${fmt(i.councils)}</span></li>`).join('')}${g.items.length > 6 ? `<li><span class="what dim">and ${plural(g.items.length - 6, 'more stack')}</span></li>` : ''}</ul>`).join('');
   const more = vt.length > 4 ? `<p style="margin-top:8px"><button type="button" class="linkbtn" data-trashall="1" style="text-decoration:underline">${vUI.trashAll ? 'Show the first 4 vaults' : `Show all ${fmt(vt.length)} vaults`}</button></p>` : '';
   return `<section class="stop"><h3>Trash in your vaults · ${plural(sum.stacks, 'stack')} · about ${fmt(sum.councils)} councils</h3>
-    <p class="small dim" style="margin:0 0 4px">Vendor trash sitting in ${plural(sum.vaults, 'vault')}. Not in the route: it has to be picked up first. Mark a type Keep in By item to keep it.</p>${groups}${more}</section>`;
+    <p class="small dim" style="margin:0 0 4px">Vendor trash no recipe uses, sitting in ${plural(sum.vaults, 'vault')}. Not in the route: it has to be picked up first. Mark a type Keep in By item to keep it.</p>${groups}${more}</section>`;
 }
 /* The keep list control: Sell / Keep per item type. Only sellable types get it (nothing can be sold otherwise);
    the current state is the row's action, a mark shows as the checked option. Keep is sent as "store" (the mark's
@@ -2834,7 +2835,7 @@ function sellByItem(p) {
     let doText, about = '';
     if (i.action === 'sell') { doText = `Sell to <em class="t">${esc(i.sellTo.name)}</em> · ${esc(i.sellTo.area)}${i.note ? ` <span class="tag">${esc(i.note)}</span>` : ''}`; about = fmt(i.sellTo.councils); }
     else if (i.action === 'gear') { doText = `Your call${i.sellTo ? ` · ${esc(i.sellTo.name)} pays about ${fmt(i.sellTo.councils)}` : ''}`; about = i.sellTo ? fmt(i.sellTo.councils) : ''; }
-    else doText = `Keep${i.why ? ` <span class="tag">${esc(i.why)}</span>` : ''}${i.note ? ` <span class="tag">${esc(i.note)}</span>` : ''}${i.sellTo ? ` <span class="small dim">or ${esc(i.sellTo.name)} pays about ${fmt(i.sellTo.councils)}</span>` : ''}`;
+    else doText = `Keep${i.uses?.length ? ` <span class="tag" title="Recipes in the game data take it">used in ${esc(i.uses.join(', '))}</span>` : ''}${i.why ? ` <span class="tag">${esc(i.why)}</span>` : ''}${i.note ? ` <span class="tag">${esc(i.note)}</span>` : ''}${i.sellTo ? ` <span class="small dim">or ${esc(i.sellTo.name)} pays about ${fmt(i.sellTo.councils)}</span>` : ''}`;
     return `<tr class="row"><td class="m1"><span class="cell-name">${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span>${esc(i.name)}</span></span></td><td class="num">${fmt(i.qty)}</td><td>${doText}</td><td class="num m2">${about}</td><td class="markcell">${markSeg(i)}</td><td class="m-line2">${fmt(i.qty)} · ${doText}${about ? ` · about ${about}` : ''}</td></tr>`;
   };
   const fold = unsold.length ? `<tr class="row fold"><td colspan="5" class="m1"><button type="button" class="linkbtn" data-unsold="1" aria-expanded="${vUI.unsoldAll}" aria-controls="v-sell-unsold">${plural(unsold.length, 'stack')} no vendor buys${vUI.unsoldAll ? ' · Fewer' : ' · Show them'}</button></td></tr>` : '';
