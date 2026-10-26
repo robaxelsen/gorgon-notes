@@ -1,4 +1,4 @@
-# Roadmap & status (last updated 2026-10-26, 21:30)
+# Roadmap & status (last updated 2026-10-26, 21:45)
 
 > **CRITICAL REQUIREMENT: data awareness.** The app must always make the player aware of what they need to do to get the best data (stale/broken exports, settings, activity since export), via the best channel: in-page, browser, macOS notifications, menu bar, HUD overlay, phone. Full spec in **`docs/DATA-AWARENESS.md`**. Every feature must show its data freshness and the exact fix. The in-page and browser channels are built (`/api/health`, per-view margin, window footers, Reminders); the Mac channels are next.
 
@@ -147,6 +147,7 @@ Background: Feasibility done 2026-10-23 → `docs/DPS-FEASIBILITY.md`: personal 
 Waiting on the user: in-game checks of the settings marked "not verified yet" (auto-export, combat logging, VIP). Also to confirm in game (24 Oct review fixes, inferred from the logs only): does "You evaded death!" award Dying XP by itself (the tracker now ignores a Dying line within 10 s of it), and are the small 3 to 19 councils receipts between the casino's 0 receipts slot wins (now counted as Gaming, never as sales)?
 
 ## Session log
+- **2026-10-26 (sticky reminder toasts, 21:40 to 21:45, while the backlog workflow runs)**: user liked the "Sie Antry reset: 29,310 councils available again" toast but it must not be missed. `static/app.js` `toast()`: `sticky` toasts stay until Close / Esc / the action, replace an older toast of the same topic, and do not count toward the three-visible cap; the reminder moments (positive ones like vendor reset, the storage-full note, the other-view notes) are sticky; transient notes keep the 6 s. DESIGN.md toast rule. Checked in headless Chrome on the live page: after 7.5 s the reminder is still up and the transient one gone, a second vendor-reset replaced the first, Close removes it. Mac app relaunched.
 - **2026-10-26 (manual sessions hidden, 21:30, while the backlog workflow runs)**: `static/app.js` `autoSessions` filter, `sessionTable` without Start/Stop/Forget, the click handler removed; DESIGN.md Sessions spec; ROADMAP backlog item 0 with the room design question. Server untouched. Mac app relaunched.
 - **2026-10-26 (backlog, 21:05)**: user: a tab to look up teleportation machine codes. Researched the source (wiki page via the MediaWiki API, structure parsed) and recorded the design in Next up as backlog item 3. No code change.
 - **2026-10-26 (backlog, 20:50)**: two items from the user recorded in Next up (sell plan to Vendors; store suggestions assessed and proposed for removal). No code change.

@@ -4599,8 +4599,13 @@ function toast(t) {
   toastBurst.push(Date.now());
   toastBurst = toastBurst.filter(x => Date.now() - x < 1000);
   const box = $('#toasts');
-  const visible = box.children.length;
-  if (visible >= 3 && !t.broken) {
+  // A reminder (sticky) stays until dismissed and replaces an older one of its topic; transient ones are capped at three.
+  if (t.sticky && t.topic) {
+    const old = [...box.children].find(c => c.dataset.topic === t.topic && c.classList.contains('sticky'));
+    if (old) old._close?.(true);
+  }
+  const visible = [...box.children].filter(c => !c.classList.contains('sticky') && !c.classList.contains('broken')).length;
+  if (visible >= 3 && !t.broken && !t.sticky) {
     const same = toastQ.find(q => q.topic && q.topic === t.topic);
     if (same) Object.assign(same, t); else toastQ.push(t);
     return;
@@ -4612,13 +4617,15 @@ function toast(t) {
   el.innerHTML = `${t.kind === 'bad' ? shape('bad') : t.kind === 'note' ? shape('info') : ''}<div class="tb"><div>${lead}${esc(t.text)}</div><div class="tacts">${t.action ? `<button type="button" class="linkbtn" data-t-act>${esc(t.action.label)}</button>` : ''}<button type="button" class="linkbtn" data-t-close>Close</button></div></div>`;
   if (t.broken) box.appendChild(el); else box.insertBefore(el, box.querySelector('.toast.broken') || null);
   if (t.broken) el.classList.add('broken');
+  if (t.sticky) el.classList.add('sticky');
+  if (t.topic) el.dataset.topic = t.topic;
   requestAnimationFrame(() => el.classList.remove('enter'));
   let left = 6000, started = Date.now(), timer = null;
-  const close = () => { clearTimeout(timer); el.remove(); const n = toastQ.shift(); if (n) toast(n); };
-  const arm = () => { if (!t.broken) timer = setTimeout(close, left); };
+  const close = (quiet) => { clearTimeout(timer); el.remove(); if (!quiet) { const n = toastQ.shift(); if (n) toast(n); } };
+  const arm = () => { if (!t.broken && !t.sticky) timer = setTimeout(close, left); };
   el.addEventListener('mouseenter', () => { clearTimeout(timer); left -= Date.now() - started; });
   el.addEventListener('mouseleave', () => { started = Date.now(); arm(); });
-  el.querySelector('[data-t-close]').onclick = close;
+  el.querySelector('[data-t-close]').onclick = () => close();
   if (t.action) el.querySelector('[data-t-act]').onclick = () => { t.action.run(); close(); };
   el._close = close;
   arm();
@@ -4674,16 +4681,16 @@ function deliverMoments() {
     const cooling = cd && r.lastFired[cdKey] && Date.now() - Date.parse(r.lastFired[cdKey]) < cd;
     const suppressed = t.muted || (t.snoozedUntil && Date.parse(t.snoozedUntil) > Date.now()) || cooling;
     if (m.topic === 'export-confirmed') { confirmExport(m); continue; }
-    if (m.topic === 'storage-full') { toast({ kind: 'note', text: m.body, topic: m.topic }); continue; }
+    if (m.topic === 'storage-full') { toast({ kind: 'note', text: m.body, topic: m.topic, sticky: true }); continue; }
     if (suppressed) continue;
     if (!positive && !gameRunning() && m.level !== 'broken') continue;
     if (m.level === 'status') { sysLine('status', `${m.title}. ${m.body}`); continue; }
     r.lastFired[cdKey] = new Date().toISOString();
     const view = TOPIC_VIEW[m.topic];
-    if (positive) toast({ kind: 'status', text: `${m.title}: ${m.body}`, topic: m.topic });
+    if (positive) toast({ kind: 'status', text: `${m.title}: ${m.body}`, topic: m.topic, sticky: true });
     else {
       sysLine(m.level === 'broken' ? 'error' : 'warn', `${m.title}. ${m.body}`, { topic: m.topic, sticky: true });
-      if (view && view !== S.view) toast({ kind: m.level === 'broken' ? 'bad' : 'note', text: `${m.title}. ${m.body}`, topic: m.topic, broken: m.level === 'broken', action: { label: 'Show', run: () => go(view) } });
+      if (view && view !== S.view) toast({ kind: m.level === 'broken' ? 'bad' : 'note', text: `${m.title}. ${m.body}`, topic: m.topic, sticky: true, broken: m.level === 'broken', action: { label: 'Show', run: () => go(view) } });
     }
     const quiet = inQuiet(r);
     const hidden = document.hidden || !document.hasFocus();
