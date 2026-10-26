@@ -215,15 +215,12 @@
               <button type="button" class="btn" id="d-pleave" hidden>Leave</button>
               <span class="small dim" id="d-pstate" aria-live="polite"></span>
             </form>
-            <form class="toolbar" id="d-dform">
+            <div class="toolbar" id="d-dform" role="group" aria-label="Discord">
               <button type="button" class="btn primary" id="d-dconnect">Connect Discord</button>
               <button type="button" class="btn" id="d-dcancel" hidden>Cancel</button>
-              <label class="sr" for="dhook">Discord webhook</label>
-              <input type="url" id="dhook" class="code" placeholder="or paste a webhook" autocomplete="off" autocapitalize="off" spellcheck="false">
-              <button type="submit" class="btn" id="d-dsave">Save</button>
               <button type="button" class="btn" id="d-dremove" hidden>Remove</button>
               <span class="small dim" id="d-dstate" aria-live="polite"></span>
-            </form>
+            </div>
             <div id="d-party"></div>
             <div id="d-pastebox" hidden>
               <label class="small dim" for="d-pastetext">A fight from a Gorgon Notes post on Discord, with its json block</label>

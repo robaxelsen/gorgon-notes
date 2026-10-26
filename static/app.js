@@ -1381,11 +1381,12 @@ async function loadParty() {
 /* The window's state line: kind 'status' prints the game's [Status] tag, 'error' its [Error] tag (and marks the
    field invalid), 'plain' neither. An optional text button (label + run) follows, for Undo. */
 function partyState(kind, text, btn = null, row = 'p') {
-  const el = $(row === 'd' ? '#d-dstate' : '#d-pstate'), inp = $(row === 'd' ? '#dhook' : '#pcode');
+  const el = $(row === 'd' ? '#d-dstate' : '#d-pstate'), inp = row === 'd' ? null : $('#pcode');
   pUI[row === 'd' ? 'dnote' : 'note'] = kind === 'plain' ? null : { kind, text, btn };
   const tag = kind === 'status' ? '<span class="tagw status">[Status]</span> ' : kind === 'error' ? '<span class="tagw error">[Error]</span> ' : '';
   el.html = text ? `${tag}${esc(text)}${btn ? ` <button type="button" class="linkbtn" data-pundo>${esc(btn.label)}</button>` : ''}` : '';
   el._run = btn?.run || null;
+  if (!inp) return;
   if (kind === 'error') { inp.setAttribute('aria-invalid', 'true'); inp.setAttribute('aria-describedby', el.id); }
   else { inp.removeAttribute('aria-invalid'); inp.removeAttribute('aria-describedby'); }
 }
@@ -1394,8 +1395,8 @@ const discordState = (kind, text) => partyState(kind, text, null, 'd');
 async function postDiscord(body, what) {
   if (!S.party?.discord?.webhook) {
     const w = $('#w-d-party'); w.scrollIntoView({ block: 'start', behavior: 'smooth' });
-    discordState('status', 'Connect Discord here first (or paste a webhook), then press Post to Discord again.');
-    ($('#d-dconnect').hidden ? $('#dhook') : $('#d-dconnect')).focus();
+    discordState('status', 'Connect Discord here first, then press Post to Discord again.');
+    $('#d-dconnect').focus();
     return null;
   }
   if (pUI.posting) return null;
@@ -1514,34 +1515,27 @@ function rosterLine(p) {
   return `In your party per the chat log: ${esc(joinNames(names))}.${fix}`;
 }
 const pasteLink = () => pUI.paste ? '' : '<button type="button" class="linkbtn" data-ppaste>Paste a fight from Discord</button>';
-/* The Discord row has four looks: nothing yet (Connect Discord + a paste field), waiting for the browser (Cancel),
-   connected through Discord's channel picker (Change channel + Remove, no field), a pasted webhook (the hint, Remove). */
+/* The Discord row has three looks: nothing yet (Connect Discord), waiting for the browser (Cancel), connected
+   (Change channel + Remove). A webhook pasted in an older version counts as connected until it is removed. */
 function renderDiscordForm(p, old) {
-  const d = p?.discord || {}, inp = $('#dhook');
+  const d = p?.discord || {};
   $('#d-dform').hidden = old || !p;
   if (old || !p) return;
-  const pending = !!d.pending, connected = !!(d.webhook && d.connected);
-  inp.readOnly = !!d.webhook;
-  if (d.webhook) { if (document.activeElement !== inp) inp.value = d.hint || ''; }
-  else if (inp.value && inp.value === pUI.lastHint) inp.value = '';
-  pUI.lastHint = d.hint || null;
-  inp.hidden = pending || connected;
-  $('#d-dsave').hidden = pending || !!d.webhook;
-  $('#d-dremove').hidden = pending || !d.webhook;
+  const pending = !!d.pending, have = !!d.webhook;
+  $('#d-dremove').hidden = pending || !have;
   const con = $('#d-dconnect');
-  con.hidden = pending || (!!d.webhook && !connected) || d.canConnect === false;
-  con.textContent = connected ? 'Change channel' : 'Connect Discord';
-  con.classList.toggle('primary', !d.webhook);
+  con.hidden = pending || d.canConnect === false;
+  con.textContent = have ? 'Change channel' : 'Connect Discord';
+  con.classList.toggle('primary', !have);
   $('#d-dcancel').hidden = !pending;
   discordPoll(pending);
   if (pUI.dnote) return;
   const last = d.lastPostAt ? ` · last post ${hhmm(parseIso(d.lastPostAt))}` : '';
   if (pending) discordState('plain', `Waiting for Discord: pick a server and a channel in your browser (until ${hhmm(parseIso(d.pending.until))})`);
-  else if (d.lastError && !d.webhook) discordState('error', d.lastError);
-  else if (connected) discordState('status', `Connected: fights post to the channel you picked${d.connected.name ? ` (webhook "${d.connected.name}")` : ''}${last}`);
-  else if (d.webhook) discordState('plain', `posts go to this pasted webhook${last}`);
-  else discordState('plain', d.canConnect === false ? 'This copy is not on the party room, so paste a webhook: in Discord, the channel\'s gear → Integrations → Webhooks → New Webhook → Copy Webhook URL'
-    : 'Connect Discord opens Discord in your browser to pick a server and a channel; or paste a webhook from the channel\'s Integrations');
+  else if (d.lastError && !have) discordState('error', d.lastError);
+  else if (have) discordState('status', `Connected: fights post to ${d.connected ? 'the channel you picked' : 'the webhook you pasted earlier'}${d.connected?.name ? ` (webhook "${d.connected.name}")` : ''}${last}`);
+  else discordState('plain', d.canConnect === false ? 'This copy is not on the party room (PG_ROOM is empty), so Discord can\'t be connected here'
+    : 'Opens Discord in your browser to pick a server and a channel; Post to Discord then goes there');
 }
 /* While a connection is pending, ask the server every 2 s whether the webhook arrived (the party poll is slower). */
 function discordPoll(on) {
@@ -1635,24 +1629,6 @@ function initParty() {
     renderParty();
   });
   $('#d-pstate').addEventListener('click', e => { if (e.target.closest('[data-pundo]') && $('#d-pstate')._run) $('#d-pstate')._run(); });
-  // Discord webhook: saved on the server (settings.json), shown back with its token hidden.
-  const hook = $('#dhook');
-  $('#d-dform').addEventListener('submit', async e => {
-    e.preventDefault();
-    if (S.party?.discord?.webhook) return;
-    const url = hook.value.trim();
-    if (!/^https:\/\/(ptb\.|canary\.)?discord(app)?\.com\/api\/webhooks\/\d+\/[\w.-]+$/.test(url) && !/^https?:\/\/[\w.:-]+\/api\/webhooks\/\d+\/[\w.-]+$/.test(url)) {
-      discordState('error', 'A Discord webhook looks like https://discord.com/api/webhooks/<numbers>/<token>. In Discord: channel settings → Integrations → Webhooks → Copy Webhook URL.'); return;
-    }
-    discordState('plain', 'Checking…');
-    try {
-      const r = await api('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ discordWebhook: url }) });
-      if (S.party) S.party.discord = r.discord;
-      discordState('status', r.checked ? `Saved. Discord calls it "${r.name || 'webhook'}"; Post to Discord on the Breakdown and on party fights goes there.` : 'Saved, not checked: Discord didn\'t answer. The first post will tell.');
-      renderParty();
-    } catch (err) { discordState('error', err?.status === 400 ? err.message : "The server didn't answer; try again."); }
-  });
-  hook.addEventListener('input', () => { if (pUI.dnote?.kind === 'error') discordState('plain', ''); });
   // Connect Discord: the server makes the state and the room's start URL; the browser (the system one, from the
   // Mac and Windows apps) shows Discord's own server + channel picker; the server claims the webhook from the room.
   $('#d-dconnect').addEventListener('click', async () => {
@@ -1677,7 +1653,7 @@ function initParty() {
     try {
       const r = await api('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ discordWebhook: null }) });
       if (S.party) S.party.discord = r.discord;
-      hook.value = ''; discordState('status', 'Discord disconnected. Post to Discord asks to connect again.'); renderParty();
+      discordState('status', 'Discord disconnected. Post to Discord asks to connect again.'); renderParty();
     } catch (err) { discordState('error', "The server didn't answer; try again."); }
   });
   // Paste box: a fight from a Gorgon Notes post on Discord lands in the table like one received over ntfy.sh.

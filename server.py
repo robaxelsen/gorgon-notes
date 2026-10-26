@@ -2115,7 +2115,7 @@ def discord_connect(cancel=False):
         _discord["pending"] = None
         return {"ok": True, "discord": discord_info()}
     if not room_usable():
-        raise BadRequest("Connect Discord needs the party room, which this copy is not using. Paste a webhook instead.")
+        raise BadRequest("Connect Discord needs the party room, which this copy is not using (PG_ROOM is empty).")
     state = secrets.token_urlsafe(24)
     now = datetime.now()
     _discord["pending"] = {"state": state, "startedAt": local_iso(now), "until": local_iso(now + timedelta(seconds=DISCORD_CONNECT_SEC)),
