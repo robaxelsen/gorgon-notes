@@ -166,7 +166,8 @@ def cached_versions():
 # ---------------------------------------------------------------------------
 # App version (About popover, /api/health `app`, the Mac menu): build.txt beside server.py (written by the
 # Windows build), else the git tag of this checkout, else "dev". The newest release is read from GitHub once
-# an hour (the Windows launcher does the same at start; on the Mac this is the only outbound call besides the CDN).
+# an hour (the Windows launcher does the same at start; on the Mac the only other outbound calls are the CDN and the
+# wiki fetch for /api/teleports).
 # ---------------------------------------------------------------------------
 APP_REPO = "robaxelsen/gorgon-notes"
 _app = {"version": None, "source": None, "ahead": 0, "dirty": False, "latest": None, "latestAt": 0.0, "latestErr": None}
@@ -880,6 +881,18 @@ DPS_BEST_SEC = 15         # "best fight" needs at least this long, so a one-hit 
 DPS_TIMELINE_POINTS = 240 # a fight's per-second timeline is bucketed so it never exceeds this many points
 DOT_WINDOW_SEC = 12       # a tick is split between you and your pets by who hit the enemy this recently (else the last hitter)
 DOT_NAME = "Damage over time"
+BY_TARGET_MAX = 40        # enemies per fight in `byTarget` / `ticks` (the By enemy table); `byTargetMore` says how many you hit are left out
+
+
+def split_whole(parts):
+    """Round non-negative floats to whole numbers that sum to round(sum(parts)) (largest remainder), so an enemy's ticks
+    split between you and your pets add up to the ticks exactly instead of each share rounding on its own."""
+    parts = list(parts)
+    whole = [int(x) for x in parts]
+    extra = round(sum(parts)) - sum(whole)
+    for i in sorted(range(len(parts)), key=lambda i: whole[i] - parts[i])[:max(extra, 0)]:
+        whole[i] += 1
+    return whole
 INSTAKILL_DMG = 100000    # one hit at or above this is a kill mechanic (Face of Death: FaceOfDeathKill, 999,451 health), not damage
 EVADE_RE = re.compile(r"^\[Combat\] (?P<att>.+?)(?: #(?P<aid>\d+))?: (?P<abil>.*?) on (?P<vic>.+?)(?: #(?P<vid>\d+))? \(EVADED!\)$")
 INDIRECT_RE = re.compile(r"^\[Combat\] (?P<who>.+?)(?: #(?P<id>\d+))?: Suffered indirect dmg: (?P<rest>.*)$")
@@ -1267,25 +1280,53 @@ class DpsTracker:
                     d[1] += a * c / n
                     d[2] += 1
                 attributed += h + a
+        # Whole numbers: each enemy's attributed ticks are split between you and your pets by largest remainder, so the
+        # shares sum to its ticks exactly and every figure built from them (dotMe, dotPet, byTarget, targets, dmg) agrees.
+        by_name = defaultdict(list)
+        for att, tgts in dot.items():
+            for name, v in tgts.items():
+                by_name[name].append((att, v))
+        dot_int = defaultdict(dict)   # attacker -> target name -> (health, armor, ticks), whole numbers
+        for name, lst in by_name.items():
+            hs = split_whole(v[0] for _, v in lst)
+            as_ = split_whole(v[1] for _, v in lst)
+            for (att, v), h, a in zip(lst, hs, as_):
+                dot_int[att][name] = (h, a, v[2])
         dot_rows = {}
-        by_target = {}
-        for att in sorted(dot, key=lambda a: (a != me, a)):
-            hh = sum(v[0] for v in dot[att].values()); aa = sum(v[1] for v in dot[att].values()); n = sum(v[2] for v in dot[att].values())
-            hh, aa = round(hh), round(aa)
+        for att in sorted(dot_int, key=lambda a: (a != me, a)):
+            hh = sum(v[0] for v in dot_int[att].values()); aa = sum(v[1] for v in dot_int[att].values()); n = sum(v[2] for v in dot_int[att].values())
             if hh + aa <= 0:
                 continue
             dot_rows[att] = {"dmg": hh + aa, "health": hh, "armor": aa, "hits": n}
             abilities.append({"name": DOT_NAME, "who": "you" if att == me else att, "hits": n, "dmg": hh + aa, "health": hh, "armor": aa,
                               "crit": 0, "evaded": 0, "none": 0, "max": 0, "fatal": 0, "levels": [], "dot": True})
+        abilities.sort(key=lambda r: -r["dmg"])
+        targets = Counter()
+        tids = set()
+        for att in mine:
+            targets.update(f.targets.get(att, {}))
+            tids |= f.target_ids.get(att, set())
+            for name, v in dot_int.get(att, {}).items():
+                targets[name] += v[0] + v[1]
+        # By enemy rows: the same top BY_TARGET_MAX enemies (by your and your pets' credit) for every attacker, so the
+        # client's union is exactly that list; `ticks` carries those plus the most-ticked others up to the same cap.
+        top = [n for n, _ in targets.most_common(BY_TARGET_MAX)]
+        by_target = {}
         for att in mine:
             row = {}
-            for name, d in f.targets.get(att, {}).items():
-                row[name] = {"direct": d, "dot": 0}
-            for name, v in dot.get(att, {}).items():
-                row.setdefault(name, {"direct": 0, "dot": 0})["dot"] = round(v[0] + v[1])
+            for name in top:
+                d = f.targets.get(att, {}).get(name, 0)
+                v = dot_int.get(att, {}).get(name)
+                dd = v[0] + v[1] if v else 0
+                if d or dd:
+                    row[name] = {"direct": d, "dot": dd}
             if row:
-                by_target["you" if att == me else att] = dict(sorted(row.items(), key=lambda kv: -(kv[1]["direct"] + kv[1]["dot"]))[:12])
-        abilities.sort(key=lambda r: -r["dmg"])
+                by_target["you" if att == me else att] = row
+        tick_out = {n: ticks[n] for n in top if n in ticks}
+        for n, t in ticks.most_common():
+            if len(tick_out) >= BY_TARGET_MAX:
+                break
+            tick_out.setdefault(n, t)
         me_s = self._sum(f.dealt[me].values()) if me in f.dealt else self._sum([])
         pet_s = self._sum(s for att in pets if att in f.dealt for s in f.dealt[att].values())
         for att, r in dot_rows.items():
@@ -1305,13 +1346,6 @@ class DpsTracker:
                 instakills += ik
                 taken_by.append({"name": att, "ability": key, "hits": s["hits"], "dmg": s["dmg"], "instakill": ik})
         taken_by.sort(key=lambda r: (-r["instakill"], -r["dmg"]))
-        targets = Counter()
-        tids = set()
-        for att in mine:
-            targets.update(f.targets.get(att, {}))
-            tids |= f.target_ids.get(att, set())
-            for name, v in dot.get(att, {}).items():
-                targets[name] += round(v[0] + v[1])
         tg = [{"name": n, "dmg": d, "ticks": ticks.get(n, 0)} for n, d in targets.most_common()]
         kills = sum(1 for att, vic in f.kills if att == me and vic not in mine)
         pet_kills = sum(1 for att, vic in f.kills if att in pets and vic not in mine)
@@ -1344,7 +1378,7 @@ class DpsTracker:
             "targets": tg[:6], "targetCount": len(tg), "mobs": len(tids), "mobIds": sorted(tids)[:40], "top": tg[0]["name"] if tg else None,
             "abilities": abilities, "takenBy": taken_by[:8],
             "indirectUnattributed": indirect_other, "shared": f.party or bool(others) or f.in_party, "others": others[:5],
-            "dotMe": dot_me, "dotPet": dot_pet, "byTarget": by_target, "ticks": {n: t for n, t in ticks.most_common(12)},
+            "dotMe": dot_me, "dotPet": dot_pet, "byTarget": by_target, "ticks": tick_out, "byTargetMore": max(0, len(targets) - len(top)),
             "inParty": f.in_party, "party": sorted(f.roster)[:12],
             "timeline": tl, "timelineStep": step,
         }
@@ -4377,10 +4411,17 @@ def parse_teleport_wikitext(text):
         elif line.startswith(";"):
             rest = line[1:].strip()
             link = WIKI_LINK_RE.match(rest)
-            if not link:
-                continue  # the "Numbers are confirmed as of …" note, not a zone
-            note = wiki_plain(rest[link.end():]).lstrip("-: ").strip()
-            zone = {"zone": wiki_plain(link.group(0)), "landmarks": [], "note": note or None}
+            if link:
+                name, note = wiki_plain(link.group(0)), wiki_plain(rest[link.end():]).lstrip("-: ").strip()
+            else:
+                # Plain words, not a [[link]]: the "Numbers are confirmed as of …" note (dropped, with any lines under
+                # it), else a zone someone wrote without a link, still its own zone so its codes never land in the zone before.
+                name, _, note = rest.partition(" - ")
+                name, note = wiki_plain(name), wiki_plain(note)
+            if not name or WIKI_CONFIRMED_RE.search(rest):
+                zone = landmark = None
+                continue
+            zone = {"zone": name, "landmarks": [], "note": note or None}
             zones.append(zone)
             landmark = None
         elif line.startswith(":"):

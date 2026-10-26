@@ -99,7 +99,7 @@ The Teleportation Machine codes are **not in the game data**: they are a player-
 
 Structure under the heading `=== Teleportation Machine Codes ===`, inside a `{{Spoiler|Destination List| … }}` template:
 - `; '''Numbers are confirmed as of March 28, 2025''' …` is the page's own freshness line (parsed into `confirmedAsOf`, `2025-03-28`); the page says most codes rotate whenever a zone or dungeon is added, so this date is what "fresh" means for these numbers, not the fetch time.
-- `; [[Zone]]` starts a zone (14 on 26 Oct 2026, revision 282545: Anagoge Island, Serbule Hills, Serbule, Sun Vale, Eltibule, Red Wing Casino, Kur Mountains, Ilmari, Rahu, Gazluk, Povus, Vidaria, Statehelm, Fae Realm). Text after the link is a zone note (`; [[Fae Realm]] - "Alharth tp machine can't send you to different planes." - Citan`, no codes).
+- `; [[Zone]]` starts a zone (14 on 26 Oct 2026, revision 282545: Anagoge Island, Serbule Hills, Serbule, Sun Vale, Eltibule, Red Wing Casino, Kur Mountains, Ilmari, Rahu, Gazluk, Povus, Vidaria, Statehelm, Fae Realm). Text after the link is a zone note (`; [[Fae Realm]] - "Alharth tp machine can't send you to different planes." - Citan`, no codes). A `;` heading without a link (none on the page today) is parsed as its own zone, never folded into the zone before it; the confirmed-as-of line ends the zone above it.
 - `: Landmark text.` a landmark (may hold `[[links]]`, `[[link|text]]`, a trailing period, an HTML comment); 108 on 26 Oct.
 - `:: 0055, 3049` its codes: four digits, comma separated, one line reads `:: 0056  0091 (inside)` (two codes, the words kept as the landmark's note) and one `::3824` (no space); 214 codes on 26 Oct.
 

@@ -1925,7 +1925,8 @@ function abilTip(a) {
 const ENEMY_SHOW = 6;  // By enemy rows before "Show all"
 /* By enemy: one row per enemy from `byTarget` (you and each pet: direct hits and the damage over time credited after
    the first hit) and `ticks` (every tick the log saw on that enemy, ours or not). "Not yours" = ticks minus the credited
-   damage over time, the share that ran before your first hit; Total = the fight's credit, which is what `targets` holds. */
+   damage over time, the share that ran before your first hit; Total = the fight's credit, which is what `targets` holds.
+   The server keeps the top 40 enemies by credit; `byTargetMore` is how many you hit are left out, said under the table. */
 function enemyRows(f) {
   const bt = f.byTarget; if (!bt) return null;
   const tk = f.ticks || {}, rows = {};
@@ -1950,9 +1951,11 @@ function renderByEnemy(f) {
     const line2 = [r.me ? `you ${fmt(r.me)}` : '', r.pets ? `pets ${fmt(r.pets)}` : '', r.dot ? `DoT ${fmt(r.dot)}` : '', r.other ? `not yours ${fmt(r.other)}` : ''].filter(Boolean).join(' · ');
     return `<tr class="row"><td class="m1">${esc(r.name)}</td><td class="num">${n(r.me)}</td><td class="num"${pets ? ` title="${esc(pets)}"` : ''}>${n(r.pets)}</td><td class="num">${n(r.dot)}</td><td class="num d-only">${n(r.other)}</td><td class="num m2"><b>${n(r.total)}</b></td><td class="m-line2">${esc(line2)}</td></tr>`;
   }).join('');
-  const more = rows.length > ENEMY_SHOW ? `<p style="margin:8px 0 0"><button type="button" class="linkbtn" data-eall aria-expanded="${dUI.enemiesAll}" style="text-decoration:underline">${dUI.enemiesAll ? `Show the top ${ENEMY_SHOW}` : `Show all ${fmt(rows.length)} enemies`}</button></p>` : '';
+  const left = f.byTargetMore || 0;
+  const more = rows.length > ENEMY_SHOW ? `<p style="margin:8px 0 0"><button type="button" class="linkbtn" data-eall aria-expanded="${dUI.enemiesAll}" style="text-decoration:underline">${dUI.enemiesAll ? `Show the top ${ENEMY_SHOW}` : `Show all ${fmt(rows.length)} ${left ? 'listed' : 'enemies'}`}</button></p>` : '';
+  const cap = left ? ` ${fmt(left)} of the ${fmt(f.targetCount)} enemies you hit ${left === 1 ? "isn't" : "aren't"} listed (the server keeps the top ${fmt(f.targetCount - left)}), so the Totals here sum to less than the fight's ${fmt(f.dmg)}.` : '';
   return `<div style="margin-top:16px"><h3 class="small dim">By enemy</h3><table class="tbl resp-plain by-enemy"><thead><tr><th scope="col">Enemy</th><th scope="col" class="num">You</th><th scope="col" class="num">Pets</th><th scope="col" class="num">Damage over time</th><th scope="col" class="num d-only">Not yours</th><th scope="col" class="num">Total</th></tr></thead><tbody>${tr}</tbody></table>${more}
-    <p class="small dim" style="margin:6px 0 0">Direct hits by name; damage over time from your log after your first hit on that enemy. The game's autopsy lists health and armor apart; this adds them.</p></div>`;
+    <p class="small dim" style="margin:6px 0 0">Direct hits by name; damage over time from your log after your first hit on that enemy. The game's autopsy lists health and armor apart; this adds them.${cap}</p></div>`;
 }
 function renderBreakdown(c, f) {
   const box = $('#d-break'), sub = $('#d-break-sub'), copy = $('#d-copy');
@@ -4942,26 +4945,31 @@ function initReminders() {
 
 const TP_WIKI = 'https://wiki.projectgorgon.com/wiki/Teleportation_Machine';
 const TP_MAX_AGE = 86400;   // the server re-fetches after a day; older than that the copy is called stale here too
-const tpUI = { q: '', open: null, busy: false, err: null, askedAt: 0 };
+const tpUI = { q: '', open: null, busy: false, err: null, askedAt: 0, inflight: null };
 
-async function loadTeleports(refresh = false) {
-  if (tpUI.busy) return false;
-  tpUI.busy = true; tpUI.askedAt = NOW();
-  if (S.view === 'teleports') renderTeleports();
-  try {
-    const t = await api('/api/teleports' + (refresh ? '?refresh=1' : ''));
-    if (t && Array.isArray(t.zones)) { S.teleports = t; S.teleportsAt = NOW(); tpUI.err = null; markUp(); }
-    else tpUI.err = new Error(t?.error || 'bad answer');
-  } catch (e) {
-    if (e.status === 404) tpUI.err = Object.assign(new Error('old server'), { old: true });
-    else { tpUI.err = e; onFetchError(e); }
-  }
-  tpUI.busy = false;
-  if (S.view === 'teleports') renderAll();
-  return !tpUI.err;
+function loadTeleports(refresh = false) {
+  if (tpUI.inflight) return tpUI.inflight;   // one request at a time; a second caller shares the running one
+  tpUI.inflight = (async () => {
+    tpUI.busy = true; tpUI.askedAt = NOW();
+    if (S.view === 'teleports') renderTeleports();
+    try {
+      const t = await api('/api/teleports' + (refresh ? '?refresh=1' : ''));
+      if (t && Array.isArray(t.zones)) { S.teleports = t; S.teleportsAt = NOW(); tpUI.err = null; markUp(); }
+      else tpUI.err = new Error(t?.error || 'bad answer');
+    } catch (e) {
+      if (e.status === 404) tpUI.err = Object.assign(new Error('old server'), { old: true });
+      else { tpUI.err = e; onFetchError(e); }
+    }
+    tpUI.busy = false; tpUI.inflight = null;
+    if (S.view === 'teleports') renderAll();
+    return !tpUI.err;
+  })();
+  return tpUI.inflight;
 }
-/* Refresh link in every footer, and Check again on this view: ask the wiki now and say what came back. */
+/* Refresh link in every footer, and Check again on this view: ask the wiki now and say what came back. A load already
+   running (the view's first read) is not the re-read the player asked for: wait for it, then ask the wiki. */
 async function refreshTeleports() {
+  if (tpUI.inflight) await tpUI.inflight;
   const before = S.teleports?.revid;
   await loadTeleports(true);
   const t = S.teleports;
@@ -5015,7 +5023,8 @@ function teleportNote() {
   const conf = tpConfirmed(t);
   const age = v.at ? ` · <span class="age ${v.sev === 'warn' ? 'warn' : ''}">${ago(v.at)}</span>` : v.sev === 'bad' ? ` · <span class="age bad">missing</span>` : '';
   let ev, fx;
-  if (!t) { ev = "The wiki didn't answer and there's no saved copy of its Teleportation Machine page yet."; fx = 'When you\'re online: Refresh in any window here, or open the wiki page.'; }
+  if (!t && S.down) { ev = "The dashboard server isn't answering, so the wiki's Teleportation Machine page hasn't been fetched."; fx = 'Start it again: python3 server.py; the codes load when it answers.'; }
+  else if (!t) { ev = "The wiki didn't answer and there's no saved copy of its Teleportation Machine page yet."; fx = 'When you\'re online: Refresh in any window here, or open the wiki page.'; }
   else if (t.error) { ev = `The wiki didn't answer just now, so this is the copy fetched ${dateTime(v.at)}.${conf ? ` The page said its numbers were confirmed as of ${conf}.` : ''}`; fx = TP_FIX; }
   else if (v.sev === 'warn') { ev = `The copy of the wiki page is ${ageLong(v.age)} old.${conf ? ` The page said its numbers were confirmed as of ${conf}.` : ''}`; fx = TP_FIX; }
   else { ev = `Teleportation Machine codes are a player-kept list on the wiki, not game data.${conf ? ` The page says its numbers were confirmed as of ${conf}; most codes rotate when a zone or dungeon is added.` : ''}`; fx = 'To refresh: Refresh in any window here.'; }
@@ -5050,8 +5059,11 @@ function renderTeleports() {
   const t = S.teleports, v = tpVerdict();
   const old = !!tpUI.err?.old;
   const loading = !t && (tpUI.busy || (!tpUI.err && !S.down));
-  // Entering the view fetches the codes at once; a failed fetch waits for Retry or the next entry, never loops.
-  if (S.view === 'teleports' && !t && !tpUI.busy && !tpUI.err && !S.down && PREVIEW.sim !== 'loading') loadTeleports();
+  const down = !t && !loading && S.down;   // no copy because the dashboard server, not the wiki, didn't answer
+  // Entering the view fetches the codes at once; a failed fetch waits for Retry or the next entry, never loops. A read
+  // that failed because the server was down is asked again once the poll finds the server up (S.down false).
+  const retry = !tpUI.err || (isNetworkError(tpUI.err) && !tpUI.err.old);
+  if (S.view === 'teleports' && !t && !tpUI.busy && retry && !S.down && PREVIEW.sim !== 'loading') loadTeleports();
   const c = tpCounts(t);
   const conf = tpConfirmed(t);
   if (S.view === 'teleports') {
@@ -5059,6 +5071,7 @@ function renderTeleports() {
     $('#title-extra').hidden = true;
     if (old) { $('#finding').textContent = 'Needs a newer server.py to read the wiki.'; setStamp('Teleport codes', 'not available', 'bad'); }
     else if (loading) { $('#finding').html = '<span class="dim">Reading the Teleportation Machine page on the wiki…</span>'; setStamp('From the Project: Gorgon wiki', '…', 'ok'); }
+    else if (down) { $('#finding').textContent = "The dashboard server isn't answering, so the wiki's code list hasn't been fetched. Start it again: python3 server.py; the codes load when it answers."; setStamp('No code list yet', `as of ${hhmm(S.downSince || NOW())}`, 'bad'); }
     else if (!t) { $('#finding').textContent = "Couldn't reach the wiki, and there's no saved copy of its code list yet. Refresh when you're online."; setStamp('No code list yet', 'missing', 'bad'); }
     else {
       let f = `<em class="n">${fmt(c.codes)}</em> codes for <em class="n">${fmt(c.landmarks)}</em> landmarks in <em class="n">${fmt(c.zones)}</em> zones, from the wiki${conf ? `, confirmed there as of ${esc(conf)}` : ''}.`;
@@ -5078,6 +5091,7 @@ function renderTeleports() {
   const st = $('#tp-state');
   if (old) st.html = '<p class="empty">Needs a newer server.py.</p>';
   else if (loading) st.html = '<p><span class="loading-bar"></span></p>';
+  else if (down) st.html = `<p class="txt-bad" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${shape('bad')}<span>The dashboard server isn't answering, so the wiki page hasn't been asked for.</span><button type="button" class="btn" data-tpretry="1">Retry</button> <a class="btn" href="${TP_WIKI}" target="_blank" rel="noopener">Open the wiki page</a></p>`;
   else if (!t) st.html = `<p class="txt-bad" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${shape('bad')}<span>Couldn't read the wiki page.${tpUI.err && !isNetworkError(tpUI.err) ? ` ${esc(tpUI.err.message)}` : ''}</span><button type="button" class="btn" data-tpretry="1">Retry</button> <a class="btn" href="${TP_WIKI}" target="_blank" rel="noopener">Open the wiki page</a></p>`;
   else if (!t.zones.length) st.html = `<p class="empty">The wiki page has no code list the app can read. ${esc(t.error || '')}</p>`;
   else st.html = '';
