@@ -3291,6 +3291,8 @@ def health(character=None):
                                 "title": "Storage export is stale",
                                 "body": f"You've picked up {plural(stacks, 'stack')} of loot since the export of {when}, so Slots Free is lower than shown. VIP menu → Export Storage JSON",
                                 "fixKey": "export-storage", "args": {"report": "Storage", "file": f, "signal": "loot", "count": stacks}})
+    seen_ids = set()
+    moments = [m for m in moments if not (m["id"] in seen_ids or seen_ids.add(m["id"]))]
     moments.sort(key=lambda m: m["at"] or "", reverse=True)
 
     # characters

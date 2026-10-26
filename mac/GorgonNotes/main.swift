@@ -28,6 +28,16 @@ let notificationShim = """
     static async requestPermission() { const p = await post({ kind: 'permission' }); GNNotification.permission = p; return p; }
   }
   GNNotification.permission = '%PERM%';
+  // The baked value is from launch; re-read it on every page load and whenever the window comes back
+  // (e.g. from System Settings → Notifications), so a denied → allowed change needs no relaunch.
+  const refresh = () => post({ kind: 'permissionState' }).then(p => {
+    if (!p || p === GNNotification.permission) return;
+    GNNotification.permission = p;
+    window.dispatchEvent(new Event('gn-permission'));
+  }).catch(() => {});
+  refresh();
+  window.addEventListener('focus', refresh);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
   window.Notification = GNNotification;
   window.GORGON_NATIVE = true;
 })();
@@ -80,18 +90,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     center.setNotificationCategories([UNNotificationCategory(identifier: "gn", actions: [open, snooze], intentIdentifiers: [])])
 
     ensureServer {
-      center.getNotificationSettings { settings in
-        let perm: String
-        switch settings.authorizationStatus {
-        case .authorized, .provisional: perm = "granted"
-        case .denied: perm = "denied"
-        default: perm = "default"
-        }
-        DispatchQueue.main.async {
-          self.makeWindow(permission: perm)
-          // Opened by hand (not at login): show the window straight away.
-          if ProcessInfo.processInfo.systemUptime > 300 { self.showWindow(view: nil) }
-        }
+      self.permissionState { perm in
+        self.makeWindow(permission: perm)
+        // Opened by hand (not at login): show the window straight away.
+        if ProcessInfo.processInfo.systemUptime > 300 { self.showWindow(view: nil) }
       }
     }
     pollHealth()
@@ -413,11 +415,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     switch kind {
     case "permission":
       requestPermission { granted in replyHandler(granted ? "granted" : "denied", nil) }
+    case "permissionState":
+      permissionState { state in replyHandler(state, nil) }
     case "notify":
       notify(title: body["title"] as? String ?? "", body: body["body"] as? String ?? "", tag: body["tag"] as? String ?? "")
       replyHandler(nil, nil)
     default:
       replyHandler(nil, nil)
+    }
+  }
+
+  /// The current authorization without prompting: "granted", "denied" or "default".
+  func permissionState(_ done: @escaping (String) -> Void) {
+    UNUserNotificationCenter.current().getNotificationSettings { settings in
+      let perm: String
+      switch settings.authorizationStatus {
+      case .authorized, .provisional: perm = "granted"
+      case .denied: perm = "denied"
+      default: perm = "default"
+      }
+      DispatchQueue.main.async { done(perm) }
     }
   }
 

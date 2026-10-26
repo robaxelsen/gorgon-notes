@@ -4628,7 +4628,7 @@ function renderRemPanel() {
     on: [`<span style="color:var(--status)">[Status]</span> Reminders are on ${here}.`, '<button type="button" class="linkbtn" data-rem="off" style="text-decoration:underline">Turn them off</button>'],
     off: [`Reminders are off ${here}.`, '<button type="button" class="btn primary" data-rem="ask">Remind Me!</button>'],
     denied: [window.GORGON_NATIVE === true
-      ? `Notifications are off for ${APP_NAME}. Turn them on in System Settings → Notifications → ${APP_NAME}, then quit and reopen ${APP_NAME}. The page still shows every note.`
+      ? `Notifications are off for ${APP_NAME}. Turn them on in System Settings → Notifications → ${APP_NAME}, then come back here: this panel updates by itself. The page still shows every note.`
       : 'This browser blocked reminders for this page. Allow notifications for 127.0.0.1 in the browser\'s site settings, then reload. The page still shows every note.', ''],
     unsupported: ["This browser can't show reminders here. They need the page at 127.0.0.1 or localhost. The page still shows every note.", ''],
   }[p];
@@ -4712,6 +4712,8 @@ function renderAbout() {
 function initReminders() {
   $('#remindbtn').addEventListener('click', e => { $('#rempanel').hidden ? openPop('rempanel', e.currentTarget) : closePops(); });
   $('#mremind').addEventListener('click', () => openPop('rempanel', $('#remindbtn')));
+  // Mac app: the native shim re-reads the notification permission on focus and fires this when it changed.
+  window.addEventListener('gn-permission', () => { if (!$('#rempanel').hidden) renderRemPanel(); });
   $('#aboutbtn').addEventListener('click', e => { $('#aboutpop').hidden ? openPop('aboutpop', e.currentTarget) : closePops(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.querySelector('.pop:not([hidden])')) { e.stopPropagation(); closePops(); } }, true);
   // Phone sheet is modal: Tab wraps from the last control to the first (and back) without passing through <body>.
