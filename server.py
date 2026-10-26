@@ -958,6 +958,7 @@ class DpsTracker:
         self.fights = []
         self.cur = None
         self.logins = []            # (ts, character)
+        self.chars = set()          # every character logged in in this log (alts switch mid-day; never a pet)
         self.my_targets = set()     # names you dealt real damage to (whole log)
         self.hit_me = set()         # names that dealt real damage to you
         self.pet_hint = set()       # #id attackers with "(Pet)" in an ability name
@@ -994,6 +995,7 @@ class DpsTracker:
         if msg.startswith("*"):
             if m := LOGIN_RE.match(msg):
                 self.char = m.group(1)
+                self.chars.add(self.char)
                 self.logins.append((ts, self.char))
                 self.cur = None
             elif m := AREA_RE.match(msg):
@@ -1150,7 +1152,7 @@ class DpsTracker:
                     hit_by[v].add(att)
         pets = set()
         for att in attackers:
-            if att == self.char or att in enemies:
+            if att == self.char or att in self.chars or att in enemies:
                 continue
             if victims_of[att] & enemies or att in self.pet_hint or att in KNOWN_PETS or hit_by[att] & enemies:
                 pets.add(att)
@@ -1164,6 +1166,17 @@ class DpsTracker:
                     changed = True
         return pets, enemies
 
+    def char_at(self, dt):
+        """The character logged in at dt: the last login line at or before it (alts switch mid-day), else the log's
+        current one."""
+        who = None
+        for ts, c in self.logins:
+            if chat_dt(ts) <= dt:
+                who = c
+            else:
+                break
+        return who or self.char
+
     def result(self, scope, path, st):
         now = datetime.now()
         live = (now.timestamp() - st.st_mtime) < 15 * 60
@@ -1176,8 +1189,8 @@ class DpsTracker:
         fights = [f for f in self.fights if boundary is None or f.start_dt >= boundary]
         last = fights[-1] if fights else None
         open_fight = bool(live and last is not None and (now - last.end_dt).total_seconds() <= DPS_GAP_SEC)
-        rows = [self.fight_json(f, me, pets, enemies, now if (open_fight and f is last) else None) for f in fights]
-        unclassified = sorted({att for f in fights for att in f.targets if att != me and att not in pets and att not in enemies})
+        rows = [self.fight_json(f, self.char_at(f.start_dt), pets, enemies, now if (open_fight and f is last) else None) for f in fights]
+        unclassified = sorted({att for f in fights for att in f.targets if att != me and att not in self.chars and att not in pets and att not in enemies})
         totals = self.totals(rows, fights, me, pets, enemies)
         nowfig = {"inFight": open_fight, "dps": 0, "me": 0, "pet": 0, "recent": 0, "sec": 0, "fight": None}
         if last is not None:
@@ -1319,7 +1332,7 @@ class DpsTracker:
                 elif att in pets:
                     tl[i][2] += d
         return {
-            "id": f.start, "start": f.start, "at": chat_iso(f.start), "end": f.end, "endAt": chat_iso(f.end), "dur": dur,
+            "id": f.start, "start": f.start, "at": chat_iso(f.start), "end": f.end, "endAt": chat_iso(f.end), "dur": dur, "character": me,
             "open": bool(now), "minor": dur < DPS_MINOR["sec"] and dmg < DPS_MINOR["dmg"], "area": f.area,
             "dmg": dmg, "me": me_s["dmg"], "pet": pet_s["dmg"], "health": me_s["health"] + pet_s["health"], "armor": me_s["armor"] + pet_s["armor"],
             "dps": round(dmg / dur, 1), "dpsMe": round(me_s["dmg"] / dur, 1), "dpsPet": round(pet_s["dmg"] / dur, 1),
@@ -1787,7 +1800,7 @@ def party_publish():
         key = f"{code}|{r['at']}"
         if key in _party["posted"]:
             continue
-        summ = party_summary(r, me, f"gorgon-notes {app_version()[0]}")
+        summ = party_summary(r, r.get("character") or me, f"gorgon-notes {app_version()[0]}")
         if room_usable() and not room_down:
             try:
                 room_req(f"room/{code}/fights", summ)
@@ -2028,12 +2041,13 @@ def party_merge(me, local_rows, remote, since=None):
     The window shows fights since this copy joined: a remote fight that ended before `since`, or dealt no
     damage, is left out, as the local ones are."""
     items = []
+    local_names = {me} | {r.get("character") for r in local_rows if r.get("character")}   # this log's characters (alts too)
     for r in local_rows:
-        s = party_summary(r, me, "local")
+        s = party_summary(r, r.get("character") or me, "local")
         s["mine"] = True
         items.append(s)
     for s in remote.values():
-        if s.get("who") == me or not s.get("dmg"):
+        if s.get("who") in local_names or not s.get("dmg"):
             continue
         if since is not None and (iso_dt(s.get("end")) or since) < since:
             continue
@@ -2118,7 +2132,7 @@ def party_sessions(fights):
     now = datetime.now().astimezone()
     for m in reversed(_party["sessions"]):
         a, b = iso_dt(m["start"]), iso_dt(m.get("end")) or now
-        inside = [f for f in fs if a <= iso_dt(f["start"]) <= b]
+        inside = [f for f in fs if iso_dt(f["start"]) <= b and iso_dt(f["end"]) >= a]   # any fight that overlaps the session
         sess = {"id": "m:" + m["start"], "kind": "manual", "start": m["start"], "end": m.get("end"), "open": not m.get("end"),
                 "areas": sorted({f["area"] for f in inside if f.get("area")})}
         sess.update(session_rows(inside))
@@ -2561,7 +2575,7 @@ def discord_fight(fight_id=None, party_id=None, image=None, preview=False, sessi
                 row = next((r for r in rep_["fights"] if r["id"] == fight_id or r["at"] == fight_id), None)
             if row is None:
                 raise BadRequest("That fight isn't in today's log any more.")
-            card, party = discord_card(row=row, me=me), False
+            card, party = discord_card(row=row, me=row.get("character") or me), False
     if preview:
         return {"ok": True, "card": card}
     img = discord_image_bytes(image)
