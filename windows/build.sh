@@ -57,6 +57,8 @@ fi
 find "$OUT" -name "__pycache__" -type d -prune -exec rm -rf {} + 2>/dev/null || true
 find "$OUT" -name ".DS_Store" -delete 2>/dev/null || true
 echo "$VERSION" > "$OUT/build.txt"
+# The page learns its own build, so it can tell when an older server is still running behind it (static/app.js staleServer).
+perl -pi -e "s/^const PAGE_BUILD = 'dev';/const PAGE_BUILD = '$VERSION';/" "$OUT/static/app.js"
 
 # Windows text files get CRLF line endings (cmd.exe and Notepad are happiest with them).
 crlf() { perl -pe 's/\r?\n/\r\n/' "$1" > "$2"; }

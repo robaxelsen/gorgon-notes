@@ -18,6 +18,7 @@ import (
 	"archive/zip"
 	"bytes"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -97,8 +98,22 @@ func run() error {
 	}
 	url := "http://127.0.0.1:" + port + "/"
 
-	// Another copy already serving? Then just show the window; don't start or stop anything.
+	// Another copy already serving? If it is this build, just show the window. If it is an older build (the
+	// window of an earlier start is still open, or its server was orphaned), ask it to quit (POST /api/quit,
+	// since v0.7.1) and start this build's server; an older server without that route just keeps running and
+	// the page says what to do.
 	var server *exec.Cmd
+	if listening(port) {
+		if v := runningVersion(url); v != "" && v != build {
+			logf("port %s answers with %s, this build is %s: asking it to quit", port, v, build)
+			if _, err := post(url+"api/quit", 3*time.Second); err != nil {
+				logf("quit request failed: %v", err)
+			}
+			for i := 0; i < 40 && listening(port); i++ {
+				time.Sleep(150 * time.Millisecond)
+			}
+		}
+	}
 	if !listening(port) {
 		python := filepath.Join(app, "python", "python.exe")
 		if runtime.GOOS != "windows" { // Mac smoke test of this launcher only
@@ -208,6 +223,39 @@ func fetch(url string, timeout time.Duration) ([]byte, error) {
 		return nil, fmt.Errorf("%s: HTTP %d", url, resp.StatusCode)
 	}
 	return io.ReadAll(io.LimitReader(resp.Body, 200<<20))
+}
+
+// runningVersion asks the server on url for its version ("" when it does not answer or is too old to say).
+func runningVersion(url string) string {
+	data, err := fetch(url+"api/health", 15*time.Second)
+	if err != nil {
+		return ""
+	}
+	var h struct {
+		App struct {
+			Version string `json:"version"`
+		} `json:"app"`
+	}
+	if json.Unmarshal(data, &h) != nil {
+		return ""
+	}
+	return h.App.Version
+}
+
+func post(url string, timeout time.Duration) ([]byte, error) {
+	client := &http.Client{Timeout: timeout}
+	req, err := http.NewRequest("POST", url, strings.NewReader("{}"))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "gorgon-notes-launcher/"+build)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 }
 
 func listening(port string) bool {

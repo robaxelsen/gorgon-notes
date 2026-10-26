@@ -5,6 +5,7 @@
 /* Core: constants, preview modes, storage, fetch layer, formatting, glyphs. */
 
 const APP_NAME = 'Gorgon Notes';
+const PAGE_BUILD = 'dev';   // windows/build.sh stamps the release tag in here, so the page can tell a server behind it is older
 const FAN_LINE = 'fan-made, not affiliated with Elder Game';
 const VIEWS = ['session', 'combat', 'vendors', 'storage', 'character', 'files'];
 const VIEW_TITLE = { session: 'Session', combat: 'Combat', vendors: 'Vendors', storage: 'Storage', character: 'Character', files: 'Files' };
@@ -292,6 +293,8 @@ async function loadHealth() {
     const h = await api('/api/health' + who);
     if (h && h.version === 1) { S.health = h; S.healthMode = 'server'; }
     else { S.health = null; S.healthMode = 'browser'; }
+    const stale = staleServer();
+    if (stale && !S.staleToldAt) { S.staleToldAt = NOW(); toast({ kind: 'bad', broken: true, topic: 'stale-server', text: `${APP_NAME} was updated, but the old server (${stale}) is still running behind this window. ${STALE_FIX}` }); }
   } catch (e) {
     if (isNetworkError(e) && !(e.status === 404)) throw e;
     S.health = null; S.healthMode = 'browser';
@@ -4751,7 +4754,11 @@ function openPop(id, opener) {
   opener?.setAttribute('aria-expanded', 'true');
   const r = opener?.getBoundingClientRect();
   if (r && window.innerWidth >= 768) {
-    if (id === 'aboutpop') { pop.style.left = Math.max(16, r.left - 360 - 8) + 'px'; pop.style.top = Math.max(16, r.bottom - 300) + 'px'; }
+    if (id === 'aboutpop') {
+      // Beside the rail, bottom-aligned with the About button, but never past the window's bottom (it is taller than 300 px).
+      pop.style.left = Math.max(16, r.left - 360 - 8) + 'px';
+      pop.style.top = Math.max(16, Math.min(r.bottom - 300, window.innerHeight - pop.offsetHeight - 16)) + 'px';
+    }
     else { pop.style.left = Math.max(16, Math.min(window.innerWidth - 376, r.right - 360)) + 'px'; pop.style.top = (r.bottom + 6) + 'px'; }
   }
   pop.querySelector('button, input, a')?.focus();
@@ -4762,7 +4769,19 @@ function closePops() {
   if (popOpener) { popOpener.setAttribute('aria-expanded', 'false'); popOpener.focus(); popOpener = null; }
 }
 /* "Gorgon Notes v0.5.0 · newest release v0.5.0" from /api/health `app`; an older page or server says less. */
+/* The page is newer than the server behind it: after a Windows self-update the old server kept running (its window
+   was still open, or it was orphaned). Nothing new works until it is gone; say exactly that. */
+function staleServer() {
+  if (!S.health) return null;
+  const a = S.health.app;
+  if (!a) return 'before v0.6.0';
+  if (PAGE_BUILD !== 'dev' && a.source === 'build' && a.version !== PAGE_BUILD) return a.version;
+  return null;
+}
+const STALE_FIX = `Close every ${APP_NAME} window, wait a few seconds, then start ${APP_NAME} again. If it comes back the same, end the python.exe under ${APP_NAME} in Task Manager first.`;
 function versionLine() {
+  const stale = staleServer();
+  if (stale) return `<strong>This window is ${esc(PAGE_BUILD === 'dev' ? 'newer' : PAGE_BUILD)} but the server behind it is still ${esc(stale)}.</strong> The update is not finished. ${esc(STALE_FIX)}`;
   const a = S.health?.app;
   if (!a) return 'Version unknown until the server answers.';
   const extra = a.source === 'git' ? [a.ahead ? `${plural(a.ahead, 'commit')} past it` : '', a.dirty ? 'uncommitted changes' : ''].filter(Boolean).join(', ') : '';

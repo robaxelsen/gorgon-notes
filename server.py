@@ -4323,6 +4323,12 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error": repr(e)}, 500)
             return self.send_json(dict(res, ok=True, discord=discord_info()))
+        if url.path == "/api/quit":
+            # The Windows launcher asks an older server (left running from before a self-update) to make room for the
+            # new one. Local only, like every POST here; answers first, exits a moment later.
+            self.send_json({"ok": True, "version": app_version()[0]})
+            threading.Timer(0.3, os._exit, [0]).start()
+            return
         if url.path == "/api/discord/connect":
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
