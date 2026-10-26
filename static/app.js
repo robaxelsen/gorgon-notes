@@ -1,4 +1,4 @@
-/* Gorgon Notes app. Vanilla JS, no build step. Sections: core, health, session, vendors, storage, character, reminders, main. */
+/* Gorgon Notes app. Vanilla JS, no build step. Sections: core, health, session, vendors, storage, character, files, teleports, reminders, main. */
 'use strict';
 
 /* ===================== core ===================== */
@@ -7,8 +7,8 @@
 const APP_NAME = 'Gorgon Notes';
 const PAGE_BUILD = 'dev';   // windows/build.sh stamps the release tag in here, so the page can tell a server behind it is older
 const FAN_LINE = 'fan-made, not affiliated with Elder Game';
-const VIEWS = ['session', 'combat', 'vendors', 'storage', 'character', 'files'];
-const VIEW_TITLE = { session: 'Session', combat: 'Combat', vendors: 'Vendors', storage: 'Storage', character: 'Character', files: 'Files' };
+const VIEWS = ['session', 'combat', 'vendors', 'storage', 'character', 'files', 'teleports'];
+const VIEW_TITLE = { session: 'Session', combat: 'Combat', vendors: 'Vendors', storage: 'Storage', character: 'Character', files: 'Files', teleports: 'Teleports' };
 const FAVOR = ['Despised', 'Hated', 'Disliked', 'Tolerated', 'Neutral', 'Comfortable', 'Friends', 'CloseFriends', 'BestFriends', 'LikeFamily', 'SoulMates'];
 const FAVOR_LABEL = { CloseFriends: 'Close Friends', BestFriends: 'Best Friends', LikeFamily: 'Like Family', SoulMates: 'Soul Mates' };
 const DEFAULT_CHANS = ['Status', 'Guild', 'Nearby', 'Error', 'System'];
@@ -178,7 +178,7 @@ const S = {
   zone: null, zoneAt: null, zoneArea: null, // /api/zone for the current (or picked next-door) area
   storage: null, storageAt: null,
   merge: null, mergeAt: null, mergeOld: false, // /api/consolidation (split stacks); mergeOld = the server has no such endpoint
-  plan: null, planAt: null, planOld: false,    // /api/plan (sell and store); planOld = the server has no such endpoint
+  plan: null, planAt: null, planOld: false,    // /api/plan (the Sell window in Vendors); planOld = the server has no such endpoint
   charFile: null, charPicked: false, charData: null,
   itemsFile: null, itemsPicked: false, itemsData: null,
   icons: { base: null, byName: {}, byTypeId: {}, byType: {} },
@@ -492,6 +492,7 @@ function renderMargin() {
     const r = S.vendors.resetSummary;
     notes.push(`<div class="note positive"><span></span><div class="nt">${plural(r.count, 'vendor')} reset since the export</div><div class="ev">${fmt(r.restored)} councils already counted.</div></div>`);
   }
+  if (view === 'teleports') notes.push(teleportNote()); // the wiki source: client-side only, never a health verdict
   if (S.healthMode === 'browser') notes.push(`<div class="note">${shape('info')}<div class="nt">Some checks skipped</div><div class="ev">${esc(NEEDS_SERVER)}</div></div>`);
   $('#mnotes').html = notes.join('');
   const worst = worstOf(listed);
@@ -1328,6 +1329,7 @@ const dUI = {
   selected: null, pinned: false,  // pinned = the player picked a fight; otherwise the newest (or the live one) is shown
   minor: false,                   // skirmishes (under 5 s and 500 damage) unfolded
   hasFight: false,                // the Breakdown shows a fight (Copy and Post enabled)
+  enemiesAll: false,              // By enemy: every enemy shown, not just the top ENEMY_SHOW
   sort: (store.json('pgdash.sort', {}).fights) || { key: 'start', dir: 'desc' },
 };
 const D_COLS = [
@@ -1920,6 +1922,41 @@ function abilTip(a) {
   if (a.levels?.length) parts.push(`seen as ${a.levels.join(', ')}`);
   return `${a.name}: ${parts.join(' · ')}`;
 }
+const ENEMY_SHOW = 6;  // By enemy rows before "Show all"
+/* By enemy: one row per enemy from `byTarget` (you and each pet: direct hits and the damage over time credited after
+   the first hit) and `ticks` (every tick the log saw on that enemy, ours or not). "Not yours" = ticks minus the credited
+   damage over time, the share that ran before your first hit; Total = the fight's credit, which is what `targets` holds.
+   The server keeps the top 40 enemies by credit; `byTargetMore` is how many you hit are left out, said under the table. */
+function enemyRows(f) {
+  const bt = f.byTarget; if (!bt) return null;
+  const tk = f.ticks || {}, rows = {};
+  const row = n => rows[n] || (rows[n] = { name: n, me: 0, pets: 0, dot: 0, byPet: {}, ticks: tk[n] || 0 });
+  for (const [who, tg] of Object.entries(bt)) for (const [n, v] of Object.entries(tg || {})) {
+    const r = row(n), d = v.direct || 0;
+    if (who === 'you') r.me += d; else if (d) { r.pets += d; r.byPet[who] = (r.byPet[who] || 0) + d; }
+    r.dot += v.dot || 0;
+  }
+  for (const n of Object.keys(tk)) row(n);
+  return Object.values(rows)
+    .map(r => ({ ...r, other: Math.max(0, r.ticks - r.dot), total: r.me + r.pets + r.dot }))
+    .sort((a, b) => b.total - a.total || b.other - a.other || a.name.localeCompare(b.name));
+}
+function renderByEnemy(f) {
+  const rows = enemyRows(f);
+  if (!rows || !rows.length) return '';
+  const n = v => v ? fmt(v) : '<span class="dim">·</span>';
+  const shown = dUI.enemiesAll ? rows : rows.slice(0, ENEMY_SHOW);
+  const tr = shown.map(r => {
+    const pets = Object.entries(r.byPet).map(([p, d]) => `${p} ${fmt(d)}`).join(' · ');
+    const line2 = [r.me ? `you ${fmt(r.me)}` : '', r.pets ? `pets ${fmt(r.pets)}` : '', r.dot ? `DoT ${fmt(r.dot)}` : '', r.other ? `not yours ${fmt(r.other)}` : ''].filter(Boolean).join(' · ');
+    return `<tr class="row"><td class="m1">${esc(r.name)}</td><td class="num">${n(r.me)}</td><td class="num"${pets ? ` title="${esc(pets)}"` : ''}>${n(r.pets)}</td><td class="num">${n(r.dot)}</td><td class="num d-only">${n(r.other)}</td><td class="num m2"><b>${n(r.total)}</b></td><td class="m-line2">${esc(line2)}</td></tr>`;
+  }).join('');
+  const left = f.byTargetMore || 0;
+  const more = rows.length > ENEMY_SHOW ? `<p style="margin:8px 0 0"><button type="button" class="linkbtn" data-eall aria-expanded="${dUI.enemiesAll}" style="text-decoration:underline">${dUI.enemiesAll ? `Show the top ${ENEMY_SHOW}` : `Show all ${fmt(rows.length)} ${left ? 'listed' : 'enemies'}`}</button></p>` : '';
+  const cap = left ? ` ${fmt(left)} of the ${fmt(f.targetCount)} enemies you hit ${left === 1 ? "isn't" : "aren't"} listed (the server keeps the top ${fmt(f.targetCount - left)}), so the Totals here sum to less than the fight's ${fmt(f.dmg)}.` : '';
+  return `<div style="margin-top:16px"><h3 class="small dim">By enemy</h3><table class="tbl resp-plain by-enemy"><thead><tr><th scope="col">Enemy</th><th scope="col" class="num">You</th><th scope="col" class="num">Pets</th><th scope="col" class="num">Damage over time</th><th scope="col" class="num d-only">Not yours</th><th scope="col" class="num">Total</th></tr></thead><tbody>${tr}</tbody></table>${more}
+    <p class="small dim" style="margin:6px 0 0">Direct hits by name; damage over time from your log after your first hit on that enemy. The game's autopsy lists health and armor apart; this adds them.${cap}</p></div>`;
+}
 function renderBreakdown(c, f) {
   const box = $('#d-break'), sub = $('#d-break-sub'), copy = $('#d-copy');
   if (!f) {
@@ -1954,7 +1991,7 @@ function renderBreakdown(c, f) {
     ? `<div class="chart spark" id="d-spark" data-key="${esc(`${f.id}|${f.dur}|${f.dmg}`)}"><svg role="img" aria-label="Damage a second over this fight" tabindex="0"></svg><div class="tip" hidden></div></div>
       <table class="sr"><caption>Damage a second over this fight</caption><tbody>${tl.map(([sec, me, pet]) => `<tr><td>${tsec(sec)}</td><td>${fmt(me + pet)}</td></tr>`).join('')}</tbody></table>`
     : '';
-  box.html = `${glance}${spark}<div class="grid2" style="margin-top:12px"><div><h3 class="small dim">By ability</h3>${bars}</div><div><h3 class="small dim">What hit you</h3>${taken}</div></div>${note}`;
+  box.html = `${glance}${spark}<div class="grid2" style="margin-top:12px"><div><h3 class="small dim">By ability</h3>${bars}</div><div><h3 class="small dim">What hit you</h3>${taken}</div></div>${renderByEnemy(f)}${note}`;
   if (spark) drawFightSpark(f);
 }
 
@@ -2022,6 +2059,7 @@ function discordText(c, f) {
     `Damage ${fmt(f.dmg)} (${fmt(f.dps)}/s) · you ${fmt(f.me)} (${fmt(f.dpsMe)}/s)${petLine ? ' · ' + petLine : ''}`,
     `Kills ${fmt(kills)}${f.petKills ? ` (${fmt(f.petKills)} by pets)` : ''} · taken ${fmt(f.taken)} · deaths ${fmt(f.deaths)}${f.top ? ` · fought ${f.top}${f.targetCount > 1 ? ` +${fmt(f.targetCount - 1)}` : ''}` : ''}`,
     top ? `Top: ${top}` : '',
+    ...(enemyRows(f) || []).filter(r => r.total).slice(0, 3).map(r => `${r.name}: ${[r.me ? `you ${fmt(r.me)}` : '', r.pets ? `pets ${fmt(r.pets)}` : '', r.dot ? `DoT ${fmt(r.dot)}` : ''].filter(Boolean).join(' · ')}`),
     (f.dotMe || f.dotPet) ? `Damage over time ${fmt((f.dotMe || 0) + (f.dotPet || 0))} (ticks after your first hit, from your log)` : '',
     f.party?.length ? `In a party with ${joinNames(f.party)}.` : '',
     `From ${who}'s chat log via ${APP_NAME}. Party members' hits aren't in it.`,
@@ -2036,6 +2074,9 @@ function initCombat() {
     loadSession().then(() => { computeVerdicts(); renderAll(); }).catch(onFetchError);
   });
   tabKeys($('#dscope'));
+  $('#d-break').addEventListener('click', e => {
+    if (e.target.closest('[data-eall]')) { dUI.enemiesAll = !dUI.enemiesAll; renderCombatView(); $('#d-break [data-eall]')?.focus(); }
+  });
   const pane = $('#d-fights');
   const pick = id => {
     const c = S.combat, newest = (c?.fights || []).find(x => x.open) || (c?.fights || []).at(-1);
@@ -2074,6 +2115,8 @@ const vUI = {
   mode: 'area', q: '', area: '', hide: false, type: '', selected: null,
   qTypes: null,      // the search box's item lookup: { query, items, examples, types: [{ type, items }] } for vUI.q
   moreTypes: false,  // What they buy: the types past the first twelve are shown
+  pmode: 'stops',    // Sell: 'stops' (the route) or 'items' (one row per stack); not persisted
+  trashAll: false, unsoldAll: false, // Sell: the "trash in your vaults" and "no vendor buys" lists unfolded
   sort: (store.json('pgdash.sort', {}).vendors) || { key: 'remaining', dir: 'desc' },
   open: (store.json('pgdash.open', {}).vendors) || null,
 };
@@ -2251,6 +2294,8 @@ function renderVendors() {
   if (oldServerVendors()) fr += ' · Resets since the export need a newer server.py';
   setFoot('w-v-pane', missing ? `Character export · ${shape('bad', 's13')}<span class="age bad">missing</span>` : `${footL} · caps from game data v${esc(ver)}`, missing ? esc(fixText('export-character')) : fr);
   if (missing) { setFoot('w-v-where', `Character export · ${shape('bad', 's13')}<span class="age bad">missing</span>`, esc(fixText('export-character'))); setFoot('w-v-buy', `Character export · ${shape('bad', 's13')}<span class="age bad">missing</span>`, esc(fixText('export-character'))); }
+
+  renderSell();
 }
 
 /* The item lookup that belongs to the current search text, else null (a stale answer never filters). */
@@ -2378,6 +2423,24 @@ function renderVendorPane(rows) {
 
 function initVendors() {
   vUI.mode = 'area';
+  // Sell window: tab strip, the keep list's Sell / Keep control, the folded lists
+  $('#w-v-sell').addEventListener('click', e => {
+    const tab = e.target.closest('#vsmode [role=tab]');
+    if (tab) { vUI.pmode = tab.dataset.m; renderSell(); tab.focus(); return; }
+    const m = e.target.closest('[data-mark]');
+    if (m && m.getAttribute('aria-checked') !== 'true') { setMark(m.dataset.tid, m.dataset.mark); return; }
+    if (e.target.closest('[data-trashall]')) { vUI.trashAll = !vUI.trashAll; renderSell(); $('#v-sell [data-trashall]')?.focus(); return; }
+    if (e.target.closest('[data-unsold]')) { vUI.unsoldAll = !vUI.unsoldAll; renderSell(); $('#v-sell [data-unsold]')?.focus(); }
+  });
+  $('#w-v-sell').addEventListener('keydown', e => {
+    const m = e.target.closest('.seg.mark [role=radio]');
+    if (!m || !['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+    e.preventDefault();
+    const other = m.dataset.mark === 'sell' ? 'store' : 'sell';
+    m.parentElement.querySelector(`[data-mark="${other}"]`)?.focus();
+    setMark(m.dataset.tid, other);
+  });
+  tabKeys($('#vsmode'));
   let lookupTimer = null;
   $('#vq').addEventListener('input', e => {
     vUI.q = e.target.value; renderVendors();
@@ -2446,8 +2509,7 @@ const sUI = {
   msgs: {}, // vault -> {kind, text}
   iq: '', iloc: '', isort: (store.json('pgdash.sort', {}).items) || { key: 'value', dir: 'desc' }, ilimit: 200, ifold: new Set(), imode: 'items',
   mmode: 'items', // Stacks to merge: 'items' (by item) or 'stops' (pickup plan); not persisted
-  spreadAll: false, trashAll: false, // the "held in several places" and "trash in your vaults" lists unfolded
-  pmode: 'stops', // Sell and store: 'stops' (the route) or 'items' (one row per stack); not persisted
+  spreadAll: false, // the "held in several places" list unfolded
 };
 const PROV = { favor: 'from favor', stat: 'from your stats', fixed: 'fixed size', manual: 'typed in by you' };
 
@@ -2550,7 +2612,6 @@ function renderStorage() {
   setFoot('w-t-pane', missing ? missL : `${footL} · ${sizeSrc}`, missing ? missR : footR);
 
   renderMerge();
-  renderPlan();
   renderItems();
 }
 
@@ -2660,68 +2721,72 @@ function mergeByStop(m) {
   }).join('');
 }
 
-/* ===================== Sell and store (Storage) ===================== */
-/* GET /api/plan: what to do with every stack in the inventory. Sell = vendor trash to the vendor with the most
-   councils left who buys it; store = everything else, to a vault with room that already holds the type if there is
-   one; gear is the player's call (worn gear can't be told from carried in the export) and is shown, not counted. */
-function renderPlan() {
-  const box = $('#t-plan');
+/* ===================== Sell (Vendors) ===================== */
+/* GET /api/plan: what the bags hold that a vendor would pay for. Sell = vendor trash (or a type marked Sell) to the
+   vendor with the most councils left who buys it; gear is the player's call (worn gear can't be told from carried in
+   the export) and is shown, not counted; everything else is kept (Keep: it stays in the bags, where it goes is up to
+   you; the app no longer suggests a vault, since it never knew what a vault accepts). */
+function renderSell() {
+  const box = $('#v-sell');
   if (!box) return;
   const p = S.plan;
   const missing = storageMissing() || p?.error === 'no items export';
+  const noSheet = !missing && vendorsMissing();
   const err = !missing && ((S.errors.plan && !p?.items) || !!p?.error);
   const mult = p?.multiplier ? `×${(+p.multiplier).toFixed(2)}` : '';
-  const footL = `${srcAge('storage-export', 'Storage export')} · ${srcAge('character-export', 'Character export')}${mult ? ` · prices ${mult} from your stats, not checked in game` : ''}`;
-  const footR = srcFix('storage-export', 'After selling or storing:');
+  const footL = `${srcAge('storage-export', 'Storage export')} · ${srcAge('character-export', 'Character export')}${mult && !noSheet ? ` · prices ${mult} from your stats, not checked in game` : ''}`;
+  const footR = srcFix('storage-export', 'After selling:');
   let tabsOn = false, count = '';
   if (S.planOld) {
     box.html = '<p class="needs">Needs a newer Gorgon Notes.</p>';
-    setFoot('w-t-plan', footL, 'The plan needs a newer Gorgon Notes');
+    setFoot('w-v-sell', footL, 'The sell plan needs a newer Gorgon Notes');
   } else if (missing) {
     box.html = '<p class="needs">Needs a storage export.</p>';
-    setFoot('w-t-plan', `Storage export · ${shape('bad', 's13')}<span class="age bad">missing</span>`, esc(fixText('export-storage')));
+    setFoot('w-v-sell', `Storage export · ${shape('bad', 's13')}<span class="age bad">missing</span>`, esc(fixText('export-storage')));
   } else if (S.loading && !p && !S.errors.plan) {
     box.html = '<div class="loading-bar" style="width:100%;height:120px"></div>';
-    setFoot('w-t-plan', 'Loading the exports…', '');
+    setFoot('w-v-sell', 'Loading the exports…', '');
   } else if (err) {
-    box.html = blockError('the sell and store plan', S.lastGood.plan);
-    setFoot('w-t-plan', footL, footR);
+    box.html = blockError('the sell plan', S.lastGood.plan);
+    setFoot('w-v-sell', footL, footR);
+  } else if (noSheet) {
+    box.html = `<p class="needs">Nothing to sell yet: no character export, so vendors and the sale price are unknown.</p>${vaultTrashHtml(p)}`;
+    setFoot('w-v-sell', footL, esc(fixText('export-character')));
   } else if (!p.summary?.stacks) {
-    box.html = '<p class="empty">Your bags are empty in this export. Nothing to sell or store.</p>';
-    setFoot('w-t-plan', footL, footR);
+    box.html = '<p class="empty">Your bags are empty in this export. Nothing to sell.</p>';
+    setFoot('w-v-sell', footL, footR);
   } else {
     tabsOn = true;
-    count = ` · ${plural(p.summary.stops, 'stop')}`;
-    const lead = planLead(p);
-    const stopsPanel = `<div id="t-plan-stops" role="tabpanel" aria-labelledby="tp-stops" ${sUI.pmode === 'stops' ? '' : 'hidden'}>${lead}${planByStop(p)}</div>`;
-    const itemsPanel = `<div id="t-plan-items" role="tabpanel" aria-labelledby="tp-items" ${sUI.pmode === 'items' ? '' : 'hidden'}>${lead}${planByItem(p)}</div>`;
+    count = p.summary.stops ? ` · ${plural(p.summary.stops, 'stop')}` : '';
+    const lead = sellLead(p);
+    const stopsPanel = `<div id="v-sell-stops" role="tabpanel" aria-labelledby="vs-stops" ${vUI.pmode === 'stops' ? '' : 'hidden'}>${lead}${sellByStop(p)}</div>`;
+    const itemsPanel = `<div id="v-sell-items" role="tabpanel" aria-labelledby="vs-items" ${vUI.pmode === 'items' ? '' : 'hidden'}>${lead}${sellByItem(p)}</div>`;
     box.html = stopsPanel + itemsPanel;
-    setFoot('w-t-plan', footL, footR);
+    setFoot('w-v-sell', footL, footR);
   }
-  $('#pmode-wrap').hidden = !tabsOn;
-  $$('#pmode [role=tab]').forEach(b => { b.setAttribute('aria-selected', String(b.dataset.m === sUI.pmode)); b.tabIndex = b.dataset.m === sUI.pmode ? 0 : -1; });
-  $('#t-plan-count').textContent = count;
+  $('#vsmode-wrap').hidden = !tabsOn;
+  $$('#vsmode [role=tab]').forEach(b => { b.setAttribute('aria-selected', String(b.dataset.m === vUI.pmode)); b.tabIndex = b.dataset.m === vUI.pmode ? 0 : -1; });
+  $('#v-sell-count').textContent = count;
 }
-function planLead(p) {
-  const s = p.summary, sell = s.sell, store = s.store, gear = s.gear;
-  const parts = [];
-  if (sell.stacks) parts.push(`sell <em class="n">${fmt(sell.stacks)}</em> ${sell.stacks === 1 ? 'stack' : 'stacks'} ${sell.vendors === 1 ? `to ${esc(p.stops.flatMap(st => st.sell).find(Boolean)?.name || 'one vendor')}` : `at ${plural(sell.vendors, 'vendor')}`} for about <em class="n">${fmt(sell.councils)}</em> councils`);
-  if (store.stacks) parts.push(`store <em class="n">${fmt(store.stacks)}</em> ${store.stacks === 1 ? 'stack' : 'stacks'} in ${plural(store.vaults, 'vault')}`);
-  let html = `<p>${parts.length ? `Empty your bags in <em class="n">${fmt(s.stops)}</em> ${s.stops === 1 ? 'stop' : 'stops'}: ${parts.join(', ')}.` : 'Nothing to sell or store from here.'}`;
+function sellLead(p) {
+  const s = p.summary, sell = s.sell, gear = s.gear, keep = s.keep || { stacks: 0 };
+  let html = '<p>';
+  if (sell.stacks) {
+    const where = sell.vendors === 1 ? `to ${esc(p.stops.flatMap(st => st.sell).find(Boolean)?.name || 'one vendor')}` : `at <em class="n">${fmt(s.stops)}</em> ${s.stops === 1 ? 'stop' : 'stops'}`;
+    html += `Sell <em class="n">${fmt(sell.stacks)}</em> ${sell.stacks === 1 ? 'stack' : 'stacks'} ${where} for about <em class="n">${fmt(sell.councils)}</em> councils.`;
+  } else html += 'Nothing in your bags to sell right now.';
   if (gear.stacks) html += ` <em class="n">${fmt(gear.stacks)}</em> ${gear.stacks === 1 ? 'piece' : 'pieces'} of gear ${gear.stacks === 1 ? 'is' : 'are'} your call${gear.councils ? ` (about ${fmt(gear.councils)} at vendors)` : ''}.`;
-  if (s.stays) html += ` <em class="n">${fmt(s.stays)}</em> ${s.stays === 1 ? 'stack stays' : 'stacks stay'}: no vault has room.`;
+  if (keep.stacks) html += ` <em class="n">${fmt(keep.stacks)}</em> ${keep.stacks === 1 ? 'stack stays' : 'stacks stay'} in your bags.`;
   html += '</p>';
   const notes = [];
-  if (s.marked) notes.push(`${plural(s.marked, 'type')} marked by you (Sell / Store in By item; a mark applies to every stack of the type, now and later)`);
+  if (s.marked) notes.push(`${plural(s.marked, 'type')} marked by you (Sell / Keep in By item; a mark applies to every stack of the type, now and later)`);
   if (s.vaultTrash?.stacks) notes.push(`${plural(s.vaultTrash.stacks, 'stack')} of vendor trash sit in your vaults, about ${fmt(s.vaultTrash.councils)} councils (listed under the stops)`);
-  if (s.unsellable) notes.push(`${fmt(s.unsellable)} of the stored stacks no vendor buys`);
-  if (!p.sheet) notes.push('no character export, so vendors and the sale price are unknown');
+  if (s.unsellable) notes.push(`${fmt(s.unsellable)} of the kept stacks no vendor buys`);
   if (gear.stacks) notes.push("worn gear can't be told from carried in the export");
-  if (s.inventoryFree != null) notes.push(`${fmt(s.inventoryFree)} free ${s.inventoryFree === 1 ? 'slot' : 'slots'} in your bags now`);
   if (notes.length) html += `<p class="small dim" style="margin-top:4px">${esc(notes.join('. '))}.</p>`;
   return html;
 }
-function planByStop(p) {
+function sellByStop(p) {
   const here = loggedIn() ? S.health?.game?.area : null;
   const stops = [...(p.stops || [])].sort((a, b) => (b.area === here) - (a.area === here));
   const name = (t, cls = 't') => `<em class="${cls}">${esc(t)}</em>`;
@@ -2729,49 +2794,52 @@ function planByStop(p) {
     const head = st.area === 'Anywhere' ? 'Anywhere (carried, or area unknown)' : st.area;
     const sells = (st.sell || []).map(g => `<p class="from">Sell to ${name(g.name)} · ${plural(g.stacks, 'stack')} · about <em class="n">${fmt(g.councils)}</em> councils <span class="dim">(can still pay ${fmt(g.left)}, ${fmt(g.after)} after)</span></p>
       <ul class="list feed-what">${g.items.map(i => `<li>${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span class="what">${i.qty > 1 ? `<em class="n">${fmt(i.qty)}</em> ` : ''}${esc(i.name)}</span><span class="n">${fmt(i.councils)}</span></li>`).join('')}</ul>`).join('');
-    const stores = (st.store || []).map(g => `<p class="from">Store at ${name(g.name)} · ${plural(g.stacks, 'stack')} <span class="dim">(${g.free == null ? 'size unknown' : `${fmt(g.free)} free, ${fmt(g.after)} after`})</span></p>
-      <ul class="list feed-what">${g.items.map(i => `<li>${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span class="what">${i.qty > 1 ? `<em class="n">${fmt(i.qty)}</em> ` : ''}${esc(i.name)}</span></li>`).join('')}</ul>`).join('');
-    return `<section class="stop"><h3>${esc(head)} · ${plural(st.stacks, 'stack')}${st.councils ? ` · about ${fmt(st.councils)} councils` : ''}${st.area === here ? ' <span class="tag">you\'re here</span>' : ''}</h3>${sells}${stores}</section>`;
-  }).join('') || '<p class="empty">No stops: nothing can be sold or stored from here.</p>';
+    return `<section class="stop"><h3>${esc(head)} · ${plural(st.stacks, 'stack')}${st.councils ? ` · about ${fmt(st.councils)} councils` : ''}${st.area === here ? ' <span class="tag">you\'re here</span>' : ''}</h3>${sells}</section>`;
+  }).join('') || '<p class="empty">No stops: nothing in your bags sells right now.</p>';
   return html + vaultTrashHtml(p);
 }
 /* Vendor trash sitting in vaults: where it is and what it would fetch, so a trip can pick it up on the way.
-   Not routed (picking up and selling is two stops); a Store mark on the type keeps it out of here. */
+   Not routed (picking up and selling is two stops); a Keep mark on the type keeps it out of here. */
 function vaultTrashHtml(p) {
-  const vt = Array.isArray(p.vaultTrash) ? p.vaultTrash : [], sum = p.summary?.vaultTrash;
+  const vt = Array.isArray(p?.vaultTrash) ? p.vaultTrash : [], sum = p?.summary?.vaultTrash;
   if (!vt.length || !sum) return '';
-  const shown = sUI.trashAll ? vt : vt.slice(0, 4);
+  const shown = vUI.trashAll ? vt : vt.slice(0, 4);
   const groups = shown.map(g => `<p class="from">${esc(g.name)}${g.area ? ` · ${esc(g.area)}` : ''} · ${plural(g.stacks, 'stack')} · about <em class="n">${fmt(g.councils)}</em> councils</p>
     <ul class="list feed-what">${g.items.slice(0, 6).map(i => `<li>${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span class="what">${i.qty > 1 ? `<em class="n">${fmt(i.qty)}</em> ` : ''}${esc(i.name)}</span><span class="n">${fmt(i.councils)}</span></li>`).join('')}${g.items.length > 6 ? `<li><span class="what dim">and ${plural(g.items.length - 6, 'more stack')}</span></li>` : ''}</ul>`).join('');
-  const more = vt.length > 4 ? `<p style="margin-top:8px"><button type="button" class="linkbtn" data-trashall="1" style="text-decoration:underline">${sUI.trashAll ? 'Show the first 4 vaults' : `Show all ${fmt(vt.length)} vaults`}</button></p>` : '';
+  const more = vt.length > 4 ? `<p style="margin-top:8px"><button type="button" class="linkbtn" data-trashall="1" style="text-decoration:underline">${vUI.trashAll ? 'Show the first 4 vaults' : `Show all ${fmt(vt.length)} vaults`}</button></p>` : '';
   return `<section class="stop"><h3>Trash in your vaults · ${plural(sum.stacks, 'stack')} · about ${fmt(sum.councils)} councils</h3>
-    <p class="small dim" style="margin:0 0 4px">Vendor trash sitting in ${plural(sum.vaults, 'vault')}. Not in the route: it has to be picked up first. Mark a type Store in By item to keep it.</p>${groups}${more}</section>`;
+    <p class="small dim" style="margin:0 0 4px">Vendor trash sitting in ${plural(sum.vaults, 'vault')}. Not in the route: it has to be picked up first. Mark a type Keep in By item to keep it.</p>${groups}${more}</section>`;
 }
-/* The keep list control: Sell / Store per item type. Only sellable types get it (nothing can be sold otherwise);
-   the current state is the row's action, a mark shows as the checked option. */
+/* The keep list control: Sell / Keep per item type. Only sellable types get it (nothing can be sold otherwise);
+   the current state is the row's action, a mark shows as the checked option. Keep is sent as "store" (the mark's
+   name in marks.json since 26 Oct morning; the UI never says Store). */
 function markSeg(i) {
   if (!i.sellable) return '';
   const cur = i.mark || (i.kind === 'sell' ? 'sell' : 'store');
   const opt = (v, label) => `<button type="button" role="radio" aria-checked="${cur === v}" data-mark="${v}" data-tid="${esc(String(i.typeId))}" ${cur === v ? 'tabindex="0"' : 'tabindex="-1"'}>${label}</button>`;
-  return `<span class="seg mark" role="radiogroup" aria-label="${esc(i.name)}: sell or store">${opt('sell', 'Sell')}${opt('store', 'Store')}</span>`;
+  return `<span class="seg mark" role="radiogroup" aria-label="${esc(i.name)}: sell or keep">${opt('sell', 'Sell')}${opt('store', 'Keep')}</span>`;
 }
 async function setMark(typeId, mark) {
   try {
     await api('/api/mark', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ typeId: Number(typeId), mark }) });
-    await loadVendors(); computeVerdicts(); renderStorage();
+    await loadVendors(); computeVerdicts(); renderVendors();
   } catch (e) { sysLine('error', `Couldn't save the mark: ${e?.message || 'the server didn\'t answer'}.`); }
 }
-function planByItem(p) {
-  const order = { sell: 0, store: 1, gear: 2, stays: 3 };
-  const rows = [...p.items].sort((a, b) => order[a.action] - order[b.action] || b.price - a.price).map(i => {
+function sellByItem(p) {
+  const order = { sell: 0, gear: 1, keep: 2 };
+  const all = [...p.items].sort((a, b) => order[a.action] - order[b.action] || b.price - a.price);
+  const unsold = all.filter(i => i.action === 'keep' && i.why);          // nobody buys these: folded under one line
+  const listed = all.filter(i => !(i.action === 'keep' && i.why));
+  const row = i => {
     let doText, about = '';
     if (i.action === 'sell') { doText = `Sell to <em class="t">${esc(i.sellTo.name)}</em> · ${esc(i.sellTo.area)}${i.note ? ` <span class="tag">${esc(i.note)}</span>` : ''}`; about = fmt(i.sellTo.councils); }
-    else if (i.action === 'store') { doText = `Store at <em class="t">${esc(i.storeAt.name)}</em>${i.storeAt.area ? ` · ${esc(i.storeAt.area)}` : ''}${i.storeAt.holdsSome ? ' <span class="tag">has some already</span>' : ''}${i.why ? ` <span class="tag">${esc(i.why)}</span>` : ''}${i.sellTo ? ` <span class="small dim">or ${esc(i.sellTo.name)} pays about ${fmt(i.sellTo.councils)}</span>` : ''}`; }
-    else if (i.action === 'gear') { doText = `Your call${i.sellTo ? ` · ${esc(i.sellTo.name)} pays about ${fmt(i.sellTo.councils)}` : ''}${i.storeAt ? ` · or store at ${esc(i.storeAt.name)}` : ''}`; about = i.sellTo ? fmt(i.sellTo.councils) : ''; }
-    else doText = `Stays <span class="tag">${esc(i.note || 'no room')}</span>`;
+    else if (i.action === 'gear') { doText = `Your call${i.sellTo ? ` · ${esc(i.sellTo.name)} pays about ${fmt(i.sellTo.councils)}` : ''}`; about = i.sellTo ? fmt(i.sellTo.councils) : ''; }
+    else doText = `Keep${i.why ? ` <span class="tag">${esc(i.why)}</span>` : ''}${i.note ? ` <span class="tag">${esc(i.note)}</span>` : ''}${i.sellTo ? ` <span class="small dim">or ${esc(i.sellTo.name)} pays about ${fmt(i.sellTo.councils)}</span>` : ''}`;
     return `<tr class="row"><td class="m1"><span class="cell-name">${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span>${esc(i.name)}</span></span></td><td class="num">${fmt(i.qty)}</td><td>${doText}</td><td class="num m2">${about}</td><td class="markcell">${markSeg(i)}</td><td class="m-line2">${fmt(i.qty)} · ${doText}${about ? ` · about ${about}` : ''}</td></tr>`;
-  }).join('');
-  return `<table class="tbl resp-plain plan-items" style="margin-top:10px"><thead><tr><th scope="col">Item</th><th scope="col" class="num">Qty</th><th scope="col">Do</th><th scope="col" class="num">About</th><th scope="col">Your mark</th></tr></thead><tbody>${rows}</tbody></table>`;
+  };
+  const fold = unsold.length ? `<tr class="row fold"><td colspan="5" class="m1"><button type="button" class="linkbtn" data-unsold="1" aria-expanded="${vUI.unsoldAll}" aria-controls="v-sell-unsold">${plural(unsold.length, 'stack')} no vendor buys${vUI.unsoldAll ? ' · Fewer' : ' · Show them'}</button></td></tr>` : '';
+  const foldRows = unsold.length && vUI.unsoldAll ? `<tbody id="v-sell-unsold">${unsold.map(row).join('')}</tbody>` : '';
+  return `<table class="tbl resp-plain plan-items" style="margin-top:10px"><thead><tr><th scope="col">Item</th><th scope="col" class="num">Qty</th><th scope="col">Do</th><th scope="col" class="num">About</th><th scope="col">Your mark</th></tr></thead><tbody>${listed.map(row).join('')}${fold}</tbody>${foldRows}</table>`;
 }
 
 function stripHtml(v) {
@@ -3093,22 +3161,6 @@ function initStorage() {
     if (e.target.closest('[data-spreadall]')) { sUI.spreadAll = !sUI.spreadAll; renderMerge(); $('#t-merge [data-spreadall]')?.focus(); }
   });
   tabKeys($('#tmode'));
-  $('#w-t-plan').addEventListener('click', e => {
-    const tab = e.target.closest('#pmode [role=tab]');
-    if (tab) { sUI.pmode = tab.dataset.m; renderPlan(); tab.focus(); return; }
-    const m = e.target.closest('[data-mark]');
-    if (m && m.getAttribute('aria-checked') !== 'true') { setMark(m.dataset.tid, m.dataset.mark); return; }
-    if (e.target.closest('[data-trashall]')) { sUI.trashAll = !sUI.trashAll; renderPlan(); $('#t-plan [data-trashall]')?.focus(); }
-  });
-  $('#w-t-plan').addEventListener('keydown', e => {
-    const m = e.target.closest('.seg.mark [role=radio]');
-    if (!m || !['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
-    e.preventDefault();
-    const other = m.dataset.mark === 'sell' ? 'store' : 'sell';
-    m.parentElement.querySelector(`[data-mark="${other}"]`)?.focus();
-    setMark(m.dataset.tid, other);
-  });
-  tabKeys($('#pmode'));
   $('#itemq').addEventListener('input', e => { sUI.iq = e.target.value; sUI.ilimit = 200; renderItems(); });
   $('#vaultf').addEventListener('change', e => { sUI.selected = null; sUI.iloc = e.target.value; sUI.ilimit = 200; renderVaultPane(vaultRows()); renderItems(); });
   $('#isortm').addEventListener('change', e => { const [k, d] = e.target.value.split(':'); sUI.isort = { key: k, dir: d }; saveSort('items', sUI.isort); renderItems(); });
@@ -4893,6 +4945,216 @@ function initReminders() {
   $('#remdot').hidden = permState() !== 'on';
 }
 
+/* ===================== teleports ===================== */
+/* Teleports view: every Teleportation Machine code, from the wiki's player-kept list (GET /api/teleports).
+   One window per zone, the zone you are in first, each code a button that copies it. The source line on every
+   footer says when the page was fetched and that the wiki last confirmed the numbers on 28 Mar 2025. */
+
+const TP_WIKI = 'https://wiki.projectgorgon.com/wiki/Teleportation_Machine';
+const TP_MAX_AGE = 86400;   // the server re-fetches after a day; older than that the copy is called stale here too
+const tpUI = { q: '', open: null, busy: false, err: null, askedAt: 0, inflight: null };
+
+function loadTeleports(refresh = false) {
+  if (tpUI.inflight) return tpUI.inflight;   // one request at a time; a second caller shares the running one
+  tpUI.inflight = (async () => {
+    tpUI.busy = true; tpUI.askedAt = NOW();
+    if (S.view === 'teleports') renderTeleports();
+    try {
+      const t = await api('/api/teleports' + (refresh ? '?refresh=1' : ''));
+      if (t && Array.isArray(t.zones)) { S.teleports = t; S.teleportsAt = NOW(); tpUI.err = null; markUp(); }
+      else tpUI.err = new Error(t?.error || 'bad answer');
+    } catch (e) {
+      if (e.status === 404) tpUI.err = Object.assign(new Error('old server'), { old: true });
+      else { tpUI.err = e; onFetchError(e); }
+    }
+    tpUI.busy = false; tpUI.inflight = null;
+    if (S.view === 'teleports') renderAll();
+    return !tpUI.err;
+  })();
+  return tpUI.inflight;
+}
+/* Refresh link in every footer, and Check again on this view: ask the wiki now and say what came back. A load already
+   running (the view's first read) is not the re-read the player asked for: wait for it, then ask the wiki. */
+async function refreshTeleports() {
+  if (tpUI.inflight) await tpUI.inflight;
+  const before = S.teleports?.revid;
+  await loadTeleports(true);
+  const t = S.teleports;
+  if (tpUI.err?.old) return sysLine('error', 'Teleport codes need a newer server.py.');
+  if (!t) return sysLine('error', "The wiki didn't answer and there's no saved copy yet. Try again when you're online.");
+  if (t.error) return sysLine('warn', `The wiki didn't answer. Showing the copy fetched ${dateTime(parseIso(t.fetchedAt))}. ${TP_FIX}`);
+  const c = tpCounts(t);
+  sysLine('status', `Wiki page read, revision ${fmt(t.revid)}${before && before !== t.revid ? ' (changed)' : before ? ' (unchanged)' : ''}. ${plural(c.codes, 'code')} for ${plural(c.landmarks, 'landmark')} in ${plural(c.zones, 'zone')}.`);
+}
+const TP_FIX = 'Refresh here, or check the wiki.';
+function tpCounts(t) {
+  if (t?.counts) return t.counts;
+  const zones = t?.zones || [];
+  return { zones: zones.length, landmarks: zones.reduce((a, z) => a + z.landmarks.length, 0), codes: zones.reduce((a, z) => a + z.landmarks.reduce((b, l) => b + l.codes.length, 0), 0) };
+}
+/* ISO date from the server ("2025-03-28") or the page's own words; shown as "28 Mar 2025". */
+function tpConfirmed(t) {
+  const c = t?.confirmedAsOf;
+  if (!c) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(c);
+  return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]} ${m[1]}` : c;
+}
+/* Source freshness for the footers, stamp and margin: ok (fetched today), warn (wiki unreachable or stale copy), bad (nothing). */
+function tpVerdict() {
+  const t = S.teleports;
+  if (!t) return { sev: tpUI.err ? 'bad' : 'ok', at: null, age: null };
+  const at = parseIso(t.fetchedAt), age = at ? Math.max(0, (NOW() - at) / 1000) : null;
+  const sev = !t.zones.length ? 'bad' : (t.error || t.stale || age == null || age >= TP_MAX_AGE) ? 'warn' : 'ok';
+  return { sev, at, age };
+}
+/* Footer for every window on the view. Left: source, fetched when, confirmed when; right: Refresh (and the wiki when the fetch failed). */
+function tpFootHtml() {
+  if (S.down && S.downSince) return [`${shape('bad', 's13')}<span class="txt-bad">as of ${hhmm(S.downSince)} · server not answering</span>`, ''];
+  const t = S.teleports, v = tpVerdict();
+  const fetched = v.at ? `fetched ${isToday(v.at) ? hhmm(v.at) : dateTime(v.at)}` : '';
+  const conf = tpConfirmed(t);
+  const rot = 'codes rotate after major updates';
+  const refresh = `<button type="button" class="linkbtn" data-tprefresh="1"${tpUI.busy ? ' disabled' : ''}>${tpUI.busy ? 'Refreshing…' : 'Refresh'}</button>`;
+  const wiki = `<a href="${TP_WIKI}" target="_blank" rel="noopener">check the wiki</a>`;
+  if (tpUI.err?.old) return ['Project: Gorgon wiki', 'Teleport codes need a newer server.py'];
+  if (!t) return tpUI.busy ? ['Project: Gorgon wiki · reading…', ''] : [`Project: Gorgon wiki · ${shape('bad', 's13')}<span class="age bad">not reached</span> · no saved copy`, `${refresh} · or ${wiki}`];
+  if (t.error) return [`Project: Gorgon wiki · ${shape('warn', 's13')}<span class="age warn">not reachable</span> · showing the copy ${fetched}${conf ? ` · confirmed there as of ${esc(conf)}` : ''} · ${rot}`, `${refresh} · or ${wiki}`];
+  if (v.sev === 'warn') return [`Project: Gorgon wiki · ${fetched} · ${shape('warn', 's13')}<span class="age warn">${ageWord(v.age)} old</span>${conf ? ` · confirmed there as of ${esc(conf)}` : ''} · ${rot}`, refresh];
+  return [`Project: Gorgon wiki · ${fetched}${conf ? ` · confirmed there as of ${esc(conf)}` : ''} · ${rot}`, refresh];
+}
+/* Margin entry (Where these numbers come from): the wiki, its age, and the fix. Not a health verdict: the favicon and the rail never change for it. */
+function teleportNote() {
+  const t = S.teleports, v = tpVerdict();
+  if (tpUI.err?.old) return `<div class="note">${shape('bad')}<div class="nt">Project: Gorgon wiki</div><div class="ev">Teleport codes need a newer server.py.</div></div>`;
+  if (!t && tpUI.busy) return `<div class="note">${shape('info')}<div class="nt">Project: Gorgon wiki</div><div class="ev">Reading the Teleportation Machine page…</div></div>`;
+  const conf = tpConfirmed(t);
+  const age = v.at ? ` · <span class="age ${v.sev === 'warn' ? 'warn' : ''}">${ago(v.at)}</span>` : v.sev === 'bad' ? ` · <span class="age bad">missing</span>` : '';
+  let ev, fx;
+  if (!t && S.down) { ev = "The dashboard server isn't answering, so the wiki's Teleportation Machine page hasn't been fetched."; fx = 'Start it again: python3 server.py; the codes load when it answers.'; }
+  else if (!t) { ev = "The wiki didn't answer and there's no saved copy of its Teleportation Machine page yet."; fx = 'When you\'re online: Refresh in any window here, or open the wiki page.'; }
+  else if (t.error) { ev = `The wiki didn't answer just now, so this is the copy fetched ${dateTime(v.at)}.${conf ? ` The page said its numbers were confirmed as of ${conf}.` : ''}`; fx = TP_FIX; }
+  else if (v.sev === 'warn') { ev = `The copy of the wiki page is ${ageLong(v.age)} old.${conf ? ` The page said its numbers were confirmed as of ${conf}.` : ''}`; fx = TP_FIX; }
+  else { ev = `Teleportation Machine codes are a player-kept list on the wiki, not game data.${conf ? ` The page says its numbers were confirmed as of ${conf}; most codes rotate when a zone or dungeon is added.` : ''}`; fx = 'To refresh: Refresh in any window here.'; }
+  const cls = v.sev === 'warn' ? 'txt-warn' : v.sev === 'bad' ? 'txt-bad' : '';
+  return `<div class="note" data-src="wiki-teleports">${shape(v.sev)}<div class="nt">Project: Gorgon wiki${age}</div><div class="ev">${esc(ev)}</div><div class="fx-wrap" style="grid-column:2"><div class="fx ${cls}">${esc(fx)}</div></div></div>`;
+}
+/* The zone the player stands in, as the wiki names it: "Ilmari Desert" is the wiki's "Ilmari", "Anagoge" its "Anagoge Island",
+   "Gazluk Caves" sits under "Gazluk"; a dungeon the chat log names and a landmark mentions counts too. Logged out: nothing is promoted. */
+function tpHereZone(zones) {
+  const area = loggedIn() ? (S.health?.game?.area || S.session?.currentArea) : null;
+  if (!area) return null;
+  const norm = s => String(s).toLowerCase().replace(/^the /, '').trim();
+  const a = norm(area), words = a.split(' ');
+  const exact = zones.find(z => norm(z.zone) === a);
+  if (exact) return exact.zone;
+  const prefix = zones.filter(z => { const w = norm(z.zone).split(' '); return w.every((x, i) => words[i] === x); }).sort((x, y) => y.zone.length - x.zone.length)[0];
+  if (prefix) return prefix.zone;
+  const inside = zones.find(z => { const w = norm(z.zone).split(' '); return words.every((x, i) => w[i] === x) || w.includes(a); });
+  if (inside) return inside.zone;
+  // A dungeon only counts through an "Inside <it>" / "Outside <it>" landmark: "Portal to Mysterious Locale" is in Rahu,
+  // not the Locale, and the shared short name "Caves" names no zone at all.
+  const named = zones.find(z => z.landmarks.some(l => new RegExp(`^(inside|outside) (the )?${a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(norm(l.name))));
+  return named ? named.zone : null;
+}
+function tpMatch(z, l, q) {
+  if (!q) return true;
+  return z.zone.toLowerCase().includes(q) || l.name.toLowerCase().includes(q) || (l.note || '').toLowerCase().includes(q) || l.codes.some(c => c.includes(q));
+}
+function tpSlug(name) { return 'w-tp-' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-'); }
+
+function renderTeleports() {
+  const t = S.teleports, v = tpVerdict();
+  const old = !!tpUI.err?.old;
+  const loading = !t && (tpUI.busy || (!tpUI.err && !S.down));
+  const down = !t && !loading && S.down;   // no copy because the dashboard server, not the wiki, didn't answer
+  // Entering the view fetches the codes at once; a failed fetch waits for Retry or the next entry, never loops. A read
+  // that failed because the server was down is asked again once the poll finds the server up (S.down false).
+  const retry = !tpUI.err || (isNetworkError(tpUI.err) && !tpUI.err.old);
+  if (S.view === 'teleports' && !t && !tpUI.busy && retry && !S.down && PREVIEW.sim !== 'loading') loadTeleports();
+  const c = tpCounts(t);
+  const conf = tpConfirmed(t);
+  if (S.view === 'teleports') {
+    $('#h1').textContent = 'Teleports';
+    $('#title-extra').hidden = true;
+    if (old) { $('#finding').textContent = 'Needs a newer server.py to read the wiki.'; setStamp('Teleport codes', 'not available', 'bad'); }
+    else if (loading) { $('#finding').html = '<span class="dim">Reading the Teleportation Machine page on the wiki…</span>'; setStamp('From the Project: Gorgon wiki', '…', 'ok'); }
+    else if (down) { $('#finding').textContent = "The dashboard server isn't answering, so the wiki's code list hasn't been fetched. Start it again: python3 server.py; the codes load when it answers."; setStamp('No code list yet', `as of ${hhmm(S.downSince || NOW())}`, 'bad'); }
+    else if (!t) { $('#finding').textContent = "Couldn't reach the wiki, and there's no saved copy of its code list yet. Refresh when you're online."; setStamp('No code list yet', 'missing', 'bad'); }
+    else {
+      let f = `<em class="n">${fmt(c.codes)}</em> codes for <em class="n">${fmt(c.landmarks)}</em> landmarks in <em class="n">${fmt(c.zones)}</em> zones, from the wiki${conf ? `, confirmed there as of ${esc(conf)}` : ''}.`;
+      if (t.error) f += ` <span class="suffix">The wiki didn't answer just now; this is the copy fetched ${dateTime(v.at)}.</span>`;
+      else if (v.sev === 'warn') f += ` <span class="suffix">This copy of the page is ${ageLong(v.age)} old.</span>`;
+      $('#finding').html = f;
+      if (S.down && S.downSince) setStamp('From the Project: Gorgon wiki', `as of ${hhmm(S.downSince)}`, 'bad');
+      else setStamp(`From the Project: Gorgon wiki, fetched ${dayMon(v.at)}, ${hhmm(v.at)}`, t.error ? 'wiki not reachable' : ago(v.at), v.sev);
+    }
+  }
+  const q = tpUI.q.trim().toLowerCase();
+  const inp = $('#tpq');
+  inp.disabled = !t || !t.zones.length;
+  if (inp.value !== tpUI.q) inp.value = tpUI.q;
+  $('#tp-count').textContent = t && t.zones.length ? `${fmt(c.codes)} codes` : '';
+  // State line in the first window: loading, error, empty.
+  const st = $('#tp-state');
+  if (old) st.html = '<p class="empty">Needs a newer server.py.</p>';
+  else if (loading) st.html = '<p><span class="loading-bar"></span></p>';
+  else if (down) st.html = `<p class="txt-bad" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${shape('bad')}<span>The dashboard server isn't answering, so the wiki page hasn't been asked for.</span><button type="button" class="btn" data-tpretry="1">Retry</button> <a class="btn" href="${TP_WIKI}" target="_blank" rel="noopener">Open the wiki page</a></p>`;
+  else if (!t) st.html = `<p class="txt-bad" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${shape('bad')}<span>Couldn't read the wiki page.${tpUI.err && !isNetworkError(tpUI.err) ? ` ${esc(tpUI.err.message)}` : ''}</span><button type="button" class="btn" data-tpretry="1">Retry</button> <a class="btn" href="${TP_WIKI}" target="_blank" rel="noopener">Open the wiki page</a></p>`;
+  else if (!t.zones.length) st.html = `<p class="empty">The wiki page has no code list the app can read. ${esc(t.error || '')}</p>`;
+  else st.html = '';
+  // Zone windows.
+  const zones = t?.zones || [];
+  const here = tpHereZone(zones);
+  const ordered = [...zones].sort((a, b) => (b.zone === here) - (a.zone === here));
+  if (!tpUI.open && zones.length) tpUI.open = new Set(here ? [here] : ordered.slice(0, 3).map(z => z.zone));
+  let shownZones = 0, shownRows = 0;
+  const html = ordered.map(z => {
+    const rows = z.landmarks.filter(l => tpMatch(z, l, q));
+    if (q && !rows.length) return '';
+    shownZones++; shownRows += rows.length;
+    const codes = rows.reduce((a, l) => a + l.codes.length, 0);
+    const open = !!q || tpUI.open.has(z.zone);
+    const id = tpSlug(z.zone);
+    const body = rows.length
+      ? rows.map(l => `<div class="tprow"><div class="tpname">${esc(l.name)}${l.note ? `<span class="sub">${esc(l.note)}</span>` : ''}</div><div class="tpcodes">${l.codes.map(cd => `<button type="button" class="tpcode" data-tpcode="${esc(cd)}" title="Copy ${esc(cd)}" aria-label="Copy ${esc(cd)}, ${esc(l.name)}">${esc(cd)}</button>`).join('')}</div></div>`).join('')
+      : `<p class="tpzone-note">${esc(z.note ? `No codes: ${z.note}` : 'No codes listed on the wiki for this zone.')}</p>`;
+    const count = rows.length ? `${plural(rows.length, 'landmark')} · ${plural(codes, 'code')}` : 'no codes';
+    const [fl, fr] = tpFootHtml();
+    return `<section class="win${open ? '' : ' folded'}" id="${id}" aria-labelledby="t-${id}">
+      <header class="win-bar"><h2 id="t-${id}"><button type="button" class="tpfold" data-tpzone="${esc(z.zone)}" aria-expanded="${open}" aria-controls="b-${id}">${TRI(open)}<span>${esc(z.zone)}</span></button> <span class="count">${count}</span>${z.zone === here ? ' <span class="tag">you\'re here</span>' : ''}</h2></header>
+      <div class="win-body" id="b-${id}">${body}</div>
+      <footer class="win-foot"><span class="fl">${fl}</span><span class="fr">${fr}</span></footer>
+    </section>`;
+  }).join('');
+  $('#tp-zones').html = html;
+  const note = $('#tpq-note');
+  if (q && t) {
+    note.hidden = false;
+    note.textContent = shownRows ? `${plural(shownRows, 'landmark')} in ${plural(shownZones, 'zone')} match "${tpUI.q.trim()}".` : `No zone, landmark or code matches "${tpUI.q.trim()}". Codes are four digits, like 0055.`;
+  } else { note.hidden = true; note.textContent = ''; }
+  const [fl, fr] = tpFootHtml();
+  setFoot('w-tp-find', fl, fr);
+}
+
+function initTeleports() {
+  $('#tpq').addEventListener('input', e => { tpUI.q = e.target.value; renderTeleports(); });
+  $('#v-teleports').addEventListener('click', async e => {
+    const code = e.target.closest('[data-tpcode]');
+    if (code) { copyText(code.dataset.tpcode, code.dataset.tpcode); return; }
+    const fold = e.target.closest('[data-tpzone]');
+    if (fold) {
+      const z = fold.dataset.tpzone;
+      if (tpUI.q.trim()) return;  // a search opens every matching zone; folding waits until it is cleared
+      tpUI.open.has(z) ? tpUI.open.delete(z) : tpUI.open.add(z);
+      renderTeleports();
+      $(`#v-teleports [data-tpzone="${CSS.escape(z)}"]`)?.focus();
+      return;
+    }
+    if (e.target.closest('[data-tprefresh]')) { e.stopPropagation(); refreshTeleports(); return; }
+    if (e.target.closest('[data-tpretry]')) { e.stopPropagation(); tpUI.err = null; loadTeleports(); return; }
+  });
+}
+
 /* ===================== main ===================== */
 /* Boot, routing, polling, Check again, shared helpers. */
 
@@ -4971,7 +5233,7 @@ async function fetchLookup() {
 }
 
 /* ---------- rendering ---------- */
-const RENDER = { session: () => renderSession(), combat: () => renderCombatView(), vendors: () => renderVendors(), storage: () => renderStorage(), character: () => renderCharacter(), files: () => renderFiles() };
+const RENDER = { session: () => renderSession(), combat: () => renderCombatView(), vendors: () => renderVendors(), storage: () => renderStorage(), character: () => renderCharacter(), files: () => renderFiles(), teleports: () => renderTeleports() };
 function renderView() {
   plaqueInView = null;
   try { RENDER[S.view](); } catch (e) { console.error(e); }
@@ -5209,6 +5471,7 @@ async function checkAgain(source) {
   if (failed && S.down) { sysLine('error', "The dashboard server isn't answering. Start it again: python3 server.py"); return; }
   const after = exportSnapshot();
   if (S.view === 'files' && !source) return filesChecked(filesBefore);
+  if (S.view === 'teleports' && !source) return refreshTeleports();
   const view = source === 'export-storage' ? 'storage' : source === 'export-character' || source === 'export-again' ? 'vendors' : source === 'chat-logging' ? 'session' : S.view;
   if (view === 'session') {
     const newLines = sessUI.feed.length - tailBefore;
@@ -5243,7 +5506,7 @@ function boot() {
   $$('[data-fan-aria]').forEach(el => el.setAttribute('aria-label', `About: ${APP_NAME} is ${FAN_LINE}`));
   $$('[data-brand-aria]').forEach(el => el.setAttribute('aria-label', `${APP_NAME}, Session`));
   $('#favicon').href = FAVICONS.ok;
-  initSession(); initCombat(); initVendors(); initStorage(); initCharacter(); initFiles(); initReminders();
+  initSession(); initCombat(); initVendors(); initStorage(); initCharacter(); initFiles(); initTeleports(); initReminders();
   $('#checkbtn').addEventListener('click', () => checkAgain());
   document.addEventListener('click', e => {
     const p = e.target.closest('[data-fix]');
@@ -5268,7 +5531,7 @@ function boot() {
   PHONE_MQ.addEventListener('change', () => { renderMargin(); if (!PHONE_MQ.matches && document.querySelector('.pop[aria-modal]')) closePops(); });
   document.addEventListener('keydown', e => {
     if (e.key === '/' && !e.target.closest('input, select, textarea')) {
-      const s = { session: '#lootq', vendors: '#vq', storage: '#sq', character: '#skillq', files: '#fileq' }[S.view];
+      const s = { session: '#lootq', vendors: '#vq', storage: '#sq', character: '#skillq', files: '#fileq', teleports: '#tpq' }[S.view];
       if (s && !$(s).disabled) { e.preventDefault(); $(s).focus(); }
     }
     if (e.key === 'Escape' && e.target.matches('input[type=search]') && e.target.value) { e.target.value = ''; e.target.dispatchEvent(new Event('input')); }

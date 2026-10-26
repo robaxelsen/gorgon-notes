@@ -166,7 +166,8 @@ def cached_versions():
 # ---------------------------------------------------------------------------
 # App version (About popover, /api/health `app`, the Mac menu): build.txt beside server.py (written by the
 # Windows build), else the git tag of this checkout, else "dev". The newest release is read from GitHub once
-# an hour (the Windows launcher does the same at start; on the Mac this is the only outbound call besides the CDN).
+# an hour (the Windows launcher does the same at start; on the Mac the only other outbound calls are the CDN and the
+# wiki fetch for /api/teleports).
 # ---------------------------------------------------------------------------
 APP_REPO = "robaxelsen/gorgon-notes"
 _app = {"version": None, "source": None, "ahead": 0, "dirty": False, "latest": None, "latestAt": 0.0, "latestErr": None}
@@ -880,6 +881,18 @@ DPS_BEST_SEC = 15         # "best fight" needs at least this long, so a one-hit 
 DPS_TIMELINE_POINTS = 240 # a fight's per-second timeline is bucketed so it never exceeds this many points
 DOT_WINDOW_SEC = 12       # a tick is split between you and your pets by who hit the enemy this recently (else the last hitter)
 DOT_NAME = "Damage over time"
+BY_TARGET_MAX = 40        # enemies per fight in `byTarget` / `ticks` (the By enemy table); `byTargetMore` says how many you hit are left out
+
+
+def split_whole(parts):
+    """Round non-negative floats to whole numbers that sum to round(sum(parts)) (largest remainder), so an enemy's ticks
+    split between you and your pets add up to the ticks exactly instead of each share rounding on its own."""
+    parts = list(parts)
+    whole = [int(x) for x in parts]
+    extra = round(sum(parts)) - sum(whole)
+    for i in sorted(range(len(parts)), key=lambda i: whole[i] - parts[i])[:max(extra, 0)]:
+        whole[i] += 1
+    return whole
 INSTAKILL_DMG = 100000    # one hit at or above this is a kill mechanic (Face of Death: FaceOfDeathKill, 999,451 health), not damage
 EVADE_RE = re.compile(r"^\[Combat\] (?P<att>.+?)(?: #(?P<aid>\d+))?: (?P<abil>.*?) on (?P<vic>.+?)(?: #(?P<vid>\d+))? \(EVADED!\)$")
 INDIRECT_RE = re.compile(r"^\[Combat\] (?P<who>.+?)(?: #(?P<id>\d+))?: Suffered indirect dmg: (?P<rest>.*)$")
@@ -1267,25 +1280,53 @@ class DpsTracker:
                     d[1] += a * c / n
                     d[2] += 1
                 attributed += h + a
+        # Whole numbers: each enemy's attributed ticks are split between you and your pets by largest remainder, so the
+        # shares sum to its ticks exactly and every figure built from them (dotMe, dotPet, byTarget, targets, dmg) agrees.
+        by_name = defaultdict(list)
+        for att, tgts in dot.items():
+            for name, v in tgts.items():
+                by_name[name].append((att, v))
+        dot_int = defaultdict(dict)   # attacker -> target name -> (health, armor, ticks), whole numbers
+        for name, lst in by_name.items():
+            hs = split_whole(v[0] for _, v in lst)
+            as_ = split_whole(v[1] for _, v in lst)
+            for (att, v), h, a in zip(lst, hs, as_):
+                dot_int[att][name] = (h, a, v[2])
         dot_rows = {}
-        by_target = {}
-        for att in sorted(dot, key=lambda a: (a != me, a)):
-            hh = sum(v[0] for v in dot[att].values()); aa = sum(v[1] for v in dot[att].values()); n = sum(v[2] for v in dot[att].values())
-            hh, aa = round(hh), round(aa)
+        for att in sorted(dot_int, key=lambda a: (a != me, a)):
+            hh = sum(v[0] for v in dot_int[att].values()); aa = sum(v[1] for v in dot_int[att].values()); n = sum(v[2] for v in dot_int[att].values())
             if hh + aa <= 0:
                 continue
             dot_rows[att] = {"dmg": hh + aa, "health": hh, "armor": aa, "hits": n}
             abilities.append({"name": DOT_NAME, "who": "you" if att == me else att, "hits": n, "dmg": hh + aa, "health": hh, "armor": aa,
                               "crit": 0, "evaded": 0, "none": 0, "max": 0, "fatal": 0, "levels": [], "dot": True})
+        abilities.sort(key=lambda r: -r["dmg"])
+        targets = Counter()
+        tids = set()
+        for att in mine:
+            targets.update(f.targets.get(att, {}))
+            tids |= f.target_ids.get(att, set())
+            for name, v in dot_int.get(att, {}).items():
+                targets[name] += v[0] + v[1]
+        # By enemy rows: the same top BY_TARGET_MAX enemies (by your and your pets' credit) for every attacker, so the
+        # client's union is exactly that list; `ticks` carries those plus the most-ticked others up to the same cap.
+        top = [n for n, _ in targets.most_common(BY_TARGET_MAX)]
+        by_target = {}
         for att in mine:
             row = {}
-            for name, d in f.targets.get(att, {}).items():
-                row[name] = {"direct": d, "dot": 0}
-            for name, v in dot.get(att, {}).items():
-                row.setdefault(name, {"direct": 0, "dot": 0})["dot"] = round(v[0] + v[1])
+            for name in top:
+                d = f.targets.get(att, {}).get(name, 0)
+                v = dot_int.get(att, {}).get(name)
+                dd = v[0] + v[1] if v else 0
+                if d or dd:
+                    row[name] = {"direct": d, "dot": dd}
             if row:
-                by_target["you" if att == me else att] = dict(sorted(row.items(), key=lambda kv: -(kv[1]["direct"] + kv[1]["dot"]))[:12])
-        abilities.sort(key=lambda r: -r["dmg"])
+                by_target["you" if att == me else att] = row
+        tick_out = {n: ticks[n] for n in top if n in ticks}
+        for n, t in ticks.most_common():
+            if len(tick_out) >= BY_TARGET_MAX:
+                break
+            tick_out.setdefault(n, t)
         me_s = self._sum(f.dealt[me].values()) if me in f.dealt else self._sum([])
         pet_s = self._sum(s for att in pets if att in f.dealt for s in f.dealt[att].values())
         for att, r in dot_rows.items():
@@ -1305,13 +1346,6 @@ class DpsTracker:
                 instakills += ik
                 taken_by.append({"name": att, "ability": key, "hits": s["hits"], "dmg": s["dmg"], "instakill": ik})
         taken_by.sort(key=lambda r: (-r["instakill"], -r["dmg"]))
-        targets = Counter()
-        tids = set()
-        for att in mine:
-            targets.update(f.targets.get(att, {}))
-            tids |= f.target_ids.get(att, set())
-            for name, v in dot.get(att, {}).items():
-                targets[name] += round(v[0] + v[1])
         tg = [{"name": n, "dmg": d, "ticks": ticks.get(n, 0)} for n, d in targets.most_common()]
         kills = sum(1 for att, vic in f.kills if att == me and vic not in mine)
         pet_kills = sum(1 for att, vic in f.kills if att in pets and vic not in mine)
@@ -1344,7 +1378,7 @@ class DpsTracker:
             "targets": tg[:6], "targetCount": len(tg), "mobs": len(tids), "mobIds": sorted(tids)[:40], "top": tg[0]["name"] if tg else None,
             "abilities": abilities, "takenBy": taken_by[:8],
             "indirectUnattributed": indirect_other, "shared": f.party or bool(others) or f.in_party, "others": others[:5],
-            "dotMe": dot_me, "dotPet": dot_pet, "byTarget": by_target, "ticks": {n: t for n, t in ticks.most_common(12)},
+            "dotMe": dot_me, "dotPet": dot_pet, "byTarget": by_target, "ticks": tick_out, "byTargetMore": max(0, len(targets) - len(top)),
             "inParty": f.in_party, "party": sorted(f.roster)[:12],
             "timeline": tl, "timelineStep": step,
         }
@@ -1414,12 +1448,15 @@ def combat_report(scope="day"):
 
 
 # ---------------------------------------------------------------------------
-# Sell and store plan (GET /api/plan): what to do with every stack in the inventory, from the newest storage
-# export, the newest character export (vendor caps, sale multiplier) and the CDN (item keywords, vendor types).
-# Export-only: nothing live. Decisions recorded in DESIGN.md → Views → Storage → Sell and store.
+# Sell plan (GET /api/plan): which inventory stacks to sell to whom, from the newest storage export, the newest
+# character export (vendor caps, sale multiplier) and the CDN (item keywords, vendor types). Export-only: nothing
+# live. Everything not sold is "keep" (it stays in the bags; where to put it is the player's call: store
+# suggestions were dropped 26 Oct, they never checked what a vault accepts). Decisions recorded in DESIGN.md →
+# Views → Vendors → Sell.
 # ---------------------------------------------------------------------------
 PLAN_TRASH = "VendorTrash"
-MARKS_FILE = STATE_DIR / "marks.json"   # the keep list: {"<TypeID>": "sell" | "store"}; absent = the plan's default
+MARKS_FILE = STATE_DIR / "marks.json"   # the keep list: {"<TypeID>": "sell" | "store"}; "store" is the Keep mark (old name kept
+                                        # so existing files still work); absent = the plan's default
 MARKS_LOCK = threading.Lock()
 MARK_VALUES = ("sell", "store")
 
@@ -1473,14 +1510,7 @@ def plan(character=None):
     vend = vendors(character) if sheet_head else {"vendors": []}
     # Vendors with councils left, their types as sets; remaining is spent down as stacks are assigned.
     vrows = [dict(v, typeset=set((v.get("buys") or "").split(",")) - {""}, left=v["remaining"]) for v in vend.get("vendors", []) if v.get("remaining")]
-    # Vaults with room; the saddlebag travels with you (Anywhere). Free is spent down as stacks are assigned.
-    vaults = {v["vault"]: dict(v, left=v["free"]) for v in st["vaults"]
-              if v["vault"] != "Inventory" and not is_transfer_chest(v["vault"]) and (v.get("free") or 0) > 0}
     marks = load_marks()
-    held = defaultdict(set)   # TypeID -> vaults that already hold it
-    for it in items:
-        if it.get("StorageVault"):
-            held[it.get("TypeID")].add(it["StorageVault"])
     inv = [it for it in items if it.get("IsInInventory")]
     out, areas_used = [], Counter()
 
@@ -1494,13 +1524,6 @@ def plan(character=None):
         v = max(pool, key=lambda v: (v["area"] in prefer_areas, v["left"]))
         return v, bool(whole)
 
-    def best_vault(tid, prefer_areas):
-        cands = [v for v in vaults.values() if v["left"] > 0]
-        if not cands:
-            return None
-        return max(cands, key=lambda v: (v["vault"] in held.get(tid, ()), v["area"] in prefer_areas, v["left"]))
-
-    # Two passes: trash and gear first (they fix the vendor stops), then everything else leaning on those areas.
     def classify(it):
         e = cdn.get(f"item_{it.get('TypeID')}") or {}
         kws = item_keywords(e)
@@ -1510,18 +1533,18 @@ def plan(character=None):
             return "sell", kws, sellable       # the keep list wins, gear included
         if it.get("Slot") or it.get("TSysPowers"):
             return "gear", kws, sellable
-        if mark == "store":
-            return "store", kws, sellable
+        if mark == "store":                     # the Keep mark (stored as "store" so old marks.json files keep working)
+            return "keep", kws, sellable
         if PLAN_TRASH in kws:
             return "sell", kws, sellable
-        return "store", kws, sellable
+        return "keep", kws, sellable
     rows = [(it, *classify(it)) for it in inv]
-    rows.sort(key=lambda r: {"sell": 0, "gear": 1, "store": 2}[r[1]])
+    rows.sort(key=lambda r: {"sell": 0, "gear": 1, "keep": 2}[r[1]])
     for it, kind, kws, sellable in rows:
         qty = it.get("StackSize") or 1
         unit = int(round((it.get("Value") or 0) * mult))
         row = {"typeId": it.get("TypeID"), "name": it.get("Name"), "qty": qty, "value": it.get("Value") or 0, "unit": unit,
-               "price": unit * qty, "kind": kind, "action": None, "sellTo": None, "storeAt": None, "note": None,
+               "price": unit * qty, "kind": kind, "action": kind, "sellTo": None, "storeAt": None, "note": None,
                "mark": marks.get(str(it.get("TypeID"))), "sellable": sellable}
         prefer = {a for a, n in areas_used.items() if n}
         if sellable:
@@ -1529,66 +1552,49 @@ def plan(character=None):
             if v is not None:
                 n = qty if whole else max(0, v["left"] // unit) if unit else 0
                 row["sellTo"] = {"npc": v["npc"], "name": v["name"], "area": v["area"], "qty": n, "councils": unit * n, "left": v["left"], "whole": whole}
-        if kind in ("sell", "gear") and row["sellTo"] and row["sellTo"]["qty"] > 0:
-            if kind == "sell":
-                row["action"] = "sell"
+        if kind == "sell":
+            if row["sellTo"] and row["sellTo"]["qty"] > 0:
                 v = next(x for x in vrows if x["npc"] == row["sellTo"]["npc"])
                 v["left"] -= row["sellTo"]["councils"]
                 areas_used[v["area"]] += 1
                 if not row["sellTo"]["whole"]:
                     row["note"] = f"{v['name']} can take {row['sellTo']['qty']} of {qty}; the rest stays"
             else:
-                row["action"] = "gear"
-        if row["action"] is None:
-            vt = best_vault(it.get("TypeID"), prefer)
-            if vt is not None:
-                row["storeAt"] = {"vault": vt["vault"], "name": vt["name"], "area": vt["area"], "free": vt["left"], "holdsSome": vt["vault"] in held.get(it.get("TypeID"), ())}
-                row["action"] = "gear" if kind == "gear" else "store"
-                if kind != "gear":
-                    vt["left"] -= 1
-                    areas_used[vt["area"]] += 1
-            else:
-                row["action"] = "gear" if kind == "gear" else "stays"
-                row["note"] = "no vault with room"
-            if kind == "store" and not sellable:
-                row["why"] = "no vendor buys it" if (it.get("Value") or 0) > 0 else "worth nothing to a vendor"
+                row["action"] = "keep"           # trash nobody can pay for right now stays in the bags
+                row["sellTo"] = None
+                row["note"] = "no vendor with councils left buys it" if vrows else None
+        if row["action"] == "keep" and not sellable:
+            row["why"] = "no vendor buys it" if (it.get("Value") or 0) > 0 else "worth nothing to a vendor"
         out.append(row)
-    # Stops: one per area, selling and storing grouped by vendor / vault; the carried saddlebag stop is "Anywhere".
+    # Stops: one per area, selling grouped by vendor.
     stops = {}
     for r in out:
-        if r["action"] == "sell":
-            t, key = r["sellTo"], ("sell", r["sellTo"]["npc"])
-        elif r["action"] == "store":
-            t, key = r["storeAt"], ("store", r["storeAt"]["vault"])
-        else:
+        if r["action"] != "sell":
             continue
-        stop = stops.setdefault(t["area"] or "Elsewhere", {"area": t["area"] or "Elsewhere", "sell": {}, "store": {}, "stacks": 0, "councils": 0})
-        g = stop[key[0]].setdefault(key[1], {"id": key[1], "name": t["name"], "items": [], "councils": 0, "stacks": 0,
-                                             **({"left": t["left"]} if key[0] == "sell" else {"free": t["free"]})})
-        g["items"].append({"typeId": r["typeId"], "name": r["name"], "qty": t.get("qty", r["qty"]), "councils": t.get("councils", 0)})
+        t = r["sellTo"]
+        stop = stops.setdefault(t["area"] or "Elsewhere", {"area": t["area"] or "Elsewhere", "sell": {}, "stacks": 0, "councils": 0})
+        g = stop["sell"].setdefault(t["npc"], {"id": t["npc"], "name": t["name"], "items": [], "councils": 0, "stacks": 0, "left": t["left"]})
+        g["items"].append({"typeId": r["typeId"], "name": r["name"], "qty": t["qty"], "councils": t["councils"]})
         g["stacks"] += 1
-        g["councils"] += t.get("councils", 0)
+        g["councils"] += t["councils"]
         stop["stacks"] += 1
-        stop["councils"] += t.get("councils", 0)
+        stop["councils"] += t["councils"]
     stop_rows = []
     for stp in stops.values():
         sells = sorted(stp["sell"].values(), key=lambda g: -g["councils"])
-        stores = sorted(stp["store"].values(), key=lambda g: -g["stacks"])
         for g in sells:
             g["after"] = g["left"] - g["councils"]
-        for g in stores:
-            g["after"] = g["free"] - g["stacks"]
-        stop_rows.append({"area": stp["area"], "stacks": stp["stacks"], "councils": stp["councils"], "sell": sells, "store": stores})
-    stop_rows.sort(key=lambda s: (s["area"] in ("Anywhere", "Elsewhere"), -s["stacks"]))  # carried storage last: it can be done any time
+        stop_rows.append({"area": stp["area"], "stacks": stp["stacks"], "councils": stp["councils"], "sell": sells})
+    stop_rows.sort(key=lambda s: (s["area"] in ("Anywhere", "Elsewhere"), -s["councils"]))
     sell_rows = [r for r in out if r["action"] == "sell"]
     gear_rows = [r for r in out if r["action"] == "gear"]
+    keep_rows = [r for r in out if r["action"] == "keep"]
     summary = {
         "stacks": len(inv), "inventoryFree": next((v.get("free") for v in st["vaults"] if v["vault"] == "Inventory"), None),
         "sell": {"stacks": len(sell_rows), "councils": sum(r["sellTo"]["councils"] for r in sell_rows), "vendors": len({r["sellTo"]["npc"] for r in sell_rows})},
-        "store": {"stacks": sum(1 for r in out if r["action"] == "store"), "vaults": len({r["storeAt"]["vault"] for r in out if r["action"] == "store"})},
         "gear": {"stacks": len(gear_rows), "councils": sum(r["sellTo"]["councils"] for r in gear_rows if r["sellTo"])},
-        "stays": sum(1 for r in out if r["action"] == "stays"),
-        "unsellable": sum(1 for r in out if r["action"] == "store" and r.get("why")),
+        "keep": {"stacks": len(keep_rows), "sellable": sum(1 for r in keep_rows if r["sellable"])},
+        "unsellable": sum(1 for r in keep_rows if r.get("why")),
         "stops": len(stop_rows),
     }
     # Vendor trash sitting in vaults: where it is and what it would fetch, so a trip can pick it up (not routed).
@@ -4344,6 +4350,134 @@ def file_subtree(q):
     return body, p.name
 
 
+# ---------------------------------------------------------------------------
+# Teleportation Machine codes (GET /api/teleports). The codes are not in the game data: they are a player-kept
+# list on the wiki (docs/DATA-SOURCES.md §4), read as wikitext through the MediaWiki API, parsed with regexes and
+# cached under cache/wiki/ beside the CDN cache. Re-fetched at most once a day, or on ?refresh=1; while the wiki
+# is unreachable the cached copy answers with `error` set and its own fetchedAt (the data-awareness rule).
+# ---------------------------------------------------------------------------
+WIKI_API = "https://wiki.projectgorgon.com/api.php"
+TELEPORT_PAGE = "Teleportation_Machine"
+TELEPORT_URL = f"https://wiki.projectgorgon.com/wiki/{TELEPORT_PAGE}"
+TELEPORT_CACHE = CACHE / "wiki" / "teleport-codes.json"
+TELEPORT_MAX_AGE = 86400
+TELEPORT_LOCK = threading.Lock()
+_teleports = {"data": None}   # the parsed cache file, read once per process
+
+WIKI_LINK_RE = re.compile(r"\[\[([^\]|]*)(?:\|([^\]]*))?\]\]")
+WIKI_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
+WIKI_ITEM_RE = re.compile(r"\{\{Item\|([^}|]*)[^}]*\}\}")
+WIKI_CODE_RE = re.compile(r"\b(\d{4})\b(\s*\(([^)]*)\))?")   # "0055", or "0091 (inside)"
+WIKI_CONFIRMED_RE = re.compile(r"confirmed as of ([A-Z][a-z]+ \d{1,2}, \d{4})", re.I)
+TELEPORT_HEADING = "=== Teleportation Machine Codes ==="
+
+
+def wiki_plain(s):
+    """Wikitext to plain words: [[link|text]] -> text, [[link]] -> link; bold marks, {{Item|…}} and <!-- --> dropped;
+    one trailing period removed."""
+    s = WIKI_COMMENT_RE.sub("", s)
+    s = WIKI_LINK_RE.sub(lambda m: m.group(2) if m.group(2) is not None else m.group(1), s)
+    s = WIKI_ITEM_RE.sub(r"\1", s).replace("'''", "").replace("''", "")
+    return re.sub(r"\s+", " ", s).strip().rstrip(".").strip()
+
+
+def parse_teleport_wikitext(text):
+    """The page's "Teleportation Machine Codes" section (verified 26 Oct 2026): "; [[Zone]]" starts a zone (anything
+    after the link is the zone's note, e.g. Fae Realm), ": Landmark." a landmark, ":: 0055, 3049" its codes (four
+    digits; "0091 (inside)" keeps the words as the landmark's note). Returns (confirmedAsOf, zones)."""
+    head = text.find(TELEPORT_HEADING)
+    body = text[head + len(TELEPORT_HEADING):] if head >= 0 else text
+    confirmed = None
+    m = WIKI_CONFIRMED_RE.search(body)
+    if m:
+        try:
+            confirmed = datetime.strptime(m.group(1), "%B %d, %Y").date().isoformat()
+        except ValueError:
+            confirmed = m.group(1)
+    zones, zone, landmark = [], None, None
+    for raw in body.splitlines():
+        line = raw.strip()
+        if line.startswith("::"):
+            if landmark is None:
+                continue
+            notes = []
+            for code, _, words in WIKI_CODE_RE.findall(WIKI_COMMENT_RE.sub("", line[2:])):
+                if code not in landmark["codes"]:
+                    landmark["codes"].append(code)
+                if words.strip():
+                    notes.append(f"{code} {words.strip()}")
+            if notes:
+                landmark["note"] = "; ".join(([landmark["note"]] if landmark["note"] else []) + notes)
+        elif line.startswith(";"):
+            rest = line[1:].strip()
+            link = WIKI_LINK_RE.match(rest)
+            if link:
+                name, note = wiki_plain(link.group(0)), wiki_plain(rest[link.end():]).lstrip("-: ").strip()
+            else:
+                # Plain words, not a [[link]]: the "Numbers are confirmed as of …" note (dropped, with any lines under
+                # it), else a zone someone wrote without a link, still its own zone so its codes never land in the zone before.
+                name, _, note = rest.partition(" - ")
+                name, note = wiki_plain(name), wiki_plain(note)
+            if not name or WIKI_CONFIRMED_RE.search(rest):
+                zone = landmark = None
+                continue
+            zone = {"zone": name, "landmarks": [], "note": note or None}
+            zones.append(zone)
+            landmark = None
+        elif line.startswith(":"):
+            if zone is None:
+                continue
+            landmark = {"name": wiki_plain(line[1:]), "codes": [], "note": None}
+            zone["landmarks"].append(landmark)
+        elif line == "}}" and zones:
+            break  # end of the Spoiler template that wraps the list
+    return confirmed, zones
+
+
+def teleports(refresh=False):
+    """GET /api/teleports: the wiki's Teleportation Machine codes, parsed and cached a day under cache/wiki/."""
+    with TELEPORT_LOCK:
+        cached = _teleports["data"]
+        if cached is None and TELEPORT_CACHE.is_file():
+            try:
+                cached = _teleports["data"] = json.loads(TELEPORT_CACHE.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                cached = None
+        age = None
+        if cached and cached.get("fetchedAt"):
+            try:
+                age = time.time() - datetime.fromisoformat(cached["fetchedAt"]).timestamp()
+            except ValueError:
+                age = None
+        error = None
+        if refresh or cached is None or age is None or age >= TELEPORT_MAX_AGE:
+            try:
+                raw = fetch(f"{WIKI_API}?action=parse&page={TELEPORT_PAGE}&prop=wikitext|revid&format=json", timeout=15)
+                page = json.loads(raw)["parse"]
+                text = page["wikitext"]["*"]
+                confirmed, zones = parse_teleport_wikitext(text)
+                if not zones:
+                    raise ValueError("no code list under the Teleportation Machine Codes heading")
+                cached = {"fetchedAt": local_iso(datetime.now()), "revid": page.get("revid"), "confirmedAsOf": confirmed,
+                          "zones": zones, "wikitext": text}
+                TELEPORT_CACHE.parent.mkdir(parents=True, exist_ok=True)
+                TELEPORT_CACHE.write_text(json.dumps(cached, ensure_ascii=False), encoding="utf-8")
+                _teleports["data"] = cached
+                age = 0
+            except Exception as e:  # unreachable, a 5xx, or a page shape the parser doesn't know: the cache answers
+                reason = getattr(e, "reason", None) or e
+                error = f"The wiki didn't answer: {reason}" if isinstance(e, (OSError, HTTPError)) else f"Couldn't read the wiki page: {e}"
+        if cached is None:
+            return {"fetchedAt": None, "revid": None, "confirmedAsOf": None, "source": TELEPORT_URL, "zones": [],
+                    "counts": {"zones": 0, "landmarks": 0, "codes": 0}, "stale": True, "error": error or "No copy of the wiki page yet."}
+        zones = cached.get("zones") or []
+        return {"fetchedAt": cached.get("fetchedAt"), "revid": cached.get("revid"), "confirmedAsOf": cached.get("confirmedAsOf"),
+                "source": TELEPORT_URL, "zones": zones,
+                "counts": {"zones": len(zones), "landmarks": sum(len(z["landmarks"]) for z in zones),
+                           "codes": sum(len(l["codes"]) for z in zones for l in z["landmarks"])},
+                "stale": age is None or age >= TELEPORT_MAX_AGE, "error": error}
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=str(STATIC), **kw)
@@ -4433,6 +4567,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(icons(q))
             if url.path == "/api/lookup":
                 return self.send_json(lookup(q))
+            if url.path == "/api/teleports":
+                return self.send_json(teleports(q.get("refresh") == "1"))
             if url.path == "/api/files":
                 return self.send_json(list_files())
             if url.path == "/api/file/node":

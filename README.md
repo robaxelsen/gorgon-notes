@@ -10,13 +10,14 @@ Fan-made, not affiliated with Elder Game. MIT licensed. Source and releases: htt
 
 Every number in the app says where it came from, how old it is, and the exact in-game step that would make it current. That is the one rule the whole thing is built on.
 
-- **Combat**: a personal DPS meter from the chat log, live while you play. Damage per second now, damage today split between you and your pets, every fight with its length, damage, kills and what you fought, and a breakdown of any fight by ability with a damage-a-second chart. Damage over time is counted from your own log. Party members' hits never appear in your log, so the **Party** window shares fights instead: one of you makes a code, the others join it, and everyone's fights line up side by side, with a live per-second line while you fight and a session table (one row per player and pet) by area or by a session you start and stop yourself.
+- **Combat**: a personal DPS meter from the chat log, live while you play. Damage per second now, damage today split between you and your pets, every fight with its length, damage, kills and what you fought, and a breakdown of any fight by ability, by enemy (you, pets and damage over time per enemy, to check against the game's autopsy) and with a damage-a-second chart. Damage over time is counted from your own log. Party members' hits never appear in your log, so the **Party** window shares fights instead: one of you makes a code, the others join it, and everyone's fights line up side by side, with a live per-second line while you fight and a session table (one row per player and pet) by area or by a session you start and stop yourself.
 - **Discord**: Connect Discord once from the Party window (Discord's own server and channel picker, no webhook to copy) and post a fight or a whole session to a channel as a card with a picture of the table.
 - **Session**: XP per skill and per hour, level-ups, loot with icons, councils in and out, deaths and kills, what happened when, the chat log with channel colours, and **Here**: the NPCs where you are standing with favor, councils left to spend, storage and what they love as gifts.
-- **Vendors**: councils left at every vendor, how much you have drained, resets since your export, where to sell and who buys what.
-- **Storage**: slots free per vault, where there is room, and a **Sell and store** plan that empties your bags stop by stop: sell this to that vendor for about this much, store those where they fit, with a keep list the plan remembers. Stacks to merge finds the same item held in several places.
+- **Vendors**: councils left at every vendor, how much you have drained, resets since your export, where to sell and who buys what, and a **Sell** plan for your bags: sell this to that vendor for about this much, stop by stop, with vendor trash sitting in your vaults and a keep list the plan remembers.
+- **Storage**: slots free per vault, where there is room, and every item you hold. Stacks to merge finds the same item held in several places.
 - **Character**: skills, currencies, stats, NPC favor and active quests with readable names, from any export, partial ones labelled.
 - **Files**: every file the app reads, with a JSON tree and search for the exports and the cached game data, and a pager and search for the chat logs.
+- **Teleports**: every Teleportation Machine code from the wiki's player-kept list, one window per zone with the zone you are in first, a search over zones, landmarks and codes, and a click to copy a code; each window says when the page was fetched and when the wiki last confirmed the numbers.
 - **Reminders**: opt-in notifications at the moments that matter: logging in, arriving where your vaults are, after selling, when an export is broken or stale, when vendors reset. Native notifications in the Mac app.
 
 ![Session view: XP at a glance and the NPCs where you are](docs/screenshots/session.jpg)
@@ -82,7 +83,7 @@ A Python standard-library server (`server.py`) plus one HTML page with vanilla J
 | `cloud/` | The party room: a Cloudflare Worker with one Durable Object per party code, and the Discord connect broker |
 | `windows/` | `build.sh`, the Go launcher, the zip's README |
 | `mac/` | The menu-bar app, its build script, the launchd plist |
-| `cache/v<N>/` | Cached game data per client version (created on first run) |
+| `cache/v<N>/`, `cache/wiki/` | Cached game data per client version, and the wiki's Teleportation Machine page (created on first use) |
 | `capacity.json`, `marks.json`, `party.json`, `settings.json` | Your own data, written beside `server.py`, never shipped: vault sizes you typed in, the keep list, the party code, the Discord connection |
 | `tools/` | `compare-logs.py` (two players' logs side by side), the autopsy probe |
 | `DESIGN.md` | Design system, per-view spec and the server contracts. Follow it for any UI work |
@@ -92,4 +93,4 @@ A Python standard-library server (`server.py`) plus one HTML page with vanilla J
 
 Releasing: commit, push, tag `v0.<n>.<m>` and push the tag; `.github/workflows/release.yml` builds the exe, the zip and `version.txt` and attaches them to a GitHub release, which the Windows copies pick up at their next start. The Mac app needs no rebuild for UI changes, since it shows the page from the server.
 
-Open a view directly with a hash: `#session`, `#combat`, `#vendors`, `#storage`, `#character`, `#files`. Preview modes for development, never saved: `?sim=stale|broken|nolog|noexport|loading|down`, `?shift=72`, `?theme=dark|daylight|auto`.
+Open a view directly with a hash: `#session`, `#combat`, `#vendors`, `#storage`, `#character`, `#files`, `#teleports`. Preview modes for development, never saved: `?sim=stale|broken|nolog|noexport|loading|down`, `?shift=72`, `?theme=dark|daylight|auto`.

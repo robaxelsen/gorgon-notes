@@ -13,7 +13,7 @@ import WebKit
 let info = Bundle.main.infoDictionary ?? [:]
 let port = info["GNPort"] as? String ?? "8787"
 let base = URL(string: "http://127.0.0.1:\(port)/")!
-let views = ["session", "combat", "vendors", "storage", "character", "files"]
+let views = ["session", "combat", "vendors", "storage", "character", "files", "teleports"]
 
 // Replaces window.Notification inside the page. Permission is injected at document start.
 let notificationShim = """

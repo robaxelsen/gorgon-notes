@@ -92,3 +92,17 @@ Favor order: Despised, Hated, Disliked, Tolerated, Neutral, Comfortable, Friends
 **Verified:** vendor caps are unscaled. Kib stopped at 59,982/60,000, Otis 4,499/4,500, Ashk 39,890/40,000. The 1.22 `NPC_MOD_MAXSALESVALUE` boosts per-item price only.
 
 Other CDN files of interest for future features: `items.json`, `recipes.json`, `skills.json` (XP tables), `quests.json`, `abilities.json`, `tsysclientinfo.json` (item powers), `sources_*.json`.
+
+## 4. Project: Gorgon wiki — Teleportation Machine codes (verified 2026-10-26)
+
+The Teleportation Machine codes are **not in the game data**: they are a player-maintained list on the wiki page https://wiki.projectgorgon.com/wiki/Teleportation_Machine. `server.py` reads it as wikitext through the MediaWiki API (`GET https://wiki.projectgorgon.com/api.php?action=parse&page=Teleportation_Machine&prop=wikitext|revid&format=json`, about 8 KB; **send a User-Agent**, `fetch()` does) and parses it with regexes (`parse_teleport_wikitext`), for `GET /api/teleports` and the Teleports tab.
+
+Structure under the heading `=== Teleportation Machine Codes ===`, inside a `{{Spoiler|Destination List| … }}` template:
+- `; '''Numbers are confirmed as of March 28, 2025''' …` is the page's own freshness line (parsed into `confirmedAsOf`, `2025-03-28`); the page says most codes rotate whenever a zone or dungeon is added, so this date is what "fresh" means for these numbers, not the fetch time.
+- `; [[Zone]]` starts a zone (14 on 26 Oct 2026, revision 282545: Anagoge Island, Serbule Hills, Serbule, Sun Vale, Eltibule, Red Wing Casino, Kur Mountains, Ilmari, Rahu, Gazluk, Povus, Vidaria, Statehelm, Fae Realm). Text after the link is a zone note (`; [[Fae Realm]] - "Alharth tp machine can't send you to different planes." - Citan`, no codes). A `;` heading without a link (none on the page today) is parsed as its own zone, never folded into the zone before it; the confirmed-as-of line ends the zone above it.
+- `: Landmark text.` a landmark (may hold `[[links]]`, `[[link|text]]`, a trailing period, an HTML comment); 108 on 26 Oct.
+- `:: 0055, 3049` its codes: four digits, comma separated, one line reads `:: 0056  0091 (inside)` (two codes, the words kept as the landmark's note) and one `::3824` (no space); 214 codes on 26 Oct.
+
+Facts from the page (26 Oct 2026): the one working machine is in Windy View Cave (Gazluk); it needs Teleportation level 25 and 2 Aquamarine per trip; it cannot reach the Fae Realm; its in-game message says the coordinates are relative to the sender. Zone names differ from the chat log's (`Ilmari Desert` vs `Ilmari`, `Anagoge` vs `Anagoge Island`, `Casino` vs `Red Wing Casino`), which the page matches by word prefix (`tpHereZone` in `app.js`).
+
+Cache: `cache/wiki/teleport-codes.json` (the parsed zones plus the raw wikitext, `fetchedAt`, `revid`), beside the CDN cache; re-fetched at most once a day or on `?refresh=1`; while the wiki is unreachable the cached copy answers with `error` set (the footer and margin say so).

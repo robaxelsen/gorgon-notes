@@ -76,6 +76,10 @@
       <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M6 2h8l5 5v15H6zm8 1.5V7h3.5zM9 11.5h7v1.2H9zm0 3.5h7v1.2H9z"/></svg>
       <span>Files</span><span class="mark" data-mark="files"></span>
     </a>
+    <a class="ri" href="#teleports" data-view="teleports">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 1.5 15 7v11H9V7zm-1.5 7.5v2h3V9zm0 4v2h3v-2zM6 19.5h12v2.5H6z"/></svg>
+      <span>Teleports</span><span class="mark" data-mark="teleports"></span>
+    </a>
   </div>
   <div class="rail-foot"><button type="button" id="aboutbtn" aria-haspopup="dialog" aria-expanded="false" data-fan-aria><span class="fan">fan-made</span><span class="ab">About</span></button></div>
 </nav>
@@ -253,6 +257,15 @@
             <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
           </section>
         </div>
+        <section class="win" id="w-v-sell" aria-labelledby="t-v-sell">
+          <header class="win-bar"><h2 id="t-v-sell">Sell<span class="count" id="v-sell-count"></span></h2>
+            <div class="tools" id="vsmode-wrap"><div class="tabs" role="tablist" aria-label="Sell layout" id="vsmode">
+              <button role="tab" type="button" id="vs-stops" data-m="stops" aria-controls="v-sell-stops">By stop</button><button role="tab" type="button" id="vs-items" data-m="items" aria-controls="v-sell-items">By item</button>
+            </div></div>
+          </header>
+          <div class="win-body" id="v-sell"></div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
         <section class="win" id="w-v-pane" aria-labelledby="t-v-pane">
           <header class="win-bar primary"><h2 id="t-v-pane">Vendors</h2>
             <div class="tools"><div class="tabs" role="tablist" aria-label="Vendor layout" id="vmode">
@@ -301,15 +314,6 @@
             <div class="chips wrap" id="sfilters"></div>
             <div id="t-pane"></div>
           </div>
-          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
-        </section>
-        <section class="win" id="w-t-plan" aria-labelledby="t-t-plan">
-          <header class="win-bar"><h2 id="t-t-plan">Sell and store<span class="count" id="t-plan-count"></span></h2>
-            <div class="tools" id="pmode-wrap"><div class="tabs" role="tablist" aria-label="Plan layout" id="pmode">
-              <button role="tab" type="button" id="tp-stops" data-m="stops" aria-controls="t-plan-stops">By stop</button><button role="tab" type="button" id="tp-items" data-m="items" aria-controls="t-plan-items">By item</button>
-            </div></div>
-          </header>
-          <div class="win-body" id="t-plan"></div>
           <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
         </section>
         <section class="win" id="w-t-merge" aria-labelledby="t-t-merge">
@@ -448,6 +452,26 @@
           </div>
           <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
         </section>
+      </div>
+    </section>
+
+    <!-- ===================== TELEPORTS ===================== -->
+    <section class="view" id="v-teleports" data-view="teleports" hidden>
+      <div class="main-col">
+        <section class="win" id="w-tp-find" aria-labelledby="t-tp-find">
+          <header class="win-bar primary"><h2 id="t-tp-find">Teleportation Machine <span class="count" id="tp-count"></span></h2></header>
+          <div class="win-body">
+            <p class="small dim" id="tp-req">The one working machine is in Windy View Cave (Gazluk). It takes Teleportation 25 and 2 Aquamarine per trip, can't reach the Fae Realm, and its codes are relative to the sender, so they only work from that machine.</p>
+            <div class="toolbar">
+              <label class="sr" for="tpq">Search zones, landmarks and codes</label>
+              <input type="search" id="tpq" class="grow" placeholder="Zone, landmark or code, e.g. Serbule or 0055" autocomplete="off" disabled>
+            </div>
+            <p class="small dim" id="tpq-note" aria-live="polite" hidden></p>
+            <div id="tp-state"></div>
+          </div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
+        <div class="tpzones" id="tp-zones"></div>
       </div>
     </section>
 
