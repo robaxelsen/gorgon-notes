@@ -9,7 +9,7 @@ workers_dev = true
 # `npx wrangler secret put DISCORD_CLIENT_SECRET`, never written here. Register the redirect
 # https://<this worker>/discord/callback on the application's OAuth2 page in the Discord Developer Portal.
 [vars]
-DISCORD_CLIENT_ID = ""
+DISCORD_CLIENT_ID = "1564249189985034401"
 
 [[durable_objects.bindings]]
 name = "ROOM"
