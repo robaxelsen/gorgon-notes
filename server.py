@@ -878,6 +878,8 @@ DPS_NOW_SEC = 10          # the rolling "last 10 s" figure beside the fight's DP
 DPS_MINOR = {"sec": 5, "dmg": 500}  # shorter AND smaller than this: a skirmish, folded in the UI
 DPS_BEST_SEC = 15         # "best fight" needs at least this long, so a one-hit burst does not win
 DPS_TIMELINE_POINTS = 240 # a fight's per-second timeline is bucketed so it never exceeds this many points
+DOT_WINDOW_SEC = 12       # a tick is split between you and your pets by who hit the enemy this recently (else the last hitter)
+DOT_NAME = "Damage over time"
 INSTAKILL_DMG = 100000    # one hit at or above this is a kill mechanic (Face of Death: FaceOfDeathKill, 999,451 health), not damage
 EVADE_RE = re.compile(r"^\[Combat\] (?P<att>.+?)(?: #(?P<aid>\d+))?: (?P<abil>.*?) on (?P<vic>.+?)(?: #(?P<vid>\d+))? \(EVADED!\)$")
 INDIRECT_RE = re.compile(r"^\[Combat\] (?P<who>.+?)(?: #(?P<id>\d+))?: Suffered indirect dmg: (?P<rest>.*)$")
@@ -938,6 +940,9 @@ class Fight:
         self.roster = set()                                      # party members known from the log during the fight
         self.others = set()                                      # #id names seen only in Recovered / indirect lines
         self.ids = set()                                         # every entity id seen
+        self.hits_on = defaultdict(list)                         # "name#id" -> [(dt, attacker)] every logged hit on it, "Dmg: none" too
+        self.tick_list = defaultdict(list)                       # "name#id" -> [(dt, health, armor)] its "Suffered indirect dmg" lines
+        self.tick_name = {}                                      # "name#id" -> name
 
 
 class DpsTracker:
@@ -1025,6 +1030,9 @@ class DpsTracker:
                     self.cur.indirect[m["who"]] += h + a
                     if m["id"]:
                         self.cur.others.add(m["who"])
+                        key = f"{m['who']}#{m['id']}"
+                        self.cur.tick_list[key].append((dt, h, a))
+                        self.cur.tick_name[key] = m["who"]
             return
         if ": Recovered: " in msg:
             if (m := RECOVERED_RE.match(msg)) and m["id"] and self.cur is not None:
@@ -1069,6 +1077,7 @@ class DpsTracker:
         if vid:
             f.target_ids[att].add(vid)
             f.ids.add(vid)
+            f.hits_on[f"{vic}#{vid}"].append((dt, att))
         if aid:
             f.ids.add(aid)
         tk = f.taken[vic][att][key]
@@ -1208,10 +1217,71 @@ class DpsTracker:
                 abilities.append({"name": key, "who": "you" if att == me else att, "hits": s["hits"], "dmg": s["dmg"],
                                   "health": s["health"], "armor": s["armor"], "crit": s["crit"], "evaded": s["evaded"],
                                   "none": s["none"], "max": s["max"], "fatal": s["fatal"], "levels": sorted(s["levels"])})
+        # Damage over time: the game logs each tick on an enemy without its source. By the user's rule (26 Oct) a
+        # tick in this log counts as this log's owner's, like direct hits do, from the first hit you or a pet landed
+        # on that enemy; a tick before that first hit is certainly someone else's (seen on the Timothy Elerimon
+        # autopsy: another member's 39/39 ticks ran before our first hit) and stays unattributed. Between you and
+        # your pets a tick is split by who hit the enemy in the last DOT_WINDOW_SEC (hit count), else the last hitter.
+        dot = defaultdict(lambda: defaultdict(lambda: [0.0, 0.0, 0]))   # attacker -> target name -> [health, armor, ticks]
+        ticks = Counter()                                                 # target name -> health+armor of every tick on it
+        attributed = 0
+        for key, tl in f.tick_list.items():
+            name = f.tick_name[key]
+            if name in mine:
+                continue
+            hits = [(hdt, att) for hdt, att in f.hits_on.get(key, ()) if att in mine]
+            if not hits:
+                for tdt, h, a in tl:
+                    ticks[name] += h + a
+                continue
+            j = 0
+            for tdt, h, a in tl:
+                ticks[name] += h + a
+                if tdt < hits[0][0]:
+                    continue   # before our first hit on it: not ours
+                while j < len(hits) and (tdt - hits[j][0]).total_seconds() > DOT_WINDOW_SEC:
+                    j += 1
+                cands = Counter(att for hdt, att in hits[j:] if hdt <= tdt)
+                if not cands:
+                    last = max((hd for hd in hits if hd[0] <= tdt), key=lambda hd: hd[0], default=None)
+                    cands = Counter([last[1]]) if last else Counter()
+                n = sum(cands.values())
+                if not n:
+                    continue
+                for att, c in cands.items():
+                    d = dot[att][name]
+                    d[0] += h * c / n
+                    d[1] += a * c / n
+                    d[2] += 1
+                attributed += h + a
+        dot_rows = {}
+        by_target = {}
+        for att in sorted(dot, key=lambda a: (a != me, a)):
+            hh = sum(v[0] for v in dot[att].values()); aa = sum(v[1] for v in dot[att].values()); n = sum(v[2] for v in dot[att].values())
+            hh, aa = round(hh), round(aa)
+            if hh + aa <= 0:
+                continue
+            dot_rows[att] = {"dmg": hh + aa, "health": hh, "armor": aa, "hits": n}
+            abilities.append({"name": DOT_NAME, "who": "you" if att == me else att, "hits": n, "dmg": hh + aa, "health": hh, "armor": aa,
+                              "crit": 0, "evaded": 0, "none": 0, "max": 0, "fatal": 0, "levels": [], "dot": True})
+        for att in mine:
+            row = {}
+            for name, d in f.targets.get(att, {}).items():
+                row[name] = {"direct": d, "dot": 0}
+            for name, v in dot.get(att, {}).items():
+                row.setdefault(name, {"direct": 0, "dot": 0})["dot"] = round(v[0] + v[1])
+            if row:
+                by_target["you" if att == me else att] = dict(sorted(row.items(), key=lambda kv: -(kv[1]["direct"] + kv[1]["dot"]))[:12])
         abilities.sort(key=lambda r: -r["dmg"])
         me_s = self._sum(f.dealt[me].values()) if me in f.dealt else self._sum([])
         pet_s = self._sum(s for att in pets if att in f.dealt for s in f.dealt[att].values())
+        for att, r in dot_rows.items():
+            tgt = me_s if att == me else pet_s
+            for k in ("dmg", "health", "armor", "hits"):
+                tgt[k] += r[k]
         dmg = me_s["dmg"] + pet_s["dmg"]
+        dot_me = dot_rows.get(me, {}).get("dmg", 0) if me else 0
+        dot_pet = sum(r["dmg"] for att, r in dot_rows.items() if att != me)
         taken_me = self._sum(s for att in f.taken.get(me, {}).values() for s in att.values()) if me else self._sum([])
         taken_pet = self._sum(s for p in pets if p in f.taken for att in f.taken[p].values() for s in att.values())
         taken_by = []
@@ -1227,13 +1297,15 @@ class DpsTracker:
         for att in mine:
             targets.update(f.targets.get(att, {}))
             tids |= f.target_ids.get(att, set())
-        tg = [{"name": n, "dmg": d} for n, d in targets.most_common()]
+            for name, v in dot.get(att, {}).items():
+                targets[name] += round(v[0] + v[1])
+        tg = [{"name": n, "dmg": d, "ticks": ticks.get(n, 0)} for n, d in targets.most_common()]
         kills = sum(1 for att, vic in f.kills if att == me and vic not in mine)
         pet_kills = sum(1 for att, vic in f.kills if att in pets and vic not in mine)
         kills_by = dict(Counter(att for att, vic in f.kills if att in mine and vic not in mine))
         indirect_me = f.indirect.get(me, 0) if me else 0
         indirect_pet = sum(f.indirect.get(p, 0) for p in pets)
-        indirect_other = sum(d for n, d in f.indirect.items() if n != me and n not in pets)
+        indirect_other = max(0, sum(d for n, d in f.indirect.items() if n != me and n not in pets) - attributed)
         others = sorted(n for n in f.others if n not in enemies and n not in pets and n != me)
         # Timeline: [[second offset, you, pets]] per bucket of `step` seconds, dense from 0 to the fight's end.
         step = max(1, -(-dur // DPS_TIMELINE_POINTS))
@@ -1259,6 +1331,7 @@ class DpsTracker:
             "targets": tg[:6], "targetCount": len(tg), "mobs": len(tids), "mobIds": sorted(tids)[:40], "top": tg[0]["name"] if tg else None,
             "abilities": abilities, "takenBy": taken_by[:8],
             "indirectUnattributed": indirect_other, "shared": f.party or bool(others) or f.in_party, "others": others[:5],
+            "dotMe": dot_me, "dotPet": dot_pet, "byTarget": by_target, "ticks": {n: t for n, t in ticks.most_common(12)},
             "inParty": f.in_party, "party": sorted(f.roster)[:12],
             "timeline": tl, "timelineStep": step,
         }
@@ -1266,11 +1339,11 @@ class DpsTracker:
     def totals(self, rows, fights, me, pets, enemies):
         t = {"fights": len(rows), "dmg": 0, "me": 0, "pet": 0, "health": 0, "armor": 0, "hits": 0, "crit": 0,
              "taken": 0, "takenMe": 0, "indirectMe": 0, "takenPet": 0, "kills": 0, "petKills": 0, "deaths": 0, "instakills": 0,
-             "activeSec": 0, "indirectUnattributed": 0, "best": None, "minor": 0}
+             "activeSec": 0, "indirectUnattributed": 0, "dotMe": 0, "dotPet": 0, "best": None, "minor": 0}
         merged = {}
         for r in rows:
             for k in ("dmg", "me", "pet", "health", "armor", "hits", "crit", "taken", "takenMe", "indirectMe", "takenPet",
-                      "kills", "petKills", "deaths", "instakills", "indirectUnattributed"):
+                      "kills", "petKills", "deaths", "instakills", "indirectUnattributed", "dotMe", "dotPet"):
                 t[k] += r[k]
             t["activeSec"] += r["dur"]
             t["minor"] += 1 if r["minor"] else 0
@@ -1554,7 +1627,10 @@ ROOM_LIVE_SEC = 2            # live tick and fast poll cadence while someone is 
 ROOM_LIVE_MAX_SEC = 20       # a tick older than this is over
 _party = {"code": None, "since": None, "posted": {}, "remote": {}, "sinceId": None, "lastPoll": 0.0, "lastReq": 0.0,
           "lastOkAt": None, "lastErrAt": None, "lastErr": None, "lastPostAt": None, "lastMsgAt": None, "thread": None,
-          "roomSince": 0, "roomOkAt": None, "roomErrAt": None, "roomErr": None, "live": {}, "roomMembers": [], "inFight": False}
+          "roomSince": 0, "roomOkAt": None, "roomErrAt": None, "roomErr": None, "live": {}, "roomMembers": [], "inFight": False,
+          "sessions": []}   # manual sessions: [{"start": iso, "end": iso | None}], Start/Stop in the Party window
+SESSION_GAP_SEC = 15 * 60   # automatic sessions: merged fights in one area, at most this far apart
+SESSION_KEEP = 40           # manual sessions remembered
 
 
 def party_load():
@@ -1562,12 +1638,13 @@ def party_load():
         d = json.loads(PARTY_FILE.read_text(encoding="utf-8"))
         if PARTY_CODE_RE.match(d.get("code") or ""):
             _party.update(code=d["code"], since=d.get("since"), posted=dict(d.get("posted") or {}))
+        _party["sessions"] = [x for x in (d.get("sessions") or []) if isinstance(x, dict) and iso_dt(x.get("start"))][-SESSION_KEEP:]
     except Exception:
         pass
 
 
 def party_save():
-    data = {"code": _party["code"], "since": _party["since"], "posted": _party["posted"]}
+    data = {"code": _party["code"], "since": _party["since"], "posted": _party["posted"], "sessions": _party["sessions"][-SESSION_KEEP:]}
     tmp = PARTY_FILE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, indent=1), encoding="utf-8")
     os.replace(tmp, PARTY_FILE)
@@ -2002,6 +2079,103 @@ def party_merge(me, local_rows, remote, since=None):
     return out
 
 
+def session_rows(fights):
+    """One row per player and pet over a set of merged fights: damage (direct + DoT), health, armor, kills, and the
+    seconds of fighting that attacker was in (its own rate's divisor), the way the Party window's table shows it."""
+    rows, total, secs, kills = {}, 0, 0, 0
+    for f in fights:
+        secs += f["dur"]
+        for m in f["members"]:
+            by = m.get("by") or [{"who": m["who"], "dmg": m.get("me") or 0, "health": None, "armor": None, "kills": m.get("kills") or 0, "pet": False}] + [
+                {"who": n, "dmg": d, "health": None, "armor": None, "kills": 0, "pet": True} for n, d in (m.get("pets") or {}).items()]
+            for b in by:
+                key = (b["who"], m["who"] if b.get("pet") else None)
+                r = rows.setdefault(key, {"who": b["who"], "owner": key[1], "mine": bool(m.get("mine")), "dmg": 0, "health": 0, "armor": 0, "kills": 0, "secs": 0, "split": False})
+                r["dmg"] += b.get("dmg") or 0
+                r["kills"] += b.get("kills") or 0
+                r["secs"] += f["dur"]
+                if b.get("health") is not None:
+                    r["health"] += b.get("health") or 0
+                    r["armor"] += b.get("armor") or 0
+                    r["split"] = True
+                total += b.get("dmg") or 0
+                kills += b.get("kills") or 0
+    out = sorted(rows.values(), key=lambda r: -r["dmg"])
+    for r in out:
+        r["dps"] = r["dmg"] / r["secs"] if r["secs"] else 0
+        r["share"] = r["dmg"] / total if total else 0
+        if not r["split"]:
+            r["health"] = r["armor"] = None
+    return {"rows": out, "total": total, "secs": secs, "kills": kills, "fights": len(fights),
+            "players": sorted({m["who"] for f in fights for m in f["members"]})}
+
+
+def party_sessions(fights):
+    """Sessions to report on, newest first: the manual ones (Start / Stop in the Party window; open = running) and
+    the automatic ones (merged fights in the same area with no gap over SESSION_GAP_SEC). Each carries its rows."""
+    fs = sorted((f for f in fights if iso_dt(f.get("start")) and iso_dt(f.get("end"))), key=lambda f: iso_dt(f["start"]))
+    out = []
+    now = datetime.now().astimezone()
+    for m in reversed(_party["sessions"]):
+        a, b = iso_dt(m["start"]), iso_dt(m.get("end")) or now
+        inside = [f for f in fs if a <= iso_dt(f["start"]) <= b]
+        sess = {"id": "m:" + m["start"], "kind": "manual", "start": m["start"], "end": m.get("end"), "open": not m.get("end"),
+                "areas": sorted({f["area"] for f in inside if f.get("area")})}
+        sess.update(session_rows(inside))
+        out.append(sess)
+    run = None
+    runs = []
+    for f in fs:
+        st, en = iso_dt(f["start"]), iso_dt(f["end"])
+        if run is None or f.get("area") != run["area"] or (st - run["_end"]).total_seconds() > SESSION_GAP_SEC:
+            run = {"area": f.get("area"), "_start": st, "_end": en, "fights": [f]}
+            runs.append(run)
+        else:
+            run["_end"] = max(run["_end"], en)
+            run["fights"].append(f)
+    for r in reversed(runs):
+        sess = {"id": "a:" + r["fights"][0]["start"], "kind": "auto", "start": r["fights"][0]["start"], "end": local_iso(r["_end"]), "open": False,
+                "areas": [r["area"]] if r["area"] else []}
+        sess.update(session_rows(r["fights"]))
+        out.append(sess)
+    return out
+
+
+def session_set(action, sid=None):
+    """Start, stop or forget a manual session."""
+    now = local_iso(datetime.now())
+    with PARTY_LOCK:
+        open_ = next((x for x in _party["sessions"] if not x.get("end")), None)
+        if action == "start":
+            if open_ is None:
+                _party["sessions"].append({"start": now, "end": None})
+        elif action == "stop":
+            if open_ is not None:
+                open_["end"] = now
+        elif action == "forget":
+            _party["sessions"] = [x for x in _party["sessions"] if "m:" + x["start"] != sid]
+        else:
+            raise BadRequest("session must be start, stop or forget")
+        _party["sessions"] = _party["sessions"][-SESSION_KEEP:]
+        party_save()
+
+
+def session_card(sess):
+    """The Discord card of a session: one row per player and pet over its fights."""
+    a, b = iso_dt(sess["start"]), iso_dt(sess["end"]) if sess.get("end") else None
+    span = f"{day_time(a)} to {b.strftime('%H:%M') if b else 'now'}"
+    mins = int(((b or datetime.now().astimezone()) - a).total_seconds() // 60)
+    where = ", ".join(sess["areas"][:4]) + (" +" + str(len(sess["areas"]) - 4) if len(sess["areas"]) > 4 else "")
+    title = f"{'Session' if sess['kind'] == 'manual' else 'Party session'}{' · ' + where if where else ''} · {span} ({mins} min{', running' if sess.get('open') else ''})"
+    rows = [{"who": r["who"], "owner": r["owner"], "dmg": r["dmg"], "health": r["health"], "armor": r["armor"], "kills": r["kills"], "dps": r["dps"], "share": r["share"]}
+            for r in sess["rows"][:DISCORD_ROWS]]
+    facts = [("Damage", f"{nfmt(sess['total'])} ({nfmt(sess['total'] / max(sess['secs'], 1))}/s while fighting)"),
+             ("Fights", f"{nfmt(sess['fights'])} · {secs_text(sess['secs'])} fighting"), ("Kills", nfmt(sess["kills"])),
+             ("Players", ", ".join(sess["players"]) or "–")]
+    note = f"From {plural(len(sess['players']), 'chat log')} via Gorgon Notes; damage over time counted from each player's own log."
+    return {"title": title, "columns": ["Player", "Health", "Armor", "Damage", "/s", "Share", "Kills"], "rows": rows, "facts": facts, "note": note}
+
+
 def party_state():
     """GET /api/party: the code, the link's health and the merged party fights."""
     with PARTY_LOCK:
@@ -2035,7 +2209,8 @@ def party_state():
                               "roomOkAt": _party["roomOkAt"], "roomErrorAt": _party["roomErrAt"], "roomError": _party["roomErr"],
                               "fallback": bool(room_usable() and _party["roomErrAt"] and (not _party["roomOkAt"] or _party["roomErrAt"] > _party["roomOkAt"]))},
                 "live": live, "roomMembers": _party["roomMembers"],
-                "members": sorted({m["who"] for f in fights for m in f["members"]}), "fights": fights}
+                "members": sorted({m["who"] for f in fights for m in f["members"]}), "fights": fights,
+                "sessions": party_sessions(fights)}
 
 
 def party_roster():
@@ -2357,13 +2532,19 @@ def discord_post(payload, image=None):
         return None
 
 
-def discord_fight(fight_id=None, party_id=None, image=None, preview=False):
+def discord_fight(fight_id=None, party_id=None, image=None, preview=False, session_id=None):
     """Post one of this log's fights (by its start, the Fights table id) or a merged party fight (its id) as an
     embed: the table of players and pets, a few facts, the source note, and the client's PNG of the same table
     when it sent one. `preview` only answers the card, so the client can draw it first."""
     with PARTY_LOCK:
         me, rows = party_local_rows()
-        if party_id is not None:
+        if session_id is not None:
+            fights = party_merge(me, rows, _party["remote"], iso_dt(_party["since"]))
+            sess = next((x for x in party_sessions(fights) if x["id"] == session_id), None)
+            if sess is None or not sess["rows"]:
+                raise BadRequest("That session has no fights to post.")
+            card, party = session_card(sess), True
+        elif party_id is not None:
             pasted = sum(1 for v in _party["remote"].values() if v.get("pasted"))
             fights = party_merge(me, rows, _party["remote"], iso_dt(_party["since"])) if _party["code"] or pasted else []
             pf = next((f for f in fights if f["id"] == party_id), None)
@@ -4306,6 +4487,9 @@ class Handler(SimpleHTTPRequestHandler):
                 if "paste" in body:
                     found, added = party_paste(body.get("paste"))
                     return self.send_json(dict(party_state(), paste={"found": found, "added": added}))
+                if "session" in body:
+                    session_set(body.get("session"), body.get("id"))
+                    return self.send_json(party_state())
                 code = party_set("new" if body.get("action") == "new" else body.get("code"))
             except (BadRequest, json.JSONDecodeError) as e:
                 return self.send_json({"error": str(e) if isinstance(e, BadRequest) else "body must be JSON"}, 400)
@@ -4341,9 +4525,9 @@ class Handler(SimpleHTTPRequestHandler):
         if url.path == "/api/discord":
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
-                if not isinstance(body, dict) or not (isinstance(body.get("fight"), str) or isinstance(body.get("party"), str)):
-                    raise BadRequest("body must name a fight or a party fight")
-                res = discord_fight(body.get("fight"), body.get("party"), image=body.get("image"), preview=bool(body.get("preview")))
+                if not isinstance(body, dict) or not (isinstance(body.get("fight"), str) or isinstance(body.get("party"), str) or isinstance(body.get("session"), str)):
+                    raise BadRequest("body must name a fight, a party fight or a session")
+                res = discord_fight(body.get("fight"), body.get("party"), image=body.get("image"), preview=bool(body.get("preview")), session_id=body.get("session"))
             except (BadRequest, json.JSONDecodeError) as e:
                 return self.send_json({"error": str(e) if isinstance(e, BadRequest) else "body must be JSON"}, 400)
             except Exception as e:

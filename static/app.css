@@ -719,6 +719,8 @@ tr[aria-selected="true"] .sizein { border-color: var(--sel-text); color: var(--s
 .party-live { margin: 0 0 8px; }
 .party-sess { margin: 0 0 14px; }
 .party-sess-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.party-sess-tools { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+.party-sess-tools select { max-width: 34ch; }
 .party-sess tr.mine td { color: var(--text); }
 .party-h3 { margin: 0 0 2px; }
 .party-fight + .party-roster { margin-top: 12px; }

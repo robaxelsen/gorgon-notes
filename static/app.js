@@ -1369,7 +1369,7 @@ async function combatRound() {
    others'. The server does the posting, polling and merging; this window shows the code, the link's health
    and the merged fights, newest first. Feedback for the window's own controls goes to its state line
    (#d-pstate, beside the buttons), never only to the system line at the top of the page. */
-const pUI = { all: false, solo: false, lastCode: null, undoTimer: null, note: null, dnote: null, paste: false, posting: false, area: '' };
+const pUI = { all: false, solo: false, lastCode: null, undoTimer: null, note: null, dnote: null, paste: false, posting: false, area: '', session: null };
 const PARTY_CODE_RE = /^gn-[a-z0-9]{12}$/;
 const PARTY_CODE_IN_TEXT = /gn-[a-z0-9]{12}/i;
 const PARTY_SHOW = 10;  // shared fights listed before "Show all"
@@ -1473,7 +1473,7 @@ function renderPostButtons() {
   const post = $('#d-post');
   post.disabled = pUI.posting || !dUI.hasFight;
   post.hidden = !!S.partyOld;
-  $$('#d-party [data-pdisc]').forEach(b => { b.disabled = pUI.posting; });
+  $$('#d-party [data-pdisc], #d-party [data-psess-post]').forEach(b => { b.disabled = pUI.posting; });
 }
 async function postParty(body) {
   try {
@@ -1514,7 +1514,7 @@ function partyFightHtml(f) {
   const ids = f.byIds ? '<span class="tag" title="The same enemy ids appear in more than one player\'s log">same enemies</span>' : '';
   const roster = f.byRoster ? '<span class="tag" title="A player\'s chat log names the other as a party member">same party</span>' : '';
   const pasted = f.pasted ? '<span class="tag" title="Added from a pasted Discord post">pasted</span>' : '';
-  const post = S.party?.discord?.webhook && f.members.length > 1 ? `<button type="button" class="linkbtn" data-pdisc="${esc(f.id)}">Post to Discord</button>` : '';
+  const post = S.party?.discord?.webhook && f.members.length > 1 ? `<button type="button" class="linkbtn" data-pdisc="${esc(f.id)}">Post fight to Discord</button>` : '';
   const head = `<div class="ph"><span class="t">${hhmm(t)}</span><span class="dim">${secs(f.dur)}</span>${f.area ? `<span class="dim">${esc(f.area)}</span>` : ''}<span><b>${fmt(f.total)}</b> damage · ${plural(f.members.length, 'player')}</span>${solo}${ids}${roster}${pasted}${post}</div>`;
   const max = f.members[0]?.dmg || 1;
   const rows = f.members.map(m => { const tip = partyTip(m); return `<div class="barrow" role="group" aria-label="${esc(tip)}" title="${esc(tip)}"><span class="nm">${esc(m.who)}${m.mine ? ' <span class="tag">you</span>' : ''}</span><div class="bar"><i style="width:${Math.max(1, m.dmg / max * 100)}%"></i></div><span class="v">${fmt(m.dmg)} <span class="dim">${fmt(m.dps)}/s · ${Math.round((m.share || 0) * 100)}%</span></span></div>`; }).join('');
@@ -1551,16 +1551,36 @@ function sessionRows(fights, area) {
   }
   return { rows: [...rows.values()].sort((a, b) => b.dmg - a.dmg), total, secs, kills, fights: fightsIn.size };
 }
+/* Which session the table shows: the one picked, else the running manual one, else the newest automatic one. */
+function pickedSession(p) {
+  const ss = p.sessions || [];
+  if (pUI.session === '') return null;
+  const want = pUI.session && ss.find(x => x.id === pUI.session);
+  return want || ss.find(x => x.kind === 'manual' && x.open) || ss[0] || null;
+}
+function sessionLabel(x) {
+  const a = hhmm(parseIso(x.start)), b = x.end ? hhmm(parseIso(x.end)) : 'now';
+  if (x.kind === 'manual') return `Session ${a} to ${b}${x.open ? ' (running)' : ''}${x.areas.length ? ` · ${x.areas.join(', ')}` : ''}`;
+  return `${x.areas[0] || 'Unknown area'} ${a} to ${b}`;
+}
+/* The session table: every player and pet over a session's fights, summed, the way a group meter shows it. The
+   session comes from the server (manual Start/Stop, or an automatic run in one area); "All today" sums everything. */
 function sessionTable(p, all) {
-  const areas = [...new Set(all.map(f => f.area).filter(Boolean))].sort();
-  if (pUI.area && !areas.includes(pUI.area)) pUI.area = '';
-  const s = sessionRows(all, pUI.area);
-  if (!s.rows.length) return '';
+  const ss = p.sessions || [];
+  const cur = pickedSession(p);
+  const s = cur ? { rows: cur.rows, total: cur.total, secs: cur.secs, kills: cur.kills, fights: cur.fights } : sessionRows(all, '');
+  const running = ss.find(x => x.kind === 'manual' && x.open);
+  const sel = `<label class="small dim" for="d-psess">Session</label> <select id="d-psess" aria-label="Session">${ss.map(x => `<option value="${esc(x.id)}"${cur && x.id === cur.id ? ' selected' : ''}>${esc(sessionLabel(x))}</option>`).join('')}<option value=""${cur ? '' : ' selected'}>All today</option></select>`;
+  const startStop = running
+    ? `<button type="button" class="btn" data-psess="stop">Stop session</button>`
+    : `<button type="button" class="btn" data-psess="start" title="Fights from now until you press Stop become one session to post">Start session</button>`;
+  const post = cur && S.party?.discord?.webhook && s.rows.length ? `<button type="button" class="btn primary" data-psess-post="${esc(cur.id)}">Post session to Discord</button>` : '';
+  const tools = `<span class="party-sess-tools">${sel}${startStop}${post}</span>`;
+  if (!s.rows.length) return `<div class="party-sess"><div class="party-sess-head"><span class="small dim">${cur ? 'No fights in this session yet.' : 'No fights yet.'}</span>${tools}</div></div>`;
   const split = s.rows.some(r => r.split);
-  const sel = areas.length > 1 ? `<label class="small dim" for="d-parea">Area</label> <select id="d-parea" aria-label="Area"><option value="">All areas</option>${areas.map(a => `<option value="${esc(a)}"${a === pUI.area ? ' selected' : ''}>${esc(a)}</option>`).join('')}</select>` : '';
-  const head = `<div class="party-sess-head"><span class="small dim">${plural(s.fights, 'fight')} · ${secs(s.secs)} fighting · <b>${fmt(s.total)}</b> damage${s.kills ? ` · ${plural(s.kills, 'kill')}` : ''}</span>${sel}</div>`;
+  const head = `<div class="party-sess-head"><span class="small dim">${plural(s.fights, 'fight')} · ${secs(s.secs)} fighting · <b>${fmt(s.total)}</b> damage${s.kills ? ` · ${plural(s.kills, 'kill')}` : ''}</span>${tools}</div>`;
   const th = `<tr><th>Player</th>${split ? '<th class="num d-only">Health</th><th class="num d-only">Armor</th>' : ''}<th class="num">Damage</th><th class="num">Per second</th><th class="num">Share</th><th class="num">Kills</th></tr>`;
-  const tr = s.rows.map(r => `<tr${r.mine ? ' class="mine"' : ''}><td>${esc(r.who)}${r.pet ? ` <span class="dim small">· ${esc(r.owner)}'s pet</span>` : r.mine ? ' <span class="tag">you</span>' : ''}</td>${split ? `<td class="num d-only">${r.split ? fmt(r.health) : '<span class="dim">·</span>'}</td><td class="num d-only">${r.split ? fmt(r.armor) : '<span class="dim">·</span>'}</td>` : ''}<td class="num"><b>${fmt(r.dmg)}</b></td><td class="num">${fmt(r.secs ? r.dmg / r.secs : 0)}</td><td class="num">${pctOf(r.dmg, s.total)}</td><td class="num">${r.kills ? fmt(r.kills) : '<span class="dim">0</span>'}</td></tr>`).join('');
+  const tr = s.rows.map(r => `<tr${r.mine ? ' class="mine"' : ''}><td>${esc(r.who)}${r.owner ? ` <span class="dim small">· ${esc(r.owner)}'s pet</span>` : r.mine ? ' <span class="tag">you</span>' : ''}</td>${split ? `<td class="num d-only">${r.split ? fmt(r.health) : '<span class="dim">·</span>'}</td><td class="num d-only">${r.split ? fmt(r.armor) : '<span class="dim">·</span>'}</td>` : ''}<td class="num"><b>${fmt(r.dmg)}</b></td><td class="num">${fmt(r.secs ? r.dmg / r.secs : 0)}</td><td class="num">${pctOf(r.dmg, s.total)}</td><td class="num">${r.kills ? fmt(r.kills) : '<span class="dim">0</span>'}</td></tr>`).join('');
   return `<div class="party-sess">${head}<table class="tbl"><thead>${th}</thead><tbody>${tr}</tbody></table></div>`;
 }
 /* The party per the chat log (hunting-party lines and party chat), and who in it is not sharing yet. */
@@ -1730,10 +1750,23 @@ function initParty() {
     } catch (err) { st.html = `<span class="tagw error">[Error]</span> ${esc(err?.status === 400 ? err.message : "The server didn't answer; try again.")}`; }
   });
   $('#d-pastecancel').addEventListener('click', () => { pUI.paste = false; $('#d-pastestate').html = ''; renderParty(); $('#d-party [data-ppaste]')?.focus(); });
-  $('#d-party').addEventListener('change', e => { if (e.target.id === 'd-parea') { pUI.area = e.target.value; renderParty(); $('#d-parea')?.focus(); } });
+  $('#d-party').addEventListener('change', e => { if (e.target.id === 'd-psess') { pUI.session = e.target.value; renderParty(); $('#d-psess')?.focus(); } });
   $('#d-party').addEventListener('click', e => {
     const disc = e.target.closest('[data-pdisc]');
     if (disc) { postDiscord({ party: disc.dataset.pdisc }, 'the party fight'); return; }
+    const sp = e.target.closest('[data-psess-post]');
+    if (sp) { postDiscord({ session: sp.dataset.psessPost }, 'the session'); return; }
+    const ss = e.target.closest('[data-psess]');
+    if (ss) {
+      const action = ss.dataset.psess;
+      postParty({ session: action }).then(p => {
+        if (!p) return;
+        if (action === 'start') { pUI.session = null; sysLine('status', 'Session started. Fights from now on are in it until you press Stop session.'); }
+        else sysLine('status', 'Session stopped. Pick it in the Session list to post it.');
+        renderParty(); $('#d-party [data-psess]')?.focus();
+      });
+      return;
+    }
     if (e.target.closest('[data-ppaste]')) { pUI.paste = true; renderParty(); $('#d-pastetext').focus(); return; }
     if (e.target.closest('[data-pall]')) { pUI.all = !pUI.all; renderParty(); $('#d-party [data-pall]')?.focus(); }
     else if (e.target.closest('[data-psolo]')) { pUI.solo = !pUI.solo; renderParty(); $('#d-party [data-psolo]')?.focus(); }
@@ -1925,14 +1958,8 @@ function renderBreakdown(c, f) {
   let note = '';
   if (f.party?.length) note += `<p class="small dim" style="margin:12px 0 0">In a party with ${esc(joinNames(f.party))}, per the chat log. Their hits aren't in this meter; what they share shows in Party below.</p>`;
   else if (f.inParty) note += '<p class="small dim" style="margin:12px 0 0">In a party, per the chat log, with members it hasn\'t named yet (they show up when they speak or leave).</p>';
-  if (f.indirectUnattributed) {
-    const who = f.party?.length
-      ? `${joinNames(f.party)} ${f.party.length === 1 ? 'was' : 'were'} in your party, so some of it may be theirs.`
-      : f.shared
-      ? (f.others.length ? `${joinNames(f.others)} ${f.others.length === 1 ? 'was' : 'were'} nearby, so some of it may be theirs.` : 'There was party chat during the fight, so some of it may be your party\'s.')
-      : "Nobody else was logged nearby, so it's your DoTs or your pets'.";
-    note += `<p class="small dim" style="margin:${note ? 8 : 12}px 0 0">Indirect damage on what you fought, source not logged: ${fmt(f.indirectUnattributed)}. ${esc(who)} It isn't counted above.</p>`;
-  }
+  if (f.dotMe || f.dotPet) note += `<p class="small dim" style="margin:${note ? 8 : 12}px 0 0">Damage over time (${fmt((f.dotMe || 0) + (f.dotPet || 0))}) is every tick on an enemy after you or a pet first hit it, from your log; the game doesn't name a tick's source, so a party member's DoT on the same enemy is in it too.</p>`;
+  if (f.indirectUnattributed) note += `<p class="small dim" style="margin:${note ? 8 : 12}px 0 0">Ticks on enemies before you hit them, not counted: ${fmt(f.indirectUnattributed)}${f.party?.length ? ` (${esc(joinNames(f.party))}'s DoTs)` : f.shared ? ' (others nearby)' : ''}.</p>`;
   if (c.unclassified?.length) note += `<p class="small dim" style="margin:8px 0 0">Not placed: ${esc(joinNames(c.unclassified))}. ${c.unclassified.length === 1 ? 'It hit things you never fought and nothing you fought hit it, so the meter can\'t tell a pet from a stranger; if it is your pet, its damage is missing above.' : 'They hit things you never fought and nothing you fought hit them, so the meter can\'t tell pets from strangers; if any is your pet, its damage is missing above.'}</p>`;
   const tl = f.timeline || [];
   const spark = f.dmg && tl.length >= 2
@@ -2007,7 +2034,7 @@ function discordText(c, f) {
     `Damage ${fmt(f.dmg)} (${fmt(f.dps)}/s) · you ${fmt(f.me)} (${fmt(f.dpsMe)}/s)${petLine ? ' · ' + petLine : ''}`,
     `Kills ${fmt(kills)}${f.petKills ? ` (${fmt(f.petKills)} by pets)` : ''} · taken ${fmt(f.taken)} · deaths ${fmt(f.deaths)}${f.top ? ` · fought ${f.top}${f.targetCount > 1 ? ` +${fmt(f.targetCount - 1)}` : ''}` : ''}`,
     top ? `Top: ${top}` : '',
-    f.indirectUnattributed ? `Indirect on targets, source not logged: ${fmt(f.indirectUnattributed)}${f.shared ? ' (others nearby)' : ''}` : '',
+    (f.dotMe || f.dotPet) ? `Damage over time ${fmt((f.dotMe || 0) + (f.dotPet || 0))} (ticks after your first hit, from your log)` : '',
     f.party?.length ? `In a party with ${joinNames(f.party)}.` : '',
     `From ${who}'s chat log via ${APP_NAME}. Party members' hits aren't in it.`,
   ].filter(Boolean).join('\n');
