@@ -880,3 +880,27 @@ li[role="treeitem"]:focus-visible > .jrow { outline: 2px solid var(--selection);
 .chart.spark { margin-top: 12px; }
 .chart.spark svg { height: 120px; }
 @media (max-width: 767px) { .chart.spark svg { height: 100px; } }
+
+/* ---------- Teleports: one window per zone, codes as copy buttons ---------- */
+.tpzones { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.tpzones:empty { display: none; }
+.tpfold { border: 0; background: none; padding: 0; min-height: 28px; display: inline-flex; align-items: center; gap: 8px; font: inherit; font-weight: 700; color: var(--title); }
+.tpfold .tri { width: 10px; height: 10px; display: inline-flex; align-items: center; }
+.tpfold:hover span:last-child { text-decoration: underline; }
+.win.folded .win-body { display: none; }
+.tprow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 58%); gap: 6px 16px; align-items: center; padding: 6px 0; min-height: 44px; border-bottom: 1px solid var(--rule); }
+.tprow:last-child { border-bottom: 0; }
+.tprow .tpname .sub { display: block; font-size: 13px; color: var(--text-dim); }
+.tpcodes { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.tpcode {
+  height: 32px; padding: 0 10px; border: 1px solid var(--frame); border-radius: 4px; background: var(--well); color: var(--data);
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 20px; line-height: 1; font-variant-numeric: tabular-nums lining-nums; letter-spacing: .04em;
+  transition: background var(--fast) var(--ease);
+}
+.tpcode:hover { background: var(--row-hover); border-color: var(--control); }
+.tpzone-note { color: var(--text-dim); max-width: 75ch; }
+@media (max-width: 639px) {
+  .tprow { grid-template-columns: minmax(0, 1fr); }
+  .tpcodes { justify-content: flex-start; }
+}
+@media (pointer: coarse) { .tpcode { min-height: 44px; } }
