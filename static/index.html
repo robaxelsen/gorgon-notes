@@ -197,7 +197,7 @@
         </section>
         <section class="win" id="w-d-break" aria-labelledby="t-d-break">
           <header class="win-bar"><h2 id="t-d-break" tabindex="-1">Breakdown <span class="count" id="d-break-sub"></span></h2>
-            <div class="tools"><button type="button" class="btn" id="d-copy" disabled><span class="d-only">Copy for Discord</span><span class="m-only">Copy</span></button></div>
+            <div class="tools"><button type="button" class="btn" id="d-copy" disabled><span class="d-only">Copy for Discord</span><span class="m-only">Copy</span></button><button type="button" class="btn" id="d-post" disabled><span class="d-only">Post to Discord</span><span class="m-only">Post</span></button></div>
           </header>
           <div class="win-body" id="d-break"></div>
           <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
@@ -215,7 +215,19 @@
               <button type="button" class="btn" id="d-pleave" hidden>Leave</button>
               <span class="small dim" id="d-pstate" aria-live="polite"></span>
             </form>
+            <form class="toolbar" id="d-dform">
+              <label class="sr" for="dhook">Discord webhook</label>
+              <input type="url" id="dhook" class="code" placeholder="Discord webhook, optional" autocomplete="off" autocapitalize="off" spellcheck="false">
+              <button type="submit" class="btn" id="d-dsave">Save</button>
+              <button type="button" class="btn" id="d-dremove" hidden>Remove</button>
+              <span class="small dim" id="d-dstate" aria-live="polite"></span>
+            </form>
             <div id="d-party"></div>
+            <div id="d-pastebox" hidden>
+              <label class="small dim" for="d-pastetext">A fight from a Gorgon Notes post on Discord, with its json block</label>
+              <textarea id="d-pastetext" rows="4" spellcheck="false"></textarea>
+              <div class="toolbar"><button type="button" class="btn" id="d-pasteadd">Add</button><button type="button" class="linkbtn" id="d-pastecancel">Cancel</button><span class="small dim" id="d-pastestate" aria-live="polite"></span></div>
+            </div>
           </div>
           <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
         </section>

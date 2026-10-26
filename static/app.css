@@ -263,7 +263,7 @@ em.n { font-style: normal; color: var(--title); font-weight: 700; }
 /* toolbar + inputs */
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 8px; }
 .toolbar .grow { flex: 1 1 220px; min-width: 0; }
-input[type="search"], input[type="text"], input[type="time"], select {
+input[type="search"], input[type="text"], input[type="url"], input[type="time"], select {
   height: 32px; padding: 0 12px; border-radius: 4px; border: 1px solid var(--control); background: var(--field); color: var(--text);
 }
 input[type="search"] { width: 100%; }
@@ -711,13 +711,27 @@ tr[aria-selected="true"] .sizein { border-color: var(--sel-text); color: var(--s
 .party-fight .ph .tag { margin-left: 2px; }
 .party-fight .barrow { --bar-v: 19ch; grid-template-columns: minmax(0, 12em) minmax(0, 1fr) var(--bar-v); }  /* "21,470  307/s · 100%"; names get 12em before the ellipsis */
 .party-under { display: flex; flex-wrap: wrap; gap: 4px 16px; }
-#d-pstate .tagw.status { color: var(--status); }
-#d-pstate .tagw.error { color: var(--error); }
+#d-pstate .tagw.status, #d-dstate .tagw.status, #d-pastestate .tagw.status { color: var(--status); }
+#d-pstate .tagw.error, #d-dstate .tagw.error, #d-pastestate .tagw.error { color: var(--error); }
 #d-pstate .linkbtn { margin-left: 4px; }
+#dhook { width: 34ch; }
+#d-dform[hidden] { display: none; }
+.party-roster { margin: 0 0 10px; max-width: 75ch; }
+.party-live { margin: 0 0 8px; }
+.party-sess { margin: 0 0 14px; }
+.party-sess-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.party-sess tr.mine td { color: var(--text); }
+.party-h3 { margin: 0 0 2px; }
+.party-fight + .party-roster { margin-top: 12px; }
+#d-pastebox { margin-top: 12px; }
+#d-pastebox[hidden] { display: none; }
+#d-pastebox label { display: block; margin-bottom: 6px; }
+#d-pastebox textarea { display: block; width: 100%; min-height: 84px; margin-bottom: 8px; padding: 6px 8px; font: inherit; font-size: 13px; line-height: 1.4; color: var(--text); background: var(--field); border: 1px solid var(--control); border-radius: 4px; resize: vertical; }
+#d-pastebox .toolbar { margin-bottom: 0; }
 @media (max-width: 640px) {
   .party-fight .barrow { --bar-v: 15ch; grid-template-columns: minmax(0, 9em) minmax(0, 1fr) var(--bar-v); } .party-fight .barrow .v .dim { display: block; margin: 0; }
-  #pcode { width: 100%; }           /* the field takes the row; the buttons and the state line follow */
-  #d-pstate { flex-basis: 100%; }
+  #pcode, #dhook { width: 100%; }   /* the field takes the row; the buttons and the state line follow */
+  #d-pstate, #d-dstate { flex-basis: 100%; }
 }
 #vq-note[hidden] { display: none; }
 @media (min-width: 1180px) { .chips-wrap .chips { flex-wrap: wrap; overflow: visible; } }

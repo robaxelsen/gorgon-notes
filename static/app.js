@@ -1324,6 +1324,7 @@ function initSession() {
 const dUI = {
   selected: null, pinned: false,  // pinned = the player picked a fight; otherwise the newest (or the live one) is shown
   minor: false,                   // skirmishes (under 5 s and 500 damage) unfolded
+  hasFight: false,                // the Breakdown shows a fight (Copy and Post enabled)
   sort: (store.json('pgdash.sort', {}).fights) || { key: 'start', dir: 'desc' },
 };
 const D_COLS = [
@@ -1365,7 +1366,7 @@ async function combatRound() {
    others'. The server does the posting, polling and merging; this window shows the code, the link's health
    and the merged fights, newest first. Feedback for the window's own controls goes to its state line
    (#d-pstate, beside the buttons), never only to the system line at the top of the page. */
-const pUI = { all: false, solo: false, lastCode: null, undoTimer: null, note: null };
+const pUI = { all: false, solo: false, lastCode: null, undoTimer: null, note: null, dnote: null, paste: false, posting: false, area: '' };
 const PARTY_CODE_RE = /^gn-[a-z0-9]{12}$/;
 const PARTY_CODE_IN_TEXT = /gn-[a-z0-9]{12}/i;
 const PARTY_SHOW = 10;  // shared fights listed before "Show all"
@@ -1379,14 +1380,41 @@ async function loadParty() {
 }
 /* The window's state line: kind 'status' prints the game's [Status] tag, 'error' its [Error] tag (and marks the
    field invalid), 'plain' neither. An optional text button (label + run) follows, for Undo. */
-function partyState(kind, text, btn = null) {
-  const el = $('#d-pstate'), inp = $('#pcode');
-  pUI.note = kind === 'plain' ? null : { kind, text, btn };
+function partyState(kind, text, btn = null, row = 'p') {
+  const el = $(row === 'd' ? '#d-dstate' : '#d-pstate'), inp = $(row === 'd' ? '#dhook' : '#pcode');
+  pUI[row === 'd' ? 'dnote' : 'note'] = kind === 'plain' ? null : { kind, text, btn };
   const tag = kind === 'status' ? '<span class="tagw status">[Status]</span> ' : kind === 'error' ? '<span class="tagw error">[Error]</span> ' : '';
   el.html = text ? `${tag}${esc(text)}${btn ? ` <button type="button" class="linkbtn" data-pundo>${esc(btn.label)}</button>` : ''}` : '';
   el._run = btn?.run || null;
-  if (kind === 'error') { inp.setAttribute('aria-invalid', 'true'); inp.setAttribute('aria-describedby', 'd-pstate'); }
+  if (kind === 'error') { inp.setAttribute('aria-invalid', 'true'); inp.setAttribute('aria-describedby', el.id); }
   else { inp.removeAttribute('aria-invalid'); inp.removeAttribute('aria-describedby'); }
+}
+const discordState = (kind, text) => partyState(kind, text, null, 'd');
+/* Post a fight (by its id) or a merged party fight to the Discord webhook; the server builds the text. */
+async function postDiscord(body, what) {
+  if (!S.party?.discord?.webhook) {
+    const w = $('#w-d-party'); w.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    discordState('status', 'Paste a Discord webhook here first, then press Post to Discord again.');
+    $('#dhook').focus();
+    return null;
+  }
+  if (pUI.posting) return null;
+  pUI.posting = true; renderPostButtons();
+  try {
+    const r = await api('/api/discord', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (S.party && r.discord) S.party.discord = r.discord;
+    sysLine('status', `Posted ${what} to Discord${r.withBlock ? '' : ' (text only: the fight was too long for the json block)'}.`);
+    return r;
+  } catch (e) {
+    sysLine('error', e?.status === 400 ? e.message : "Couldn't post to Discord. The server didn't answer; try again.");
+    return null;
+  } finally { pUI.posting = false; renderPostButtons(); }
+}
+function renderPostButtons() {
+  const post = $('#d-post');
+  post.disabled = pUI.posting || !dUI.hasFight;
+  post.hidden = !!S.partyOld;
+  $$('#d-party [data-pdisc]').forEach(b => { b.disabled = pUI.posting; });
 }
 async function postParty(body) {
   try {
@@ -1413,7 +1441,7 @@ async function partyJoinFrom(text) {
 }
 function partyTip(m) {
   const pets = Object.entries(m.pets || {}).map(([n, d]) => `${n} ${fmt(d)}`).join(', ');
-  const parts = [`you ${fmt(m.me)}`];
+  const parts = [`own hits ${fmt(m.me)}`];
   if (pets) parts.push(`pets ${pets}`);
   if (m.kills) parts.push(plural(m.kills, 'kill'));
   if (m.deaths) parts.push(plural(m.deaths, 'death'));
@@ -1425,10 +1453,78 @@ function partyFightHtml(f) {
   const t = parseIso(f.start);
   const solo = f.members.length === 1 ? (f.members[0].mine ? '<span class="tag">only you so far</span>' : '<span class="tag">without you</span>') : '';
   const ids = f.byIds ? '<span class="tag" title="The same enemy ids appear in more than one player\'s log">same enemies</span>' : '';
-  const head = `<div class="ph"><span class="t">${hhmm(t)}</span><span class="dim">${secs(f.dur)}</span>${f.area ? `<span class="dim">${esc(f.area)}</span>` : ''}<span><b>${fmt(f.total)}</b> damage · ${plural(f.members.length, 'player')}</span>${solo}${ids}</div>`;
+  const roster = f.byRoster ? '<span class="tag" title="A player\'s chat log names the other as a party member">same party</span>' : '';
+  const pasted = f.pasted ? '<span class="tag" title="Added from a pasted Discord post">pasted</span>' : '';
+  const post = S.party?.discord?.webhook && f.members.length > 1 ? `<button type="button" class="linkbtn" data-pdisc="${esc(f.id)}">Post to Discord</button>` : '';
+  const head = `<div class="ph"><span class="t">${hhmm(t)}</span><span class="dim">${secs(f.dur)}</span>${f.area ? `<span class="dim">${esc(f.area)}</span>` : ''}<span><b>${fmt(f.total)}</b> damage · ${plural(f.members.length, 'player')}</span>${solo}${ids}${roster}${pasted}${post}</div>`;
   const max = f.members[0]?.dmg || 1;
   const rows = f.members.map(m => { const tip = partyTip(m); return `<div class="barrow" role="group" aria-label="${esc(tip)}" title="${esc(tip)}"><span class="nm">${esc(m.who)}${m.mine ? ' <span class="tag">you</span>' : ''}</span><div class="bar"><i style="width:${Math.max(1, m.dmg / max * 100)}%"></i></div><span class="v">${fmt(m.dmg)} <span class="dim">${fmt(m.dps)}/s · ${Math.round((m.share || 0) * 100)}%</span></span></div>`; }).join('');
   return `<div class="party-fight">${head}<div class="barlist">${rows}</div></div>`;
+}
+/* Live party DPS from the room's ticks: who is fighting right now and at what rate. */
+function liveLine(p) {
+  const live = (p.live || []).filter(t => t.inFight);
+  if (!live.length) return '';
+  const area = live.find(t => t.area)?.area;
+  return `<p class="small party-live" aria-live="polite">Fighting now${area ? ` in ${esc(area)}` : ''}: ${live.map(t => `<b>${esc(t.who)}</b> ${fmt(t.dps)}/s`).join(' · ')}</p>`;
+}
+/* The session table: every player and pet over the shared fights, summed, the way a group meter shows it.
+   Rows come from each summary's `by` (own hits, each pet: damage split into health and armor, kills); older
+   summaries without it give one row per player from their totals. Pets are keyed by owner too, so two
+   players' bees stay apart. */
+function sessionRows(fights, area) {
+  const rows = new Map(), fightsIn = new Set();
+  let total = 0, secs = 0, kills = 0;
+  for (const f of fights) {
+    if (area && f.area !== area) continue;
+    fightsIn.add(f.id); secs += f.dur;
+    for (const m of f.members) {
+      const by = m.by?.length ? m.by : [{ who: m.who, dmg: m.me, health: null, armor: null, kills: m.kills, pet: false }, ...Object.entries(m.pets || {}).map(([n, d]) => ({ who: n, dmg: d, health: null, armor: null, kills: null, pet: true }))];
+      for (const b of by) {
+        const key = b.pet ? `${b.who}\u0000${m.who}` : b.who;
+        const r = rows.get(key) || { who: b.who, owner: b.pet ? m.who : null, pet: b.pet, mine: !!m.mine, dmg: 0, health: 0, armor: 0, kills: 0, secs: 0, split: false };
+        r.dmg += b.dmg || 0; r.kills += b.kills || 0; r.secs += f.dur;
+        if (b.health != null) { r.health += b.health || 0; r.armor += b.armor || 0; r.split = true; }
+        rows.set(key, r);
+        total += b.dmg || 0; kills += b.kills || 0;
+      }
+    }
+  }
+  return { rows: [...rows.values()].sort((a, b) => b.dmg - a.dmg), total, secs, kills, fights: fightsIn.size };
+}
+function sessionTable(p, all) {
+  const areas = [...new Set(all.map(f => f.area).filter(Boolean))].sort();
+  if (pUI.area && !areas.includes(pUI.area)) pUI.area = '';
+  const s = sessionRows(all, pUI.area);
+  if (!s.rows.length) return '';
+  const split = s.rows.some(r => r.split);
+  const sel = areas.length > 1 ? `<label class="small dim" for="d-parea">Area</label> <select id="d-parea" aria-label="Area"><option value="">All areas</option>${areas.map(a => `<option value="${esc(a)}"${a === pUI.area ? ' selected' : ''}>${esc(a)}</option>`).join('')}</select>` : '';
+  const head = `<div class="party-sess-head"><span class="small dim">${plural(s.fights, 'fight')} · ${secs(s.secs)} fighting · <b>${fmt(s.total)}</b> damage${s.kills ? ` · ${plural(s.kills, 'kill')}` : ''}</span>${sel}</div>`;
+  const th = `<tr><th>Player</th>${split ? '<th class="num d-only">Health</th><th class="num d-only">Armor</th>' : ''}<th class="num">Damage</th><th class="num">Per second</th><th class="num">Share</th><th class="num">Kills</th></tr>`;
+  const tr = s.rows.map(r => `<tr${r.mine ? ' class="mine"' : ''}><td>${esc(r.who)}${r.pet ? ` <span class="dim small">· ${esc(r.owner)}'s pet</span>` : r.mine ? ' <span class="tag">you</span>' : ''}</td>${split ? `<td class="num d-only">${r.split ? fmt(r.health) : '<span class="dim">·</span>'}</td><td class="num d-only">${r.split ? fmt(r.armor) : '<span class="dim">·</span>'}</td>` : ''}<td class="num"><b>${fmt(r.dmg)}</b></td><td class="num">${fmt(r.secs ? r.dmg / r.secs : 0)}</td><td class="num">${pctOf(r.dmg, s.total)}</td><td class="num">${r.kills ? fmt(r.kills) : '<span class="dim">0</span>'}</td></tr>`).join('');
+  return `<div class="party-sess">${head}<table class="tbl"><thead>${th}</thead><tbody>${tr}</tbody></table></div>`;
+}
+/* The party per the chat log (hunting-party lines and party chat), and who in it is not sharing yet. */
+function rosterLine(p) {
+  const r = p?.roster; if (!r?.inParty) return '';
+  const names = (r.members || []).filter(m => m !== p.character);
+  const quiet = (r.notSharing || []).filter(m => m !== p.character);
+  if (!names.length) return 'Your chat log says you are in a party but names nobody yet (members already in it when you joined only show up when they speak or leave).';
+  const fix = quiet.length ? (p.code ? ` Not sharing yet: ${esc(joinNames(quiet))}. Send them the code.` : '') : (p.code ? ' All of them are sharing.' : '');
+  return `In your party per the chat log: ${esc(joinNames(names))}.${fix}`;
+}
+const pasteLink = () => pUI.paste ? '' : '<button type="button" class="linkbtn" data-ppaste>Paste a fight from Discord</button>';
+function renderDiscordForm(p, old) {
+  const d = p?.discord || {}, inp = $('#dhook');
+  $('#d-dform').hidden = old || !p;
+  if (old || !p) return;
+  inp.readOnly = !!d.webhook;
+  if (d.webhook) { if (document.activeElement !== inp) inp.value = d.hint || ''; }
+  else if (inp.value && inp.value === pUI.lastHint) inp.value = '';
+  pUI.lastHint = d.hint || null;
+  $('#d-dsave').hidden = !!d.webhook;
+  $('#d-dremove').hidden = !d.webhook;
+  if (!pUI.dnote) discordState('plain', d.webhook ? (d.lastPostAt ? `last post ${hhmm(parseIso(d.lastPostAt))}` : 'posts go to this webhook') : 'In Discord: the channel\'s gear → Integrations → Webhooks → New Webhook → Copy Webhook URL, then paste it here');
 }
 function renderParty() {
   const p = S.party, old = S.partyOld, box = $('#d-party'), inp = $('#pcode'), cnt = $('#d-party-count');
@@ -1439,18 +1535,25 @@ function renderParty() {
   $('#d-pleave').hidden = !code;
   inp.disabled = old; inp.readOnly = !!code;
   if (code && document.activeElement !== inp) inp.value = code;
-  if (old) { cnt.textContent = ''; partyState('plain', ''); box.html = '<p class="needs">Needs a newer Gorgon Notes: this page knows the Party window, the server it talks to does not.</p>'; setFoot('w-d-party', 'Party sharing', 'Sharing fights needs a newer Gorgon Notes'); return; }
+  renderDiscordForm(p, old);
+  $('#d-pastebox').hidden = !pUI.paste || old || !p;
+  if (old) { cnt.textContent = ''; partyState('plain', ''); box.html = '<p class="needs">Needs a newer Gorgon Notes: this page knows the Party window, the server it talks to does not.</p>'; setFoot('w-d-party', 'Party sharing', 'Sharing fights needs a newer Gorgon Notes'); renderPostButtons(); return; }
   if (!p) { cnt.textContent = ''; box.html = '<p class="needs">Checking the party link…</p>'; setFoot('w-d-party', 'ntfy.sh', ''); return; }
-  if (!code) {
+  const n = p.ntfy || {}, tr = p.transport || {};
+  const link = tr.kind === 'room' ? 'Party room' : 'ntfy.sh';
+  const all = (p.fights || []).slice().reverse();
+  const roster = rosterLine(p);
+  const rosterHtml = `${liveLine(p)}${roster ? `<p class="small dim party-roster">${roster}</p>` : ''}`;
+  if (!code && !all.length) {
     cnt.textContent = '';
     if (!pUI.note) partyState('plain', '');
-    box.html = '<p class="empty">Share fights with your party. One of you presses New code and pastes it into party chat; the others paste the code here (the whole chat line is fine) and press Join. Your last three fights and every one that closes from then on are shared, and everyone\'s shows up here side by side.</p>';
-    setFoot('w-d-party', 'ntfy.sh · not joined', 'Press New code, or paste a code from party chat. Fight numbers and character names go to ntfy.sh; anyone with the code can read them');
+    box.html = `<p class="empty">Share fights with your party. One of you presses New code and pastes it into party chat; the others paste the code here (the whole chat line is fine) and press Join. Your last three fights and every one that closes from then on are shared, and everyone's shows up here side by side.</p>${rosterHtml}<div class="pane-under party-under">${pasteLink()}</div>`;
+    setFoot('w-d-party', `${link} · not joined`, `Press New code, or paste a code from party chat. Fight numbers and character names go to ${tr.kind === 'room' ? 'the party room' : 'ntfy.sh'}; anyone with the code can read them`);
+    renderPostButtons();
     return;
   }
-  const n = p.ntfy || {}, since = parseIso(p.since);
-  if (!pUI.note) partyState('plain', `joined ${hhmm(since)}`);
-  const all = (p.fights || []).slice().reverse();
+  const since = parseIso(p.since);
+  if (!pUI.note) partyState('plain', code ? `joined ${hhmm(since)}` : '');
   const shared = all.filter(f => f.members.length > 1), solo = all.filter(f => f.members.length === 1);
   const lead = shared.length ? shared : solo;            // nothing shared yet: the solo fights are the list
   const rest = shared.length ? solo : [];
@@ -1458,18 +1561,23 @@ function renderParty() {
   cnt.textContent = lead.length ? (shared.length && solo.length ? `${fmt(shared.length)} of ${fmt(all.length)}` : fmt(lead.length)) : '';
   if (!all.length) {
     const who = (p.members || []).filter(m => m !== p.character);
-    box.html = `<p class="empty">Joined at ${hhmm(parseIso(p.since))}. Fights that close from now on are sent; the others' arrive within 10 s.${who.length ? ` Here so far: ${esc(joinNames(who))}.` : ''}</p>`;
+    box.html = `<p class="empty">Joined at ${hhmm(parseIso(p.since))}. Fights that close from now on are sent; the others' arrive within 10 s.${who.length ? ` Here so far: ${esc(joinNames(who))}.` : ''}</p>${rosterHtml}<div class="pane-under party-under">${pasteLink()}</div>`;
   } else {
     const more = lead.length > PARTY_SHOW ? `<button type="button" class="linkbtn" data-pall aria-expanded="${pUI.all}">${pUI.all ? `Show the last ${PARTY_SHOW}` : `Show all ${fmt(lead.length)} fights`}</button>` : '';
     const fold = rest.length ? `<button type="button" class="linkbtn" data-psolo aria-expanded="${pUI.solo}">${pUI.solo ? 'Hide' : 'Show'} ${plural(rest.length, 'fight')} nobody else was in</button>` : '';
-    box.html = `${shown.map(partyFightHtml).join('')}${more || fold ? `<div class="pane-under party-under">${more}${fold}</div>` : ''}${pUI.solo && rest.length ? rest.map(partyFightHtml).join('') : ''}`;
+    box.html = `${rosterHtml}${sessionTable(p, all)}<h3 class="small dim party-h3">Fights</h3>${shown.map(partyFightHtml).join('')}<div class="pane-under party-under">${more}${fold}${pasteLink()}</div>${pUI.solo && rest.length ? rest.map(partyFightHtml).join('') : ''}`;
   }
-  const left = `ntfy.sh · ${esc(code)}${n.lastMessageAt ? ` · last message ${hhmm(parseIso(n.lastMessageAt))}` : ' · nothing received yet'}${n.posted ? ` · ${plural(n.posted, 'fight')} sent` : ''}`;
+  const left = code
+    ? `${link} · ${esc(code)}${n.lastMessageAt ? ` · last message ${hhmm(parseIso(n.lastMessageAt))}` : ' · nothing received yet'}${n.posted ? ` · ${plural(n.posted, 'fight')} sent` : ''}${n.pasted ? ` · ${fmt(n.pasted)} pasted` : ''}`
+    : `${link} · not joined · ${plural(n.pasted || 0, 'pasted fight')}`;
   let right;
-  if (!n.reachable && n.lastErrorAt) right = `${shape('bad', 's13')}<span class="txt-bad">ntfy.sh not answering since ${hhmm(parseIso(n.lastErrorAt))}; ${n.pending ? `${plural(n.pending, 'fight')} waiting, sent` : 'fights are sent'} when it answers again</span>`;
+  if (code && !n.reachable && n.lastErrorAt) right = `${shape('bad', 's13')}<span class="txt-bad">${tr.kind === 'room' ? 'The party room' : 'ntfy.sh'} not answering since ${hhmm(parseIso(n.lastErrorAt))}; ${n.pending ? `${plural(n.pending, 'fight')} waiting, sent` : 'fights are sent'} when it answers again</span>`;
+  else if (code && tr.fallback) right = `${shape('warn', 's13')}<span>The party room hasn't answered since ${hhmm(parseIso(tr.roomErrorAt))}; sharing over ntfy.sh meanwhile, so only others on ntfy.sh see you</span>`;
   else if (n.pending) right = esc(`${plural(n.pending, 'fight')} waiting to be sent`);
-  else right = 'Fight numbers and character names go to ntfy.sh; anyone with the code can read them';
+  else if (!code) right = 'Press New code, or paste a code from party chat, to share fights without the pasting';
+  else right = `Fight numbers and character names go to ${tr.kind === 'room' ? 'the party room' : 'ntfy.sh'}; anyone with the code can read them`;
   setFoot('w-d-party', left, right);
+  renderPostButtons();
 }
 function initParty() {
   const inp = $('#pcode');
@@ -1496,7 +1604,51 @@ function initParty() {
     renderParty();
   });
   $('#d-pstate').addEventListener('click', e => { if (e.target.closest('[data-pundo]') && $('#d-pstate')._run) $('#d-pstate')._run(); });
+  // Discord webhook: saved on the server (settings.json), shown back with its token hidden.
+  const hook = $('#dhook');
+  $('#d-dform').addEventListener('submit', async e => {
+    e.preventDefault();
+    if (S.party?.discord?.webhook) return;
+    const url = hook.value.trim();
+    if (!/^https:\/\/(ptb\.|canary\.)?discord(app)?\.com\/api\/webhooks\/\d+\/[\w.-]+$/.test(url) && !/^https?:\/\/[\w.:-]+\/api\/webhooks\/\d+\/[\w.-]+$/.test(url)) {
+      discordState('error', 'A Discord webhook looks like https://discord.com/api/webhooks/<numbers>/<token>. In Discord: channel settings → Integrations → Webhooks → Copy Webhook URL.'); return;
+    }
+    discordState('plain', 'Checking…');
+    try {
+      const r = await api('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ discordWebhook: url }) });
+      if (S.party) S.party.discord = r.discord;
+      discordState('status', r.checked ? `Saved. Discord calls it "${r.name || 'webhook'}"; Post to Discord on the Breakdown and on party fights goes there.` : 'Saved, not checked: Discord didn\'t answer. The first post will tell.');
+      renderParty();
+    } catch (err) { discordState('error', err?.status === 400 ? err.message : "The server didn't answer; try again."); }
+  });
+  hook.addEventListener('input', () => { if (pUI.dnote?.kind === 'error') discordState('plain', ''); });
+  $('#d-dremove').addEventListener('click', async () => {
+    try {
+      const r = await api('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ discordWebhook: null }) });
+      if (S.party) S.party.discord = r.discord;
+      hook.value = ''; discordState('status', 'Webhook removed. Post to Discord asks for one again.'); renderParty();
+    } catch (err) { discordState('error', "The server didn't answer; try again."); }
+  });
+  // Paste box: a fight from a Gorgon Notes post on Discord lands in the table like one received over ntfy.sh.
+  $('#d-pasteadd').addEventListener('click', async () => {
+    const text = $('#d-pastetext').value, st = $('#d-pastestate');
+    if (!text.trim()) { st.html = '<span class="tagw error">[Error]</span> Nothing pasted yet.'; return; }
+    try {
+      const p = await api('/api/party', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paste: text }) });
+      S.party = p; S.partyOld = false;
+      const r = p.paste || {};
+      if (!r.found) st.html = '<span class="tagw error">[Error]</span> No fight in that text. Paste the whole Discord post, including its json block.';
+      else if (!r.added) st.html = `<span class="tagw status">[Status]</span> Already here: ${r.found === 1 ? 'that fight was' : 'those fights were'} added before.`;
+      else { st.html = `<span class="tagw status">[Status]</span> Added ${plural(r.added, 'fight')} from the paste.`; $('#d-pastetext').value = ''; }
+      renderParty();
+    } catch (err) { st.html = `<span class="tagw error">[Error]</span> ${esc(err?.status === 400 ? err.message : "The server didn't answer; try again.")}`; }
+  });
+  $('#d-pastecancel').addEventListener('click', () => { pUI.paste = false; $('#d-pastestate').html = ''; renderParty(); $('#d-party [data-ppaste]')?.focus(); });
+  $('#d-party').addEventListener('change', e => { if (e.target.id === 'd-parea') { pUI.area = e.target.value; renderParty(); $('#d-parea')?.focus(); } });
   $('#d-party').addEventListener('click', e => {
+    const disc = e.target.closest('[data-pdisc]');
+    if (disc) { postDiscord({ party: disc.dataset.pdisc }, 'the party fight'); return; }
+    if (e.target.closest('[data-ppaste]')) { pUI.paste = true; renderParty(); $('#d-pastetext').focus(); return; }
     if (e.target.closest('[data-pall]')) { pUI.all = !pUI.all; renderParty(); $('#d-party [data-pall]')?.focus(); }
     else if (e.target.closest('[data-psolo]')) { pUI.solo = !pUI.solo; renderParty(); $('#d-party [data-psolo]')?.focus(); }
   });
@@ -1550,7 +1702,7 @@ function renderCombatView() {
     glance.html = ''; $('#d-count').textContent = '';
     pane.html = old ? '<p class="needs">Needs a newer server.py.</p>' : needLog;
     $('#d-break').html = old ? '<p class="needs">Needs a newer server.py.</p>' : needLog;
-    $('#d-break-sub').textContent = ''; $('#d-copy').disabled = true;
+    $('#d-break-sub').textContent = ''; $('#d-copy').disabled = true; dUI.hasFight = false; renderPostButtons();
     const r = old ? 'The DPS meter needs a newer server.py' : fixR;
     setFoot('w-d-glance', live, r); setFoot('w-d-fights', live, r); setFoot('w-d-break', live, r);
     $('#w-d-fights').classList.remove('quiet');
@@ -1558,7 +1710,7 @@ function renderCombatView() {
   }
   if (reading) {
     glance.html = ['Per second now', 'Damage', 'Fights'].map((l, i) => `<div class="fig${i ? '' : ' lead'}"><div class="lb">${l}</div><div class="val"><span class="loading-bar"></span></div></div>`).join('');
-    pane.html = needLog; $('#d-break').html = needLog; $('#d-count').textContent = ''; $('#d-break-sub').textContent = ''; $('#d-copy').disabled = true;
+    pane.html = needLog; $('#d-break').html = needLog; $('#d-count').textContent = ''; $('#d-break-sub').textContent = ''; $('#d-copy').disabled = true; dUI.hasFight = false; renderPostButtons();
     setFoot('w-d-glance', live, ''); setFoot('w-d-fights', live, ''); setFoot('w-d-break', live, '');
     return;
   }
@@ -1665,10 +1817,10 @@ function renderBreakdown(c, f) {
   const box = $('#d-break'), sub = $('#d-break-sub'), copy = $('#d-copy');
   if (!f) {
     box.html = `<p class="empty">${(c.fights || []).length ? 'Select a fight to see it by ability.' : 'The first fight shows up here by ability, with what hit you.'}</p>`;
-    sub.textContent = ''; copy.disabled = true; return;
+    sub.textContent = ''; copy.disabled = true; dUI.hasFight = false; renderPostButtons(); return;
   }
   sub.textContent = [f.start.slice(9, 14) + (f.open ? ', now' : ''), secs(f.dur), f.area].filter(Boolean).join(' · ');
-  copy.disabled = false;
+  copy.disabled = false; dUI.hasFight = true; renderPostButtons();
   const figs = [
     { lb: 'You', val: fmt(f.me), sub: `${fmt(f.dpsMe)}/s · ${plural(f.hitsMe, 'hit')}${f.critMe ? ` · ${pctOf(f.critMe, f.hitsMe)} crit` : ''}` },
   ];
@@ -1685,11 +1837,15 @@ function renderBreakdown(c, f) {
     ? `<ul class="list">${f.takenBy.map(r => `<li><span>${esc(r.name)} <span class="dim">${esc(pretty(r.ability))}</span>${r.instakill ? ` <span class="tag">kill mechanic</span>` : ''}</span><span class="n">${r.hits ? `${fmt(r.dmg)} <span class="dim small">${plural(r.hits, 'hit')}</span>` : ''}</span></li>`).join('')}${f.indirectMe ? `<li><span class="dim">Indirect (DoTs, falls, weather)</span><span class="n">${fmt(f.indirectMe)}</span></li>` : ''}</ul>`
     : `<p class="empty">Nothing hit you${f.takenPet ? `. Your pets took ${fmt(f.takenPet)}` : ''}.</p>`;
   let note = '';
+  if (f.party?.length) note += `<p class="small dim" style="margin:12px 0 0">In a party with ${esc(joinNames(f.party))}, per the chat log. Their hits aren't in this meter; what they share shows in Party below.</p>`;
+  else if (f.inParty) note += '<p class="small dim" style="margin:12px 0 0">In a party, per the chat log, with members it hasn\'t named yet (they show up when they speak or leave).</p>';
   if (f.indirectUnattributed) {
-    const who = f.shared
+    const who = f.party?.length
+      ? `${joinNames(f.party)} ${f.party.length === 1 ? 'was' : 'were'} in your party, so some of it may be theirs.`
+      : f.shared
       ? (f.others.length ? `${joinNames(f.others)} ${f.others.length === 1 ? 'was' : 'were'} nearby, so some of it may be theirs.` : 'There was party chat during the fight, so some of it may be your party\'s.')
       : "Nobody else was logged nearby, so it's your DoTs or your pets'.";
-    note = `<p class="small dim" style="margin:12px 0 0">Indirect damage on what you fought, source not logged: ${fmt(f.indirectUnattributed)}. ${esc(who)} It isn't counted above.</p>`;
+    note += `<p class="small dim" style="margin:${note ? 8 : 12}px 0 0">Indirect damage on what you fought, source not logged: ${fmt(f.indirectUnattributed)}. ${esc(who)} It isn't counted above.</p>`;
   }
   if (c.unclassified?.length) note += `<p class="small dim" style="margin:8px 0 0">Not placed: ${esc(joinNames(c.unclassified))}. ${c.unclassified.length === 1 ? 'It hit things you never fought and nothing you fought hit it, so the meter can\'t tell a pet from a stranger; if it is your pet, its damage is missing above.' : 'They hit things you never fought and nothing you fought hit them, so the meter can\'t tell pets from strangers; if any is your pet, its damage is missing above.'}</p>`;
   const tl = f.timeline || [];
@@ -1766,6 +1922,7 @@ function discordText(c, f) {
     `Kills ${fmt(kills)}${f.petKills ? ` (${fmt(f.petKills)} by pets)` : ''} · taken ${fmt(f.taken)} · deaths ${fmt(f.deaths)}${f.top ? ` · fought ${f.top}${f.targetCount > 1 ? ` +${fmt(f.targetCount - 1)}` : ''}` : ''}`,
     top ? `Top: ${top}` : '',
     f.indirectUnattributed ? `Indirect on targets, source not logged: ${fmt(f.indirectUnattributed)}${f.shared ? ' (others nearby)' : ''}` : '',
+    f.party?.length ? `In a party with ${joinNames(f.party)}.` : '',
     `From ${who}'s chat log via ${APP_NAME}. Party members' hits aren't in it.`,
   ].filter(Boolean).join('\n');
 }
@@ -1801,6 +1958,10 @@ function initCombat() {
   $('#d-copy').addEventListener('click', () => {
     const c = S.combat, f = c?.fights?.find(x => x.id === dUI.selected);
     if (f) copyText(discordText(c, f), 'the fight for Discord');
+  });
+  $('#d-post').addEventListener('click', () => {
+    const c = S.combat, f = c?.fights?.find(x => x.id === dUI.selected);
+    if (f) postDiscord({ fight: f.id }, 'the fight');
   });
   initParty();
 }

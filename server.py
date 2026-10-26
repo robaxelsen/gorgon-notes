@@ -16,10 +16,11 @@ import time
 from array import array
 from collections import Counter, OrderedDict, defaultdict
 from datetime import datetime, timedelta, timezone
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse, quote
 
 WINDOWS = sys.platform == "win32"
 HERE = Path(__file__).resolve().parent
@@ -37,7 +38,10 @@ CHATLOGS = GAME_DIR / "ChatLogs"
 STATIC = HERE / "static"
 PORT = int(os.environ.get("PG_PORT", "8787"))
 CACHE = HERE / "cache"
-CAPACITY_FILE = HERE / "capacity.json"
+# The player's own state files (capacity, keep list, party, settings) live beside server.py; a test harness points
+# PG_STATE_DIR into a scratch folder so it never touches the live files.
+STATE_DIR = Path(os.environ.get("PG_STATE_DIR") or HERE)
+CAPACITY_FILE = STATE_DIR / "capacity.json"
 CAPACITY_LOCK = threading.Lock()
 CDN = "https://cdn.projectgorgon.com"
 SETTINGS_FILE = GAME_DIR / "GorgonSettings.txt"
@@ -54,6 +58,15 @@ LOOT_RE = re.compile(r"^\[Status\] (.+?)(?: x(\d+))? added to inventory\.$")
 AREA_RE = re.compile(r"^\*+ Entering Area: (.+)$")
 LOGIN_RE = re.compile(r"^\*+ Logged In As (\S+)\. Server (\S+)\.")
 LOGOUT_RE = re.compile(r"^\*+ Logged Out")
+# Hunting-party lines (docs/DATA-SOURCES.md): joining prints no roster, so members already in the party are only
+# known once they speak in [Party] chat, leave or become leader.
+PARTY_IN_RE = re.compile(r'^\[Status\] You are now in hunting party "(.*)"!$')
+PARTY_OUT_RE = re.compile(r"^\[Status\] You are no longer in a hunting party\.$")
+PARTY_JOIN_RE = re.compile(r"^\[Status\] (\S+) joined the hunting party!$")
+PARTY_LEFT_RE = re.compile(r"^\[Status\] (\S+) left the hunting party\.$")
+PARTY_LEADER_RE = re.compile(r"^\[Status\] (\S+) is now the leader of the hunting party!$")
+PARTY_MYLEAD_RE = re.compile(r"^\[Status\] You are now the leader of the hunting party!$")
+PARTY_CHAT_RE = re.compile(r"^\[Party\] (\S+?): ")
 # Councils lines (docs/DATA-SOURCES.md): every shape the game writes; player chat says "councils" in lowercase.
 COUNCILS_RECEIVED_RE = re.compile(r"^\[Status\] You received ([\d,]+) Councils\.$")
 COUNCILS_STOLEN_RE = re.compile(r"^\[Status\] (.+?) stole ([\d,]+) Councils!$")
@@ -919,6 +932,8 @@ class Fight:
         self.dead = False
         self.death_dt = None
         self.party = False                                       # a [Party] line fell inside the fight
+        self.in_party = False                                    # the log said you were in a hunting party
+        self.roster = set()                                      # party members known from the log during the fight
         self.others = set()                                      # #id names seen only in Recovered / indirect lines
         self.ids = set()                                         # every entity id seen
 
@@ -939,6 +954,10 @@ class DpsTracker:
         self.my_targets = set()     # names you dealt real damage to (whole log)
         self.hit_me = set()         # names that dealt real damage to you
         self.pet_hint = set()       # #id attackers with "(Pet)" in an ability name
+        self.in_party = False       # hunting-party state from the [Status] lines
+        self.party_name = None
+        self.roster = set()         # members named since the party line (never you)
+        self.leader = None
         self.lines = 0              # [Combat] lines seen
         self.last_combat = None     # ts of the last [Combat] line
         self.last_damage = None     # ts of the last direct-damage line
@@ -952,6 +971,9 @@ class DpsTracker:
             f = Fight(ts, self.area)
             self.fights.append(f)
             self.cur = f
+        if self.in_party:
+            f.in_party = True
+            f.roster |= self.roster
         return f
 
     def _extend(self, f, ts, dt):
@@ -973,8 +995,18 @@ class DpsTracker:
                 self.cur = None
             return
         if msg.startswith("[Party] "):
+            if m := PARTY_CHAT_RE.match(msg):
+                if m.group(1) != self.char:
+                    self.roster.add(m.group(1))
+                self.in_party = True
             if self.cur is not None and (chat_dt(ts) - self.cur.end_dt).total_seconds() <= DPS_GAP_SEC:
                 self.cur.party = True
+                if self.in_party:
+                    self.cur.in_party = True
+                    self.cur.roster |= self.roster
+            return
+        if msg.startswith("[Status] ") and "party" in msg:
+            self._party_line(msg)
             return
         if not msg.startswith("[Combat] "):
             return
@@ -1067,6 +1099,30 @@ class DpsTracker:
                 st["fatal"] += 1
                 f.kills.append((att, vic))
 
+    def _party_line(self, msg):
+        """The hunting-party roster as the log tells it: a new party empties it, members are added as they join or
+        speak, removed as they leave; nothing is printed for members already in the party when you join."""
+        if m := PARTY_IN_RE.match(msg):
+            self.in_party, self.party_name, self.roster, self.leader = True, m.group(1), set(), None
+        elif PARTY_OUT_RE.match(msg):
+            self.in_party, self.party_name, self.roster, self.leader = False, None, set(), None
+        elif m := PARTY_JOIN_RE.match(msg):
+            self.in_party = True
+            if m.group(1) != self.char:
+                self.roster.add(m.group(1))
+        elif m := PARTY_LEFT_RE.match(msg):
+            self.roster.discard(m.group(1))
+            if self.leader == m.group(1):
+                self.leader = None
+        elif m := PARTY_LEADER_RE.match(msg):
+            self.in_party = True
+            self.leader = m.group(1)
+            if m.group(1) != self.char:
+                self.roster.add(m.group(1))
+        elif PARTY_MYLEAD_RE.match(msg):
+            self.in_party = True
+            self.leader = self.char
+
     # ---- report ----
     def classify(self):
         """(pets, enemies) by name over the whole log. Pets: #id attackers that hit what you hit, or that a known
@@ -1126,6 +1182,7 @@ class DpsTracker:
             "lastLineAt": chat_iso(self.last_ts), "lastCombatAt": chat_iso(self.last_combat),
             "combatLines": self.lines, "gapSec": DPS_GAP_SEC, "nowSec": DPS_NOW_SEC, "minor": DPS_MINOR,
             "pets": sorted(pets), "unclassified": unclassified,
+            "party": {"inParty": self.in_party, "name": self.party_name, "members": sorted(self.roster), "leader": self.leader},
             "now": nowfig, "totals": totals, "fights": rows,
         }
 
@@ -1171,6 +1228,7 @@ class DpsTracker:
         tg = [{"name": n, "dmg": d} for n, d in targets.most_common()]
         kills = sum(1 for att, vic in f.kills if att == me and vic not in mine)
         pet_kills = sum(1 for att, vic in f.kills if att in pets and vic not in mine)
+        kills_by = dict(Counter(att for att, vic in f.kills if att in mine and vic not in mine))
         indirect_me = f.indirect.get(me, 0) if me else 0
         indirect_pet = sum(f.indirect.get(p, 0) for p in pets)
         indirect_other = sum(d for n, d in f.indirect.items() if n != me and n not in pets)
@@ -1195,10 +1253,11 @@ class DpsTracker:
             "hitsMe": me_s["hits"], "critMe": me_s["crit"], "maxHit": max(me_s["max"], pet_s["max"]),
             "taken": taken_me["dmg"] + indirect_me, "takenMe": taken_me["dmg"], "takenHits": taken_me["hits"], "indirectMe": indirect_me,
             "takenPet": taken_pet["dmg"] + indirect_pet,
-            "kills": kills, "petKills": pet_kills, "deaths": f.deaths, "instakills": instakills,
+            "kills": kills, "petKills": pet_kills, "killsBy": kills_by, "deaths": f.deaths, "instakills": instakills,
             "targets": tg[:6], "targetCount": len(tg), "mobs": len(tids), "mobIds": sorted(tids)[:40], "top": tg[0]["name"] if tg else None,
             "abilities": abilities, "takenBy": taken_by[:8],
-            "indirectUnattributed": indirect_other, "shared": f.party or bool(others), "others": others[:5],
+            "indirectUnattributed": indirect_other, "shared": f.party or bool(others) or f.in_party, "others": others[:5],
+            "inParty": f.in_party, "party": sorted(f.roster)[:12],
             "timeline": tl, "timelineStep": step,
         }
 
@@ -1272,7 +1331,7 @@ def combat_report(scope="day"):
 # Export-only: nothing live. Decisions recorded in DESIGN.md → Views → Storage → Sell and store.
 # ---------------------------------------------------------------------------
 PLAN_TRASH = "VendorTrash"
-MARKS_FILE = HERE / "marks.json"   # the keep list: {"<TypeID>": "sell" | "store"}; absent = the plan's default
+MARKS_FILE = STATE_DIR / "marks.json"   # the keep list: {"<TypeID>": "sell" | "store"}; absent = the plan's default
 MARKS_LOCK = threading.Lock()
 MARK_VALUES = ("sell", "store")
 
@@ -1473,7 +1532,7 @@ def plan(character=None):
 # JSON summaries to an ntfy.sh topic named by a party code, reads the others' from the same topic, and merges
 # them into party fights by time overlap. No server of ours: the topic name is the only key.
 # ---------------------------------------------------------------------------
-PARTY_FILE = HERE / "party.json"
+PARTY_FILE = STATE_DIR / "party.json"
 PARTY_LOCK = threading.RLock()
 NTFY_BASE = os.environ.get("PG_NTFY", "https://ntfy.sh").rstrip("/")
 PARTY_CODE_RE = re.compile(r"^gn-[a-z0-9]{12}$")
@@ -1484,8 +1543,16 @@ PARTY_HTTP_SEC = 6
 PARTY_MSG_MAX = 4000         # ntfy turns bigger messages into attachments
 PARTY_KEEP_SEC = 14 * 3600   # remote summaries kept in memory (ntfy's own cache is 12 h)
 PARTY_VERSION = 1
+# The party room (cloud/, a Cloudflare Worker + Durable Object per code): the main transport since 26 Oct. ntfy.sh
+# stays the fallback for a copy that cannot reach the room. PG_ROOM overrides the URL ("" = ntfy only).
+ROOM_DEFAULT = "https://gorgon-notes-room.rob-30c.workers.dev"
+ROOM_BASE = (os.environ["PG_ROOM"] if "PG_ROOM" in os.environ else ROOM_DEFAULT).rstrip("/")
+ROOM_HTTP_SEC = 6
+ROOM_LIVE_SEC = 2            # live tick and fast poll cadence while someone is fighting
+ROOM_LIVE_MAX_SEC = 20       # a tick older than this is over
 _party = {"code": None, "since": None, "posted": {}, "remote": {}, "sinceId": None, "lastPoll": 0.0, "lastReq": 0.0,
-          "lastOkAt": None, "lastErrAt": None, "lastErr": None, "lastPostAt": None, "lastMsgAt": None, "thread": None}
+          "lastOkAt": None, "lastErrAt": None, "lastErr": None, "lastPostAt": None, "lastMsgAt": None, "thread": None,
+          "roomSince": 0, "roomOkAt": None, "roomErrAt": None, "roomErr": None, "live": {}, "roomMembers": [], "inFight": False}
 
 
 def party_load():
@@ -1536,8 +1603,10 @@ def party_set(code):
             if not PARTY_CODE_RE.match(code):
                 raise BadRequest("a party code looks like gn- and 12 letters or digits")
         if code != _party["code"]:
-            _party.update(code=code, since=party_backfill_since() if code else None, remote={}, sinceId=None, lastPoll=0.0,
-                          lastOkAt=None, lastErrAt=None, lastErr=None, lastPostAt=None, lastMsgAt=None)
+            pasted = {k: v for k, v in _party["remote"].items() if v.get("pasted")}  # a paste outlives the code
+            _party.update(code=code, since=party_backfill_since() if code else None, remote=pasted, sinceId=None, lastPoll=0.0,
+                          lastOkAt=None, lastErrAt=None, lastErr=None, lastPostAt=None, lastMsgAt=None,
+                          roomSince=0, roomOkAt=None, roomErrAt=None, roomErr=None, live={}, roomMembers=[])
             cutoff = local_iso(datetime.now() - timedelta(hours=24))
             _party["posted"] = {k: v for k, v in _party["posted"].items() if v >= cutoff}
             party_save()
@@ -1551,12 +1620,20 @@ def party_summary(row, me, app_version):
     for a in row["abilities"]:
         if a["who"] != "you":
             pets[a["who"]] += a["dmg"]
+    by = {}
+    for a in row["abilities"]:
+        who = me if a["who"] == "you" else a["who"]
+        b = by.setdefault(who, {"who": who, "dmg": 0, "health": 0, "armor": 0, "kills": 0, "pet": a["who"] != "you"})
+        b["dmg"] += a["dmg"]; b["health"] += a["health"]; b["armor"] += a["armor"]
+    for who, n in (row.get("killsBy") or {}).items():
+        by.setdefault(who, {"who": who, "dmg": 0, "health": 0, "armor": 0, "kills": 0, "pet": who != me})["kills"] += n
     out = {"v": PARTY_VERSION, "who": me, "start": row["at"], "end": row["endAt"], "dur": row["dur"],
            "dmg": row["dmg"], "me": row["me"], "pets": dict(pets.most_common(4)), "dps": row["dps"],
+           "by": sorted(by.values(), key=lambda b: -b["dmg"])[:8],
            "taken": row["taken"], "kills": row["kills"] + row["petKills"], "deaths": row["deaths"],
            "top": [[a["name"] if a["who"] == "you" else f"{a['who']}: {a['name']}", a["dmg"]] for a in row["abilities"][:5]],
            "targets": [t["name"] for t in row["targets"][:3]], "enemies": row.get("mobIds", [])[:40],
-           "area": row["area"], "app": app_version}
+           "party": sorted(row.get("party") or [])[:12], "area": row["area"], "app": app_version}
     while len(json.dumps(out, separators=(",", ":"))) > PARTY_MSG_MAX and out["enemies"]:
         out["enemies"] = out["enemies"][: len(out["enemies"]) // 2]
     return out
@@ -1576,14 +1653,45 @@ def iso_dt(s):
         return None
 
 
+def room_req(path, data=None):
+    """JSON in, JSON out against the party room."""
+    h = {"User-Agent": "gorgon-notes/" + str(PARTY_VERSION)}
+    body = None
+    if data is not None:
+        body = json.dumps(data, separators=(",", ":")).encode("utf-8")
+        h["Content-Type"] = "application/json"
+    req = Request(f"{ROOM_BASE}/{path}", data=body, headers=h, method="POST" if body is not None else "GET")
+    with urlopen(req, timeout=ROOM_HTTP_SEC) as r:
+        return json.loads(r.read().decode("utf-8", errors="replace"))
+
+
+def room_fail(e, what):
+    now = local_iso(datetime.now())
+    msg = f"{what}: {e}"[:200]
+    _party.update(roomErr=msg, roomErrAt=now, lastErr=msg, lastErrAt=now)
+
+
+def room_ok():
+    now = local_iso(datetime.now())
+    _party.update(roomOkAt=now, lastOkAt=now)
+
+
+def room_usable():
+    return bool(ROOM_BASE)
+
+
+def link_name():
+    return "the party room" if ROOM_BASE else "ntfy.sh"
+
+
 def party_local_rows():
     """This machine's closed, non-minor fights since the code was set (the day scope of the live tracker)."""
     log = latest_chatlog()
-    if not log or not _party["code"]:
+    if not log:
         return None, []
     tracker, st = dps_tracker(log)
     rep = tracker.result("day", log, st)
-    since = iso_dt(_party["since"])
+    since = iso_dt(_party["since"]) if _party["code"] else None
     rows = [r for r in rep["fights"] if not r["open"] and not r["minor"] and r["dmg"] > 0 and r["endAt"]
             and (since is None or (iso_dt(r["endAt"]) or since) >= since)]
     return rep["character"], rows
@@ -1595,26 +1703,87 @@ def party_publish():
     me, rows = party_local_rows()
     if not code or not me:
         return
+    room_down = False
     for r in rows:
         key = f"{code}|{r['at']}"
         if key in _party["posted"]:
             continue
-        body = json.dumps(party_summary(r, me, f"gorgon-notes {app_version()[0]}"), separators=(",", ":")).encode("utf-8")
+        summ = party_summary(r, me, f"gorgon-notes {app_version()[0]}")
+        if room_usable() and not room_down:
+            try:
+                room_req(f"room/{code}/fights", summ)
+                now = local_iso(datetime.now())
+                _party["posted"][key] = r["endAt"]
+                _party.update(lastPostAt=now)
+                room_ok()
+                continue
+            except Exception as e:
+                room_fail(e, "post")
+                room_down = True
+        nkey = f"ntfy:{code}|{r['at']}"
+        if nkey in _party["posted"]:
+            continue
+        body = json.dumps(summ, separators=(",", ":")).encode("utf-8")
         try:
             ntfy(code, body, {"Content-Type": "application/json", "X-Title": f"{me}: fight at {r['start'][9:14]}", "X-Tags": "crossed_swords"})
         except Exception as e:
             _party.update(lastErr=f"post: {e}"[:200], lastErrAt=local_iso(datetime.now()))
-            return
+            break
         now = local_iso(datetime.now())
-        _party["posted"][key] = r["endAt"]
+        _party["posted"][nkey] = r["endAt"]
+        if not room_usable():
+            _party["posted"][key] = r["endAt"]
         _party.update(lastPostAt=now, lastOkAt=now)
     party_save()
 
 
+def room_poll(code):
+    """Read the room: fights since the last id, the members it has seen, the live ticks. True when it answered."""
+    me = _party.get("me")
+    if not me:
+        try:
+            me = party_local_rows()[0]
+            _party["me"] = me
+        except Exception:
+            me = None
+    now = datetime.now()
+    for _ in range(5):
+        try:
+            d = room_req(f"room/{code}/fights?since={_party['roomSince']}&who={quote(me or '')}")
+        except Exception as e:
+            room_fail(e, "poll")
+            return False
+        for f in d.get("fights") or []:
+            summ = party_clean(f.get("summary"))
+            if summ is None or summ["who"] == me:   # the room hands back our own posts too
+                continue
+            summ["ntfyAt"] = local_iso(datetime.fromtimestamp((f.get("at") or now.timestamp() * 1000) / 1000))
+            _party["remote"][f"{summ['who']}|{summ['start']}"] = summ
+            _party["lastMsgAt"] = summ["ntfyAt"]
+        _party["roomSince"] = int(d.get("last") or _party["roomSince"])
+        _party["roomMembers"] = [m for m in (d.get("members") or []) if isinstance(m, dict) and isinstance(m.get("who"), str)][:40]
+        live = {}
+        for t in (d.get("live") or [])[:40]:
+            if isinstance(t, dict) and isinstance(t.get("who"), str):
+                live[t["who"]] = t
+        _party["live"] = live
+        _party.update(lastPoll=time.time())
+        room_ok()
+        if not d.get("more"):
+            break
+    cutoff = now - timedelta(seconds=PARTY_KEEP_SEC)
+    for k in [k for k, v in _party["remote"].items() if not v.get("pasted") and (iso_dt(v.get("ntfyAt")) or now).replace(tzinfo=None) < cutoff]:
+        del _party["remote"][k]
+    return True
+
+
 def party_poll():
-    """Read what the others posted since the last message seen (all of the topic's 12 h cache the first time)."""
+    """Read what the others posted: the room since the last id, else ntfy since the last message seen (all of
+    the topic's 12 h cache the first time)."""
     code = _party["code"]
     if not code:
+        return
+    if room_usable() and room_poll(code):
         return
     try:
         raw = ntfy(f"{code}/json?poll=1&since={_party['sinceId'] or 'all'}")
@@ -1633,20 +1802,70 @@ def party_poll():
         if ev.get("event") != "message":
             continue
         try:
-            summ = json.loads(ev.get("message") or "")
+            summ = party_clean(json.loads(ev.get("message") or ""))
         except ValueError:
             continue
-        if not isinstance(summ, dict) or summ.get("v") != PARTY_VERSION or not isinstance(summ.get("who"), str):
+        if summ is None:
             continue
-        if not all(isinstance(summ.get(k), str) for k in ("start", "end")) or not isinstance(summ.get("dmg"), (int, float)):
-            continue
-        summ["who"] = summ["who"][:40]
         summ["ntfyAt"] = local_iso(datetime.fromtimestamp(ev.get("time") or now.timestamp()))
         _party["remote"][f"{summ['who']}|{summ['start']}"] = summ  # one row per player and fight, however often it was posted
         _party["lastMsgAt"] = summ["ntfyAt"]
     cutoff = now - timedelta(seconds=PARTY_KEEP_SEC)
     for k in [k for k, v in _party["remote"].items() if (iso_dt(v.get("ntfyAt")) or now).replace(tzinfo=None) < cutoff]:
         del _party["remote"][k]
+
+
+def party_clean(summ):
+    """A received summary (ntfy message or paste) checked and trimmed, or None when it is not a version-1 summary."""
+    if not isinstance(summ, dict) or summ.get("v") != PARTY_VERSION or not isinstance(summ.get("who"), str):
+        return None
+    if not all(isinstance(summ.get(k), str) and iso_dt(summ[k]) for k in ("start", "end")) or not isinstance(summ.get("dmg"), (int, float)):
+        return None
+    summ = dict(summ)
+    summ["who"] = summ["who"][:40]
+    summ["party"] = [str(x)[:40] for x in (summ.get("party") or []) if isinstance(x, str)][:12] if isinstance(summ.get("party"), list) else []
+    by = []
+    for b in (summ.get("by") or [])[:8] if isinstance(summ.get("by"), list) else []:
+        if isinstance(b, dict) and isinstance(b.get("who"), str):
+            by.append({"who": b["who"][:40], "pet": bool(b.get("pet")),
+                       **{k: (b.get(k) if isinstance(b.get(k), (int, float)) else 0) for k in ("dmg", "health", "armor", "kills")}})
+    summ["by"] = by
+    summ.pop("pasted", None)
+    return summ
+
+
+PASTE_MAX = 200_000
+
+
+def party_paste(text):
+    """A pasted Discord post (or several): every JSON object in it that is a fight summary becomes a received
+    fight, kept like one from ntfy but flagged `pasted` (it survives a join or leave). Returns how many were new."""
+    if not isinstance(text, str):
+        raise BadRequest("paste must be text")
+    text = text[:PASTE_MAX]
+    dec = json.JSONDecoder()
+    found, added = 0, 0
+    now = local_iso(datetime.now())
+    with PARTY_LOCK:
+        i = 0
+        while (i := text.find("{", i)) != -1:
+            try:
+                obj, end = dec.raw_decode(text, i)
+            except ValueError:
+                i += 1
+                continue
+            i = end
+            summ = party_clean(obj)
+            if summ is None:
+                continue
+            found += 1
+            key = f"{summ['who']}|{summ['start']}"
+            if key in _party["remote"]:
+                continue
+            summ.update(ntfyAt=now, pasted=True)
+            _party["remote"][key] = summ
+            added += 1
+    return found, added
 
 
 def party_tick():
@@ -1661,16 +1880,63 @@ def party_tick():
             party_poll()
 
 
+def party_live_tick():
+    """While this character is in a fight, tell the room its per-second figure (every ROOM_LIVE_SEC)."""
+    code = _party["code"]
+    if not code or not room_usable():
+        return
+    log = latest_chatlog()
+    if not log:
+        return
+    try:
+        tracker, st = dps_tracker(log)
+        rep = tracker.result("day", log, st)
+    except Exception:
+        return
+    nowfig, me = rep["now"], rep["character"]
+    _party["me"] = me
+    was = _party["inFight"]
+    _party["inFight"] = bool(nowfig["inFight"])
+    if not me or not (nowfig["inFight"] or was):   # one last tick when the fight ends, so the others see it close
+        return
+    fs = rep["fights"][-1] if rep["fights"] else None
+    tick = {"who": me, "dps": nowfig["dps"], "recent": nowfig["recent"], "me": nowfig["me"], "pet": nowfig["pet"], "sec": nowfig["sec"],
+            "inFight": bool(nowfig["inFight"]), "fightStart": fs["at"] if fs else None, "area": fs["area"] if fs else None,
+            "app": f"gorgon-notes {app_version()[0]}"}
+    try:
+        d = room_req(f"room/{code}/tick", tick)
+        live = {}
+        for t in (d.get("live") or [])[:40]:
+            if isinstance(t, dict) and isinstance(t.get("who"), str):
+                live[t["who"]] = t
+        _party["live"] = live
+        room_ok()
+    except Exception as e:
+        room_fail(e, "tick")
+
+
 def party_thread():
-    """One daemon thread ticks every PARTY_TICK_SEC while a code is set."""
+    """One daemon thread: every ROOM_LIVE_SEC a live tick (room only, while fighting) and, while a view is
+    watching and someone is fighting, a fast poll; every PARTY_TICK_SEC the publish and the ordinary poll."""
     t = _party.get("thread")
     if t and t.is_alive():
         return
     def loop():
+        i = 0
         while True:
-            time.sleep(PARTY_TICK_SEC)
-            if _party["code"]:
+            time.sleep(ROOM_LIVE_SEC)
+            if not _party["code"]:
+                continue
+            i += 1
+            with PARTY_LOCK:
+                party_live_tick()
+                watching = time.time() - _party["lastReq"] < PARTY_IDLE_SEC
+                fast = room_usable() and watching and (_party["inFight"] or bool(_party["live"]))
+            if i % max(1, PARTY_TICK_SEC // ROOM_LIVE_SEC) == 0:
                 party_tick()
+            elif fast:
+                with PARTY_LOCK:
+                    party_poll()
     t = threading.Thread(target=loop, name="party", daemon=True)
     _party["thread"] = t
     t.start()
@@ -1700,9 +1966,16 @@ def party_merge(me, local_rows, remote, since=None):
     items = [dict(i, _s=t(i["start"]), _e=t(i["end"])) for i in items]
     items = [i for i in items if i["_s"] is not None and i["_e"] is not None]
     items.sort(key=lambda i: i["_s"])
+    # Rosters (the hunting-party names each log saw, since 26 Oct) decide what time overlap alone cannot: two
+    # summaries that both name a party and name neither player stay apart, however much they overlap.
+    def names(x, y):
+        return y["who"] in (x.get("party") or []) or x["who"] in (y.get("party") or [])
+    def apart(x, y):
+        return bool(x.get("party")) and bool(y.get("party")) and not names(x, y)
     groups = []
     for i in items:
-        g = next((g for g in groups if i["_s"] <= g["_e"] and i["_e"] >= g["_s"] and i["who"] not in g["whos"]), None)
+        g = next((g for g in groups if i["_s"] <= g["_e"] and i["_e"] >= g["_s"] and i["who"] not in g["whos"]
+                  and not any(apart(i, j) for j in g["items"])), None)
         if g is None:
             g = {"_s": i["_s"], "_e": i["_e"], "whos": set(), "items": [], "ids": set()}
             groups.append(g)
@@ -1713,6 +1986,7 @@ def party_merge(me, local_rows, remote, since=None):
     for g in groups:
         id_sets = [set(map(str, i.get("enemies") or [])) for i in g["items"]]
         shared = len(id_sets) > 1 and bool(set.intersection(*id_sets))
+        by_roster = len(g["items"]) > 1 and any(names(x, y) for x in g["items"] for y in g["items"] if x is not y)
         members = sorted(({k: v for k, v in i.items() if not k.startswith("_") and k != "v"} for i in g["items"]), key=lambda m: -m["dmg"])
         total = sum(m["dmg"] for m in members)
         for m in members:
@@ -1720,7 +1994,8 @@ def party_merge(me, local_rows, remote, since=None):
         first = min(g["items"], key=lambda i: i["_s"])
         out.append({"id": first["start"], "start": first["start"], "end": max(g["items"], key=lambda i: i["_e"])["end"],
                     "dur": int(g["_e"] - g["_s"]) + 1, "area": next((i.get("area") for i in g["items"] if i.get("area")), None),
-                    "total": total, "byIds": shared, "members": members, "solo": len(members) == 1})
+                    "total": total, "byIds": shared, "byRoster": by_roster, "members": members, "solo": len(members) == 1,
+                    "pasted": any(i.get("pasted") for i in g["items"])})
     return out
 
 
@@ -1731,19 +2006,285 @@ def party_state():
         code = _party["code"]
         if code:
             party_thread()
-            if not _party["lastPoll"]:  # first look after joining or starting: fetch now; the thread takes over
-                party_poll()
-        me, rows = party_local_rows() if code else (None, [])
-        fights = party_merge(me, rows, _party["remote"], iso_dt(_party["since"])) if code else []
+            if not _party["lastPoll"] or (room_usable() and time.time() - _party["lastPoll"] > 3):
+                party_poll()  # first look after joining or starting (ntfy), or a room read at most every 3 s
+        pasted = sum(1 for v in _party["remote"].values() if v.get("pasted"))
+        me, rows = party_local_rows() if code or pasted else (None, [])
+        fights = party_merge(me, rows, _party["remote"], iso_dt(_party["since"])) if code or pasted else []
         ok, err = _party["lastOkAt"], _party["lastErrAt"]
         reachable = bool(ok) and (not err or ok >= err)
         pending = len([r for r in rows if f"{code}|{r['at']}" not in _party["posted"]]) if code else 0
+        _party["me"] = me or _party.get("me")
+        roster = party_roster()
+        now_ms = time.time() * 1000
+        live = sorted((t for t in _party["live"].values() if now_ms - (t.get("at") or 0) <= ROOM_LIVE_MAX_SEC * 1000),
+                      key=lambda t: -(t.get("dps") or 0))
+        sharing = sorted({m["who"] for f in fights for m in f["members"]} | {v["who"] for v in _party["remote"].values()}
+                         | {m["who"] for m in _party["roomMembers"]})
+        not_sharing = [n for n in roster["members"] if n not in sharing and n != me]
         return {"version": PARTY_VERSION, "code": code, "since": _party["since"], "character": me, "base": NTFY_BASE,
                 "ntfy": {"reachable": reachable, "lastOkAt": ok, "lastErrorAt": err, "lastError": _party["lastErr"],
                          "lastPostAt": _party["lastPostAt"], "lastMessageAt": _party["lastMsgAt"],
                          "posted": len([k for k in _party["posted"] if code and k.startswith(code + "|")]),
-                         "pending": pending, "received": len(_party["remote"])},
+                         "pending": pending, "received": len(_party["remote"]) - pasted, "pasted": pasted},
+                "roster": dict(roster, notSharing=not_sharing), "discord": discord_info(),
+                "transport": {"kind": "room" if room_usable() else "ntfy", "name": link_name(), "base": ROOM_BASE or NTFY_BASE,
+                              "roomOkAt": _party["roomOkAt"], "roomErrorAt": _party["roomErrAt"], "roomError": _party["roomErr"],
+                              "fallback": bool(room_usable() and _party["roomErrAt"] and (not _party["roomOkAt"] or _party["roomErrAt"] > _party["roomOkAt"]))},
+                "live": live, "roomMembers": _party["roomMembers"],
                 "members": sorted({m["who"] for f in fights for m in f["members"]}), "fights": fights}
+
+
+def party_roster():
+    """The hunting party as the newest chat log tells it now (DpsTracker's party lines)."""
+    log = latest_chatlog()
+    if not log:
+        return {"inParty": False, "name": None, "members": [], "leader": None, "log": None}
+    try:
+        tracker, _ = dps_tracker(log)
+        return {"inParty": tracker.in_party, "name": tracker.party_name, "members": sorted(tracker.roster), "leader": tracker.leader, "log": log.name}
+    except Exception:
+        return {"inParty": False, "name": None, "members": [], "leader": None, "log": log.name}
+
+
+# ---------------------------------------------------------------------------
+# Discord webhook (GET/POST /api/settings, POST /api/discord), backlog item 4. The webhook URL is the player's
+# own secret: kept in settings.json beside capacity.json, never shipped, never echoed back whole. A post is the
+# text of "Copy for Discord" plus a fenced JSON block of the same summary the party topic carries, so a friend
+# can paste the post into their Party window (party_paste) when the ntfy link is not there.
+# ---------------------------------------------------------------------------
+APP_SETTINGS_FILE = STATE_DIR / "settings.json"
+APP_SETTINGS_LOCK = threading.Lock()
+DISCORD_HOSTS = {"discord.com", "discordapp.com", "ptb.discord.com", "canary.discord.com"}
+DISCORD_TEST_HOSTS = set(filter(None, os.environ.get("PG_DISCORD_HOSTS", "").split(",")))  # a harness's fake Discord
+DISCORD_WEBHOOK_RE = re.compile(r"^(https?)://([^/?#]+)/api/webhooks/(\d{5,30})/([A-Za-z0-9_.-]{20,200})$")
+DISCORD_MAX = 2000           # characters in one webhook message
+DISCORD_HTTP_SEC = 8
+_discord = {"lastPostAt": None, "lastErr": None, "lastErrAt": None}
+
+
+def load_settings():
+    try:
+        d = json.loads(APP_SETTINGS_FILE.read_text(encoding="utf-8"))
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_settings(d):
+    tmp = APP_SETTINGS_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(d, indent=1), encoding="utf-8")
+    os.replace(tmp, APP_SETTINGS_FILE)
+
+
+def discord_webhook():
+    url = load_settings().get("discordWebhook")
+    return url if isinstance(url, str) and DISCORD_WEBHOOK_RE.match(url) else None
+
+
+def discord_hint(url):
+    """The URL with its token hidden: ".../api/webhooks/1234567890/…"."""
+    m = DISCORD_WEBHOOK_RE.match(url or "")
+    return f"{m.group(1)}://{m.group(2)}/api/webhooks/{m.group(3)}/…" if m else None
+
+
+def discord_info():
+    url = discord_webhook()
+    return {"webhook": bool(url), "hint": discord_hint(url), "lastPostAt": _discord["lastPostAt"],
+            "lastError": _discord["lastErr"], "lastErrorAt": _discord["lastErrAt"]}
+
+
+def discord_check_url(url):
+    if not isinstance(url, str):
+        raise BadRequest("the webhook must be text")
+    url = url.strip()
+    m = DISCORD_WEBHOOK_RE.match(url)
+    host = m.group(2).lower() if m else ""
+    if not m or (host not in DISCORD_HOSTS and host not in DISCORD_TEST_HOSTS) or (host in DISCORD_HOSTS and m.group(1) != "https"):
+        raise BadRequest("A Discord webhook looks like https://discord.com/api/webhooks/<numbers>/<token>. "
+                         "In Discord: channel settings → Integrations → Webhooks → Copy Webhook URL.")
+    return url
+
+
+def set_discord_webhook(url):
+    """Save (url) or forget (None) the webhook. A new one is asked for its name first (GET on the webhook): Discord
+    answers 404 for a deleted or mistyped one, which is refused; no answer at all saves it unchecked."""
+    with APP_SETTINGS_LOCK:
+        d = load_settings()
+        if url is None:
+            d.pop("discordWebhook", None)
+            save_settings(d)
+            _discord.update(lastPostAt=None, lastErr=None, lastErrAt=None)
+            return {"checked": False, "name": None, "channel": None}
+        url = discord_check_url(url)
+        checked, name, channel = False, None, None
+        try:
+            req = Request(url, headers={"User-Agent": "gorgon-notes/" + str(PARTY_VERSION)})
+            info = json.loads(urlopen(req, timeout=DISCORD_HTTP_SEC).read().decode("utf-8", errors="replace"))
+            checked, name, channel = True, (info.get("name") or None) if isinstance(info, dict) else None, (info.get("channel_id") or None) if isinstance(info, dict) else None
+        except HTTPError as e:
+            if e.code in (401, 403, 404):
+                raise BadRequest("Discord doesn't know that webhook. Copy it again from the channel's settings → Integrations → Webhooks.")
+        except Exception:
+            pass
+        d["discordWebhook"] = url
+        save_settings(d)
+        _discord.update(lastErr=None, lastErrAt=None)
+        return {"checked": checked, "name": name, "channel": channel}
+
+
+def nfmt(n):
+    return f"{int(round(n or 0)):,}"
+
+
+def secs_text(n):
+    n = max(0, int(round(n or 0)))
+    if n < 60:
+        return f"{n} s"
+    m, sec = divmod(n, 60)
+    if m < 60:
+        return f"{m} min {sec} s" if sec else f"{m} min"
+    h, m = divmod(m, 60)
+    return f"{h} h {m} min"
+
+
+def pretty_name(s):
+    s = str(s or "")
+    s = re.sub(r"^NPC_", "", s).replace("_", " ")
+    return re.sub(r"([a-z])([A-Z])", r"\1 \2", s)
+
+
+def day_time(dt):
+    return f"{dt.day} {dt.strftime('%b')} {dt.strftime('%H:%M')}" if dt else ""
+
+
+def join_names(names):
+    names = list(names)
+    return names[0] if len(names) == 1 else (", ".join(names[:-1]) + " and " + names[-1] if names else "")
+
+
+def discord_text(row, me):
+    """The same lines as the page's Copy for Discord (static/app.js discordText), built here from the fight row."""
+    who = me or "You"
+    pets = Counter()
+    for a in row["abilities"]:
+        if a["who"] != "you":
+            pets[a["who"]] += a["dmg"]
+    pet_line = " · ".join(f"{p} {nfmt(d)} ({nfmt(d / row['dur'])}/s)" for p, d in pets.most_common())
+    top = " · ".join(f"{'' if a['who'] == 'you' else a['who'] + ' '}{pretty_name(a['name'])} {nfmt(a['dmg'])}" for a in row["abilities"][:5])
+    kills = row["kills"] + row["petKills"]
+    party = row.get("party") or []
+    lines = [
+        f"{who} · {day_time(chat_dt(row['start']))}{' · ' + row['area'] if row.get('area') else ''} · {secs_text(row['dur'])}{' (still going)' if row.get('open') else ''}",
+        f"Damage {nfmt(row['dmg'])} ({nfmt(row['dps'])}/s) · you {nfmt(row['me'])} ({nfmt(row['dpsMe'])}/s){' · ' + pet_line if pet_line else ''}",
+        f"Kills {nfmt(kills)}{f' ({nfmt(row['petKills'])} by pets)' if row['petKills'] else ''} · taken {nfmt(row['taken'])} · deaths {nfmt(row['deaths'])}"
+        + (f" · fought {row['top']}{f' +{nfmt(row['targetCount'] - 1)}' if row['targetCount'] > 1 else ''}" if row.get("top") else ""),
+        f"Top: {top}" if top else "",
+        f"Indirect on targets, source not logged: {nfmt(row['indirectUnattributed'])}{' (others nearby)' if row.get('shared') else ''}" if row.get("indirectUnattributed") else "",
+        f"In a party with {join_names(party)}." if party else "",
+        f"From {who}'s chat log via Gorgon Notes. Party members' hits aren't in it.",
+    ]
+    return "\n".join(x for x in lines if x)
+
+
+def discord_party_text(pf):
+    """A merged party fight: one line per player, by damage."""
+    start = iso_dt(pf["start"])
+    head = f"Party fight · {day_time(start)}{' · ' + pf['area'] if pf.get('area') else ''} · {secs_text(pf['dur'])} · {nfmt(pf['total'])} damage · {plural(len(pf['members']), 'player')}"
+    lines = [head]
+    for m in pf["members"]:
+        parts = [f"{m['who']} {nfmt(m['dmg'])} ({nfmt(m['dps'])}/s · {round((m.get('share') or 0) * 100)}%)"]
+        pets = m.get("pets") or {}
+        if pets:
+            parts.append(f"own hits {nfmt(m['me'])} · " + " · ".join(f"{p} {nfmt(d)}" for p, d in sorted(pets.items(), key=lambda x: -x[1])))
+        if m.get("kills"):
+            parts.append(plural(m["kills"], "kill"))
+        if m.get("deaths"):
+            parts.append(plural(m["deaths"], "death"))
+        if m.get("taken"):
+            parts.append(f"took {nfmt(m['taken'])}")
+        lines.append(" · ".join(parts))
+    lines.append(f"From {plural(len(pf['members']), 'chat log')} via Gorgon Notes" + (", matched by party roster." if pf.get("byRoster") else ", matched by time."))
+    return "\n".join(lines)
+
+
+def discord_content(text, summaries):
+    """Text plus a ```json block of the summaries (enemy ids left out: they are the bulk and decide nothing yet),
+    cut to Discord's limit: first the block loses abilities and targets, then it goes."""
+    def block(level):
+        out = []
+        for s_ in summaries:
+            d = {k: v for k, v in s_.items() if k not in ("enemies", "mine", "share", "ntfyAt", "pasted")}
+            if level >= 1:
+                d.pop("top", None); d.pop("targets", None); d.pop("pets", None)
+            out.append(d)
+        return "\n```json\n" + json.dumps(out if len(out) > 1 else out[0], separators=(",", ":")) + "\n```"
+    for level in (0, 1):
+        content = text + block(level)
+        if len(content) <= DISCORD_MAX:
+            return content, True
+    return text[:DISCORD_MAX], False
+
+
+def discord_post(content):
+    url = discord_webhook()
+    if not url:
+        raise BadRequest("No Discord webhook yet. Paste one into the Party window first.")
+    body = json.dumps({"content": content, "username": "Gorgon Notes", "allowed_mentions": {"parse": []}}).encode("utf-8")
+    req = Request(url + "?wait=true", data=body, headers={"Content-Type": "application/json", "User-Agent": "gorgon-notes/" + str(PARTY_VERSION)}, method="POST")
+    now = local_iso(datetime.now())
+    try:
+        raw = urlopen(req, timeout=DISCORD_HTTP_SEC).read()
+    except HTTPError as e:
+        if e.code in (401, 403, 404):
+            msg = "Discord doesn't know that webhook any more. Paste a new one into the Party window."
+        elif e.code == 429:
+            try:
+                wait = json.loads(e.read().decode("utf-8", errors="replace")).get("retry_after")
+            except Exception:
+                wait = None
+            msg = f"Discord asks to wait{f' {wait:g} s' if isinstance(wait, (int, float)) else ''} before the next post."
+        else:
+            msg = f"Discord answered {e.code}. Try again in a moment."
+        _discord.update(lastErr=msg, lastErrAt=now)
+        raise BadRequest(msg)
+    except Exception as e:
+        msg = f"Discord didn't answer ({type(e).__name__}). Check the connection and try again."
+        _discord.update(lastErr=msg, lastErrAt=now)
+        raise BadRequest(msg)
+    _discord.update(lastPostAt=now, lastErr=None, lastErrAt=None)
+    try:
+        return json.loads(raw.decode("utf-8", errors="replace")).get("id")
+    except Exception:
+        return None
+
+
+def discord_fight(fight_id=None, party_id=None):
+    """Post one of this log's fights (by its start, the Fights table id) or a merged party fight (its id)."""
+    with PARTY_LOCK:
+        me, rows = party_local_rows()
+        if party_id is not None:
+            pasted = sum(1 for v in _party["remote"].values() if v.get("pasted"))
+            fights = party_merge(me, rows, _party["remote"], iso_dt(_party["since"])) if _party["code"] or pasted else []
+            pf = next((f for f in fights if f["id"] == party_id), None)
+            if pf is None:
+                raise BadRequest("That party fight isn't in the table any more.")
+            text = discord_party_text(pf)
+            content, with_block = discord_content(text, pf["members"])
+        else:
+            log = latest_chatlog()
+            row = None
+            if log:
+                tracker, st = dps_tracker(log)
+                rep_ = tracker.result("day", log, st)
+                me = rep_["character"]
+                row = next((r for r in rep_["fights"] if r["id"] == fight_id or r["at"] == fight_id), None)
+            if row is None:
+                raise BadRequest("That fight isn't in today's log any more.")
+            text = discord_text(row, me)
+            content, with_block = discord_content(text, [party_summary(row, me, f"gorgon-notes {app_version()[0]}")])
+    msg_id = discord_post(content)
+    return {"ok": True, "at": _discord["lastPostAt"], "messageId": msg_id, "withBlock": with_block, "chars": len(content), "discord": discord_info()}
 
 
 def gaming_receipt(gaming, t, amount, run=False):
@@ -2589,8 +3130,9 @@ def health(character=None):
         if pcode:
             ok_at, err_at = _party["lastOkAt"], _party["lastErrAt"]
             reachable = bool(ok_at) and (not err_at or ok_at >= err_at)
+            tracker_char = None
             try:
-                _, prow = party_local_rows()
+                tracker_char, prow = party_local_rows()
                 pending = len([r for r in prow if f"{pcode}|{r['at']}" not in _party["posted"]])
             except Exception:
                 pending = 0
@@ -2600,12 +3142,19 @@ def health(character=None):
             if not reachable and err_at:
                 since_t = iso_dt(err_at)
                 add("party-sharing", "warn", "Party sharing",
-                    f"ntfy.sh hasn't answered since {since_t.strftime('%H:%M') if since_t else 'a while'}; "
+                    f"{link_name().capitalize() if not ROOM_BASE else 'The party room'} hasn't answered since {since_t.strftime('%H:%M') if since_t else 'a while'}; "
                     f"{plural(pending, 'fight waits', 'fights wait')} and {'goes' if pending == 1 else 'go'} out when it does.",
                     "party-sharing", views=["combat"], at=since_t.replace(tzinfo=None) if since_t else None, evidence_data={"code": pcode, "pending": pending})
             else:
-                add("party-sharing", "ok", "Party sharing", f"Topic {pcode}, {last_txt}, {plural(sent, 'fight')} sent{f', {pending} waiting' if pending else ''}.",
-                    "party-sharing", views=["combat"], evidence_data={"code": pcode, "pending": pending})
+                try:
+                    roster = party_roster()
+                    sharing = {v["who"] for v in _party["remote"].values()}
+                    quiet = [n for n in roster["members"] if n not in sharing and n != tracker_char]
+                except Exception:
+                    quiet = []
+                quiet_txt = f" {join_names(quiet)} {'is' if len(quiet) == 1 else 'are'} in your party per the chat log but not sharing: send them the code." if quiet else ""
+                add("party-sharing", "ok", "Party sharing", f"Topic {pcode}, {last_txt}, {plural(sent, 'fight')} sent{f', {pending} waiting' if pending else ''}.{quiet_txt}",
+                    "party-sharing", views=["combat"], evidence_data={"code": pcode, "pending": pending, "notSharing": quiet})
 
     # summary
     counts = Counter(i["severity"] for i in items)
@@ -3577,6 +4126,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(combat_report(q.get("scope", "day")))
             if url.path == "/api/party":
                 return self.send_json(party_state())
+            if url.path == "/api/settings":
+                return self.send_json({"discord": discord_info()})
             if url.path == "/api/health":
                 return self.send_json(health(q.get("character")))
             if url.path == "/api/icons":
@@ -3648,12 +4199,37 @@ class Handler(SimpleHTTPRequestHandler):
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
                 if not isinstance(body, dict):
                     raise BadRequest("body must be a JSON object")
+                if "paste" in body:
+                    found, added = party_paste(body.get("paste"))
+                    return self.send_json(dict(party_state(), paste={"found": found, "added": added}))
                 code = party_set("new" if body.get("action") == "new" else body.get("code"))
             except (BadRequest, json.JSONDecodeError) as e:
                 return self.send_json({"error": str(e) if isinstance(e, BadRequest) else "body must be JSON"}, 400)
             except Exception as e:
                 return self.send_json({"error": repr(e)}, 500)
             return self.send_json(party_state())
+        if url.path == "/api/settings":
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                if not isinstance(body, dict) or "discordWebhook" not in body:
+                    raise BadRequest("body must be a JSON object with discordWebhook")
+                res = set_discord_webhook(body.get("discordWebhook"))
+            except (BadRequest, json.JSONDecodeError) as e:
+                return self.send_json({"error": str(e) if isinstance(e, BadRequest) else "body must be JSON"}, 400)
+            except Exception as e:
+                return self.send_json({"error": repr(e)}, 500)
+            return self.send_json(dict(res, ok=True, discord=discord_info()))
+        if url.path == "/api/discord":
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                if not isinstance(body, dict) or not (isinstance(body.get("fight"), str) or isinstance(body.get("party"), str)):
+                    raise BadRequest("body must name a fight or a party fight")
+                res = discord_fight(body.get("fight"), body.get("party"))
+            except (BadRequest, json.JSONDecodeError) as e:
+                return self.send_json({"error": str(e) if isinstance(e, BadRequest) else "body must be JSON"}, 400)
+            except Exception as e:
+                return self.send_json({"error": repr(e)}, 500)
+            return self.send_json(res)
         self.send_json({"error": "not found"}, 404)
 
 
