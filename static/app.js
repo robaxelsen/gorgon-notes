@@ -2116,7 +2116,7 @@ const vUI = {
   qTypes: null,      // the search box's item lookup: { query, items, examples, types: [{ type, items }] } for vUI.q
   moreTypes: false,  // What they buy: the types past the first twelve are shown
   pmode: 'stops',    // Sell: 'stops' (the route) or 'items' (one row per stack); not persisted
-  trashAll: false, unsoldAll: false, // Sell: the "trash in your vaults" and "no vendor buys" lists unfolded
+  unsoldAll: false, // Sell: the folded "other stacks stay" list is open
   sort: (store.json('pgdash.sort', {}).vendors) || { key: 'remaining', dir: 'desc' },
   open: (store.json('pgdash.open', {}).vendors) || null,
 };
@@ -2429,7 +2429,6 @@ function initVendors() {
     if (tab) { vUI.pmode = tab.dataset.m; renderSell(); tab.focus(); return; }
     const m = e.target.closest('[data-mark]');
     if (m && m.getAttribute('aria-checked') !== 'true') { setMark(m.dataset.tid, m.dataset.mark); return; }
-    if (e.target.closest('[data-trashall]')) { vUI.trashAll = !vUI.trashAll; renderSell(); $('#v-sell [data-trashall]')?.focus(); return; }
     if (e.target.closest('[data-unsold]')) { vUI.unsoldAll = !vUI.unsoldAll; renderSell(); $('#v-sell [data-unsold]')?.focus(); }
   });
   $('#w-v-sell').addEventListener('keydown', e => {
@@ -2750,7 +2749,7 @@ function renderSell() {
     box.html = blockError('the sell plan', S.lastGood.plan);
     setFoot('w-v-sell', footL, footR);
   } else if (noSheet) {
-    box.html = `<p class="needs">Nothing to sell yet: no character export, so vendors and the sale price are unknown.</p>${vaultTrashHtml(p)}`;
+    box.html = '<p class="needs">Nothing to sell yet: no character export, so vendors and the sale price are unknown.</p>';
     setFoot('w-v-sell', footL, esc(fixText('export-character')));
   } else if (!p.summary?.stacks) {
     box.html = '<p class="empty">Your bags are empty in this export. Nothing to sell.</p>';
@@ -2774,17 +2773,15 @@ function sellLead(p) {
   if (sell.stacks) {
     const where = sell.vendors === 1 ? `to ${esc(p.stops.flatMap(st => st.sell).find(Boolean)?.name || 'one vendor')}` : `at <em class="n">${fmt(s.stops)}</em> ${s.stops === 1 ? 'stop' : 'stops'}`;
     html += `Sell <em class="n">${fmt(sell.stacks)}</em> ${sell.stacks === 1 ? 'stack' : 'stacks'} ${where} for about <em class="n">${fmt(sell.councils)}</em> councils.`;
-  } else html += 'Nothing in your bags to sell right now.';
-  if (gear.stacks) html += ` <em class="n">${fmt(gear.stacks)}</em> ${gear.stacks === 1 ? 'piece' : 'pieces'} of gear ${gear.stacks === 1 ? 'is' : 'are'} your call${gear.councils ? ` (about ${fmt(gear.councils)} at vendors)` : ''}.`;
-  if (keep.stacks) html += ` <em class="n">${fmt(keep.stacks)}</em> ${keep.stacks === 1 ? 'stack stays' : 'stacks stay'} in your bags.`;
+  } else html += 'No books, documents or scrolls to sell right now.';
+  if (gear.stacks) html += ` <em class="n">${fmt(gear.stacks)}</em> ${gear.stacks === 1 ? 'piece' : 'pieces'} of gear in your bags ${gear.stacks === 1 ? 'is' : 'are'} your call${gear.councils ? ` (about ${fmt(gear.councils)} at vendors)` : ''}.`;
+  if (keep.stacks) html += ` The other <em class="n">${fmt(keep.stacks)}</em> ${keep.stacks === 1 ? 'stack stays' : 'stacks stay'}.`;
   html += '</p>';
-  const notes = [];
+  const notes = ['only gear, books, documents and scrolls are offered for sale; materials, ingredients and the like are assumed to have a use (mark a type Sell in By item to sell it anyway)'];
+  if (s.recipes) notes.push(`${plural(s.recipes, 'recipe scroll')} among the documents: one you haven't learned is worth more learned`);
   if (s.marked) notes.push(`${plural(s.marked, 'type')} marked by you (Sell / Keep in By item; a mark applies to every stack of the type, now and later)`);
-  if (keep.used) notes.push(`${plural(keep.used, 'stack')} of what vendors call trash ${keep.used === 1 ? 'is' : 'are'} crafting ingredients per the game's recipes and stay (By item names the skills; mark Sell to sell anyway)`);
-  if (s.vaultTrash?.stacks) notes.push(`${plural(s.vaultTrash.stacks, 'stack')} of vendor trash no recipe uses sit in your vaults, about ${fmt(s.vaultTrash.councils)} councils (listed under the stops)`);
-  if (s.unsellable) notes.push(`${fmt(s.unsellable)} of the kept stacks no vendor buys`);
   if (gear.stacks) notes.push("worn gear can't be told from carried in the export");
-  if (notes.length) html += `<p class="small dim" style="margin-top:4px">${esc(notes.join('. '))}.</p>`;
+  html += `<p class="small dim" style="margin-top:4px">${esc(notes.join('. '))}.</p>`;
   return html;
 }
 function sellByStop(p) {
@@ -2797,19 +2794,7 @@ function sellByStop(p) {
       <ul class="list feed-what">${g.items.map(i => `<li>${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span class="what">${i.qty > 1 ? `<em class="n">${fmt(i.qty)}</em> ` : ''}${esc(i.name)}</span><span class="n">${fmt(i.councils)}</span></li>`).join('')}</ul>`).join('');
     return `<section class="stop"><h3>${esc(head)} · ${plural(st.stacks, 'stack')}${st.councils ? ` · about ${fmt(st.councils)} councils` : ''}${st.area === here ? ' <span class="tag">you\'re here</span>' : ''}</h3>${sells}</section>`;
   }).join('') || '<p class="empty">No stops: nothing in your bags sells right now.</p>';
-  return html + vaultTrashHtml(p);
-}
-/* Vendor trash sitting in vaults: where it is and what it would fetch, so a trip can pick it up on the way.
-   Not routed (picking up and selling is two stops); a Keep mark on the type keeps it out of here. */
-function vaultTrashHtml(p) {
-  const vt = Array.isArray(p?.vaultTrash) ? p.vaultTrash : [], sum = p?.summary?.vaultTrash;
-  if (!vt.length || !sum) return '';
-  const shown = vUI.trashAll ? vt : vt.slice(0, 4);
-  const groups = shown.map(g => `<p class="from">${esc(g.name)}${g.area ? ` · ${esc(g.area)}` : ''} · ${plural(g.stacks, 'stack')} · about <em class="n">${fmt(g.councils)}</em> councils</p>
-    <ul class="list feed-what">${g.items.slice(0, 6).map(i => `<li>${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span class="what">${i.qty > 1 ? `<em class="n">${fmt(i.qty)}</em> ` : ''}${esc(i.name)}</span><span class="n">${fmt(i.councils)}</span></li>`).join('')}${g.items.length > 6 ? `<li><span class="what dim">and ${plural(g.items.length - 6, 'more stack')}</span></li>` : ''}</ul>`).join('');
-  const more = vt.length > 4 ? `<p style="margin-top:8px"><button type="button" class="linkbtn" data-trashall="1" style="text-decoration:underline">${vUI.trashAll ? 'Show the first 4 vaults' : `Show all ${fmt(vt.length)} vaults`}</button></p>` : '';
-  return `<section class="stop"><h3>Trash in your vaults · ${plural(sum.stacks, 'stack')} · about ${fmt(sum.councils)} councils</h3>
-    <p class="small dim" style="margin:0 0 4px">Vendor trash no recipe uses, sitting in ${plural(sum.vaults, 'vault')}. Not in the route: it has to be picked up first. Mark a type Keep in By item to keep it.</p>${groups}${more}</section>`;
+  return html;
 }
 /* The keep list control: Sell / Keep per item type. Only sellable types get it (nothing can be sold otherwise);
    the current state is the row's action, a mark shows as the checked option. Keep is sent as "store" (the mark's
@@ -2829,16 +2814,16 @@ async function setMark(typeId, mark) {
 function sellByItem(p) {
   const order = { sell: 0, gear: 1, keep: 2 };
   const all = [...p.items].sort((a, b) => order[a.action] - order[b.action] || b.price - a.price);
-  const unsold = all.filter(i => i.action === 'keep' && i.why);          // nobody buys these: folded under one line
-  const listed = all.filter(i => !(i.action === 'keep' && i.why));
+  const unsold = all.filter(i => i.action === 'keep');                   // materials, ingredients, consumables: folded under one line
+  const listed = all.filter(i => i.action !== 'keep');
   const row = i => {
     let doText, about = '';
-    if (i.action === 'sell') { doText = `Sell to <em class="t">${esc(i.sellTo.name)}</em> · ${esc(i.sellTo.area)}${i.note ? ` <span class="tag">${esc(i.note)}</span>` : ''}`; about = fmt(i.sellTo.councils); }
+    if (i.action === 'sell') { doText = `Sell to <em class="t">${esc(i.sellTo.name)}</em> · ${esc(i.sellTo.area)}${i.recipe ? ' <span class="tag" title="A recipe scroll: learn it first if you have not">recipe</span>' : ''}${i.note ? ` <span class="tag">${esc(i.note)}</span>` : ''}`; about = fmt(i.sellTo.councils); }
     else if (i.action === 'gear') { doText = `Your call${i.sellTo ? ` · ${esc(i.sellTo.name)} pays about ${fmt(i.sellTo.councils)}` : ''}`; about = i.sellTo ? fmt(i.sellTo.councils) : ''; }
-    else doText = `Keep${i.uses?.length ? ` <span class="tag" title="Recipes in the game data take it">used in ${esc(i.uses.join(', '))}</span>` : ''}${i.why ? ` <span class="tag">${esc(i.why)}</span>` : ''}${i.note ? ` <span class="tag">${esc(i.note)}</span>` : ''}${i.sellTo ? ` <span class="small dim">or ${esc(i.sellTo.name)} pays about ${fmt(i.sellTo.councils)}</span>` : ''}`;
+    else doText = `Keep${i.note ? ` <span class="tag">${esc(i.note)}</span>` : ''}${i.sellTo ? ` <span class="small dim">or ${esc(i.sellTo.name)} pays about ${fmt(i.sellTo.councils)}</span>` : i.sellable ? '' : ' <span class="small dim">no vendor buys it</span>'}`;
     return `<tr class="row"><td class="m1"><span class="cell-name">${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span>${esc(i.name)}</span></span></td><td class="num">${fmt(i.qty)}</td><td>${doText}</td><td class="num m2">${about}</td><td class="markcell">${markSeg(i)}</td><td class="m-line2">${fmt(i.qty)} · ${doText}${about ? ` · about ${about}` : ''}</td></tr>`;
   };
-  const fold = unsold.length ? `<tr class="row fold"><td colspan="5" class="m1"><button type="button" class="linkbtn" data-unsold="1" aria-expanded="${vUI.unsoldAll}" aria-controls="v-sell-unsold">${plural(unsold.length, 'stack')} no vendor buys${vUI.unsoldAll ? ' · Fewer' : ' · Show them'}</button></td></tr>` : '';
+  const fold = unsold.length ? `<tr class="row fold"><td colspan="5" class="m1"><button type="button" class="linkbtn" data-unsold="1" aria-expanded="${vUI.unsoldAll}" aria-controls="v-sell-unsold">${plural(unsold.length, 'other stack')} stay in your bags${vUI.unsoldAll ? ' · Fewer' : ' · Show them'}</button></td></tr>` : '';
   const foldRows = unsold.length && vUI.unsoldAll ? `<tbody id="v-sell-unsold">${unsold.map(row).join('')}</tbody>` : '';
   return `<table class="tbl resp-plain plan-items" style="margin-top:10px"><thead><tr><th scope="col">Item</th><th scope="col" class="num">Qty</th><th scope="col">Do</th><th scope="col" class="num">About</th><th scope="col">Your mark</th></tr></thead><tbody>${listed.map(row).join('')}${fold}</tbody>${foldRows}</table>`;
 }

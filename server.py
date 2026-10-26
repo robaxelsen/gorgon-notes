@@ -1454,56 +1454,7 @@ def combat_report(scope="day"):
 # suggestions were dropped 26 Oct, they never checked what a vault accepts). Decisions recorded in DESIGN.md →
 # Views → Vendors → Sell.
 # ---------------------------------------------------------------------------
-PLAN_TRASH = "VendorTrash"   # the game's keyword means "the vendors who buy Vendor Trash buy this", not junk: see recipe_uses()
-_recipe_uses = {"ver": None, "byId": {}, "byKey": {}}
-RECIPE_KEY_SKIP = ("Status:", "EquipmentSlot:", "Special:", "MinTSysPrereq:", "Rarity:", "MinRarity:")   # ingredient keys that are not item keywords
-RECIPE_KEY_BROAD = {"VendorTrash", "Equipment", "Edible", "CorpseTrophy", "Jewelry", "Amulet", "Ring", "Weapon"}   # "any X" keys so wide they say nothing (a Fae recipe takes any Vendor Trash)
-
-
-def skill_label(name):
-    """'JewelryCrafting' -> 'Jewelry Crafting'."""
-    return re.sub(r"(?<=[a-z])(?=[A-Z])", " ", name or "")
-
-
-def recipe_uses():
-    """Which crafting skills use an item, from the CDN's recipes.json: by item id (`Ingredients[].ItemCode`) and by
-    keyword (`Ingredients[].ItemKeys`, e.g. any Crystal). Built once per game data version. The user's rule (26 Oct):
-    "most every item in this game has a purpose", so vendor trash with a recipe use is kept, not sold."""
-    ver = cdn_version()
-    if _recipe_uses["ver"] == ver and _recipe_uses["byId"]:
-        return _recipe_uses
-    by_id, by_key = defaultdict(set), defaultdict(set)
-    try:
-        recipes = cdn_data("recipes") or {}
-    except Exception:
-        recipes = {}
-    for rec in (recipes.values() if isinstance(recipes, dict) else recipes):
-        skill = skill_label(rec.get("Skill") or "")
-        if not skill:
-            continue
-        for ing in rec.get("Ingredients") or []:
-            if ing.get("ItemCode"):
-                by_id[int(ing["ItemCode"])].add(skill)
-            for k in ing.get("ItemKeys") or []:
-                if not k.startswith(RECIPE_KEY_SKIP) and k not in RECIPE_KEY_BROAD and not k.endswith("Armor"):
-                    by_key[k].add(skill)
-    _recipe_uses.update(ver=ver, byId=dict(by_id), byKey=dict(by_key))
-    return _recipe_uses
-
-
-def item_uses(type_id, kws):
-    """Sorted skill names whose recipes take this item, by id or by one of its keywords."""
-    u = recipe_uses()
-    out = set(u["byId"].get(int(type_id or 0), ()))
-    for k in kws:
-        out |= u["byKey"].get(k, set())
-    return sorted(out)
-MARKS_FILE = STATE_DIR / "marks.json"   # the keep list: {"<TypeID>": "sell" | "store"}; "store" is the Keep mark (old name kept
-                                        # so existing files still work); absent = the plan's default
-MARKS_LOCK = threading.Lock()
-MARK_VALUES = ("sell", "store")
-
-
+PLAN_DOCS = {"Document", "Book", "Scroll"}   # what the Sell plan sells by default besides gear (user 26 Oct: armor, weapons, jewelry, books and documents)
 def is_transfer_chest(vault_key):
     """Account transfer chests are shared by all the player's characters and kept for moving things: a source,
     never a destination (user decision 26 Oct)."""
@@ -1578,7 +1529,7 @@ def plan(character=None):
             return "gear", kws, sellable
         if mark == "store":                     # the Keep mark (stored as "store" so old marks.json files keep working)
             return "keep", kws, sellable
-        if PLAN_TRASH in kws and not item_uses(it.get("TypeID"), kws):   # trash a recipe uses is an ingredient, kept
+        if kws & PLAN_DOCS and sellable:        # books, documents and scrolls; everything else is assumed to have a use
             return "sell", kws, sellable
         return "keep", kws, sellable
     rows = [(it, *classify(it)) for it in inv]
@@ -1589,7 +1540,7 @@ def plan(character=None):
         row = {"typeId": it.get("TypeID"), "name": it.get("Name"), "qty": qty, "value": it.get("Value") or 0, "unit": unit,
                "price": unit * qty, "kind": kind, "action": kind, "sellTo": None, "storeAt": None, "note": None,
                "mark": marks.get(str(it.get("TypeID"))), "sellable": sellable,
-               "uses": item_uses(it.get("TypeID"), kws) if PLAN_TRASH in kws else []}
+               "doc": bool(kws & PLAN_DOCS), "recipe": "Recipe" in kws}
         prefer = {a for a, n in areas_used.items() if n}
         if sellable:
             v, whole = best_vendor(kws, unit * qty, prefer)
@@ -1607,8 +1558,6 @@ def plan(character=None):
                 row["action"] = "keep"           # trash nobody can pay for right now stays in the bags
                 row["sellTo"] = None
                 row["note"] = "no vendor with councils left buys it" if vrows else None
-        if row["action"] == "keep" and not sellable:
-            row["why"] = "no vendor buys it" if (it.get("Value") or 0) > 0 else "worth nothing to a vendor"
         out.append(row)
     # Stops: one per area, selling grouped by vendor.
     stops = {}
@@ -1637,33 +1586,13 @@ def plan(character=None):
         "stacks": len(inv), "inventoryFree": next((v.get("free") for v in st["vaults"] if v["vault"] == "Inventory"), None),
         "sell": {"stacks": len(sell_rows), "councils": sum(r["sellTo"]["councils"] for r in sell_rows), "vendors": len({r["sellTo"]["npc"] for r in sell_rows})},
         "gear": {"stacks": len(gear_rows), "councils": sum(r["sellTo"]["councils"] for r in gear_rows if r["sellTo"])},
-        "keep": {"stacks": len(keep_rows), "sellable": sum(1 for r in keep_rows if r["sellable"]), "used": sum(1 for r in keep_rows if r["uses"])},
-        "unsellable": sum(1 for r in keep_rows if r.get("why")),
+        "keep": {"stacks": len(keep_rows), "sellable": sum(1 for r in keep_rows if r["sellable"])},
+        "recipes": sum(1 for r in sell_rows if r["recipe"]),
         "stops": len(stop_rows),
     }
-    # Vendor trash sitting in vaults: where it is and what it would fetch, so a trip can pick it up (not routed).
-    trash_by_vault = {}
-    for it in items:
-        v = it.get("StorageVault")
-        if not v:
-            continue
-        e = cdn.get(f"item_{it.get('TypeID')}") or {}
-        kws_v = item_keywords(e)
-        if PLAN_TRASH not in kws_v or marks.get(str(it.get("TypeID"))) == "store" or (item_uses(it.get("TypeID"), kws_v) and marks.get(str(it.get("TypeID"))) != "sell"):
-            continue   # a recipe ingredient in a vault is not trash to fetch and sell
-        qty = it.get("StackSize") or 1
-        vt = next((x for x in st["vaults"] if x["vault"] == v), {})
-        g = trash_by_vault.setdefault(v, {"vault": v, "name": vt.get("name") or v, "area": vt.get("area") or "", "stacks": 0, "councils": 0, "items": []})
-        g["items"].append({"typeId": it.get("TypeID"), "name": it.get("Name"), "qty": qty, "councils": int(round((it.get("Value") or 0) * mult)) * qty})
-        g["stacks"] += 1
-        g["councils"] += g["items"][-1]["councils"]
-    vault_trash = sorted(trash_by_vault.values(), key=lambda g: -g["councils"])
-    for g in vault_trash:
-        g["items"].sort(key=lambda i: -i["councils"])
-    summary["vaultTrash"] = {"stacks": sum(g["stacks"] for g in vault_trash), "councils": sum(g["councils"] for g in vault_trash), "vaults": len(vault_trash)}
     summary["marked"] = sum(1 for r in out if r["mark"])
     return {"character": st["vaults"] and (head.get("character")), "source": head, "sheet": sheet_head, "cdnVersion": cdn_version(),
-            "multiplier": mult, "summary": summary, "stops": stop_rows, "items": out, "marks": marks, "vaultTrash": vault_trash}
+            "multiplier": mult, "summary": summary, "stops": stop_rows, "items": out, "marks": marks}
 
 
 # ---------------------------------------------------------------------------
