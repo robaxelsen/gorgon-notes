@@ -1329,6 +1329,7 @@ const dUI = {
   selected: null, pinned: false,  // pinned = the player picked a fight; otherwise the newest (or the live one) is shown
   minor: false,                   // skirmishes (under 5 s and 500 damage) unfolded
   hasFight: false,                // the Breakdown shows a fight (Copy and Post enabled)
+  enemiesAll: false,              // By enemy: every enemy shown, not just the top ENEMY_SHOW
   sort: (store.json('pgdash.sort', {}).fights) || { key: 'start', dir: 'desc' },
 };
 const D_COLS = [
@@ -1921,6 +1922,38 @@ function abilTip(a) {
   if (a.levels?.length) parts.push(`seen as ${a.levels.join(', ')}`);
   return `${a.name}: ${parts.join(' · ')}`;
 }
+const ENEMY_SHOW = 6;  // By enemy rows before "Show all"
+/* By enemy: one row per enemy from `byTarget` (you and each pet: direct hits and the damage over time credited after
+   the first hit) and `ticks` (every tick the log saw on that enemy, ours or not). "Not yours" = ticks minus the credited
+   damage over time, the share that ran before your first hit; Total = the fight's credit, which is what `targets` holds. */
+function enemyRows(f) {
+  const bt = f.byTarget; if (!bt) return null;
+  const tk = f.ticks || {}, rows = {};
+  const row = n => rows[n] || (rows[n] = { name: n, me: 0, pets: 0, dot: 0, byPet: {}, ticks: tk[n] || 0 });
+  for (const [who, tg] of Object.entries(bt)) for (const [n, v] of Object.entries(tg || {})) {
+    const r = row(n), d = v.direct || 0;
+    if (who === 'you') r.me += d; else if (d) { r.pets += d; r.byPet[who] = (r.byPet[who] || 0) + d; }
+    r.dot += v.dot || 0;
+  }
+  for (const n of Object.keys(tk)) row(n);
+  return Object.values(rows)
+    .map(r => ({ ...r, other: Math.max(0, r.ticks - r.dot), total: r.me + r.pets + r.dot }))
+    .sort((a, b) => b.total - a.total || b.other - a.other || a.name.localeCompare(b.name));
+}
+function renderByEnemy(f) {
+  const rows = enemyRows(f);
+  if (!rows || !rows.length) return '';
+  const n = v => v ? fmt(v) : '<span class="dim">·</span>';
+  const shown = dUI.enemiesAll ? rows : rows.slice(0, ENEMY_SHOW);
+  const tr = shown.map(r => {
+    const pets = Object.entries(r.byPet).map(([p, d]) => `${p} ${fmt(d)}`).join(' · ');
+    const line2 = [r.me ? `you ${fmt(r.me)}` : '', r.pets ? `pets ${fmt(r.pets)}` : '', r.dot ? `DoT ${fmt(r.dot)}` : '', r.other ? `not yours ${fmt(r.other)}` : ''].filter(Boolean).join(' · ');
+    return `<tr class="row"><td class="m1">${esc(r.name)}</td><td class="num">${n(r.me)}</td><td class="num"${pets ? ` title="${esc(pets)}"` : ''}>${n(r.pets)}</td><td class="num">${n(r.dot)}</td><td class="num d-only">${n(r.other)}</td><td class="num m2"><b>${n(r.total)}</b></td><td class="m-line2">${esc(line2)}</td></tr>`;
+  }).join('');
+  const more = rows.length > ENEMY_SHOW ? `<p style="margin:8px 0 0"><button type="button" class="linkbtn" data-eall aria-expanded="${dUI.enemiesAll}" style="text-decoration:underline">${dUI.enemiesAll ? `Show the top ${ENEMY_SHOW}` : `Show all ${fmt(rows.length)} enemies`}</button></p>` : '';
+  return `<div style="margin-top:16px"><h3 class="small dim">By enemy</h3><table class="tbl resp-plain by-enemy"><thead><tr><th scope="col">Enemy</th><th scope="col" class="num">You</th><th scope="col" class="num">Pets</th><th scope="col" class="num">Damage over time</th><th scope="col" class="num d-only">Not yours</th><th scope="col" class="num">Total</th></tr></thead><tbody>${tr}</tbody></table>${more}
+    <p class="small dim" style="margin:6px 0 0">Direct hits by name; damage over time from your log after your first hit on that enemy. The game's autopsy lists health and armor apart; this adds them.</p></div>`;
+}
 function renderBreakdown(c, f) {
   const box = $('#d-break'), sub = $('#d-break-sub'), copy = $('#d-copy');
   if (!f) {
@@ -1955,7 +1988,7 @@ function renderBreakdown(c, f) {
     ? `<div class="chart spark" id="d-spark" data-key="${esc(`${f.id}|${f.dur}|${f.dmg}`)}"><svg role="img" aria-label="Damage a second over this fight" tabindex="0"></svg><div class="tip" hidden></div></div>
       <table class="sr"><caption>Damage a second over this fight</caption><tbody>${tl.map(([sec, me, pet]) => `<tr><td>${tsec(sec)}</td><td>${fmt(me + pet)}</td></tr>`).join('')}</tbody></table>`
     : '';
-  box.html = `${glance}${spark}<div class="grid2" style="margin-top:12px"><div><h3 class="small dim">By ability</h3>${bars}</div><div><h3 class="small dim">What hit you</h3>${taken}</div></div>${note}`;
+  box.html = `${glance}${spark}<div class="grid2" style="margin-top:12px"><div><h3 class="small dim">By ability</h3>${bars}</div><div><h3 class="small dim">What hit you</h3>${taken}</div></div>${renderByEnemy(f)}${note}`;
   if (spark) drawFightSpark(f);
 }
 
@@ -2023,6 +2056,7 @@ function discordText(c, f) {
     `Damage ${fmt(f.dmg)} (${fmt(f.dps)}/s) · you ${fmt(f.me)} (${fmt(f.dpsMe)}/s)${petLine ? ' · ' + petLine : ''}`,
     `Kills ${fmt(kills)}${f.petKills ? ` (${fmt(f.petKills)} by pets)` : ''} · taken ${fmt(f.taken)} · deaths ${fmt(f.deaths)}${f.top ? ` · fought ${f.top}${f.targetCount > 1 ? ` +${fmt(f.targetCount - 1)}` : ''}` : ''}`,
     top ? `Top: ${top}` : '',
+    ...(enemyRows(f) || []).filter(r => r.total).slice(0, 3).map(r => `${r.name}: ${[r.me ? `you ${fmt(r.me)}` : '', r.pets ? `pets ${fmt(r.pets)}` : '', r.dot ? `DoT ${fmt(r.dot)}` : ''].filter(Boolean).join(' · ')}`),
     (f.dotMe || f.dotPet) ? `Damage over time ${fmt((f.dotMe || 0) + (f.dotPet || 0))} (ticks after your first hit, from your log)` : '',
     f.party?.length ? `In a party with ${joinNames(f.party)}.` : '',
     `From ${who}'s chat log via ${APP_NAME}. Party members' hits aren't in it.`,
@@ -2037,6 +2071,9 @@ function initCombat() {
     loadSession().then(() => { computeVerdicts(); renderAll(); }).catch(onFetchError);
   });
   tabKeys($('#dscope'));
+  $('#d-break').addEventListener('click', e => {
+    if (e.target.closest('[data-eall]')) { dUI.enemiesAll = !dUI.enemiesAll; renderCombatView(); $('#d-break [data-eall]')?.focus(); }
+  });
   const pane = $('#d-fights');
   const pick = id => {
     const c = S.combat, newest = (c?.fights || []).find(x => x.open) || (c?.fights || []).at(-1);
