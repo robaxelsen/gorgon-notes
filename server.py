@@ -1414,12 +1414,15 @@ def combat_report(scope="day"):
 
 
 # ---------------------------------------------------------------------------
-# Sell and store plan (GET /api/plan): what to do with every stack in the inventory, from the newest storage
-# export, the newest character export (vendor caps, sale multiplier) and the CDN (item keywords, vendor types).
-# Export-only: nothing live. Decisions recorded in DESIGN.md → Views → Storage → Sell and store.
+# Sell plan (GET /api/plan): which inventory stacks to sell to whom, from the newest storage export, the newest
+# character export (vendor caps, sale multiplier) and the CDN (item keywords, vendor types). Export-only: nothing
+# live. Everything not sold is "keep" (it stays in the bags; where to put it is the player's call: store
+# suggestions were dropped 26 Oct, they never checked what a vault accepts). Decisions recorded in DESIGN.md →
+# Views → Vendors → Sell.
 # ---------------------------------------------------------------------------
 PLAN_TRASH = "VendorTrash"
-MARKS_FILE = STATE_DIR / "marks.json"   # the keep list: {"<TypeID>": "sell" | "store"}; absent = the plan's default
+MARKS_FILE = STATE_DIR / "marks.json"   # the keep list: {"<TypeID>": "sell" | "store"}; "store" is the Keep mark (old name kept
+                                        # so existing files still work); absent = the plan's default
 MARKS_LOCK = threading.Lock()
 MARK_VALUES = ("sell", "store")
 
@@ -1473,14 +1476,7 @@ def plan(character=None):
     vend = vendors(character) if sheet_head else {"vendors": []}
     # Vendors with councils left, their types as sets; remaining is spent down as stacks are assigned.
     vrows = [dict(v, typeset=set((v.get("buys") or "").split(",")) - {""}, left=v["remaining"]) for v in vend.get("vendors", []) if v.get("remaining")]
-    # Vaults with room; the saddlebag travels with you (Anywhere). Free is spent down as stacks are assigned.
-    vaults = {v["vault"]: dict(v, left=v["free"]) for v in st["vaults"]
-              if v["vault"] != "Inventory" and not is_transfer_chest(v["vault"]) and (v.get("free") or 0) > 0}
     marks = load_marks()
-    held = defaultdict(set)   # TypeID -> vaults that already hold it
-    for it in items:
-        if it.get("StorageVault"):
-            held[it.get("TypeID")].add(it["StorageVault"])
     inv = [it for it in items if it.get("IsInInventory")]
     out, areas_used = [], Counter()
 
@@ -1494,13 +1490,6 @@ def plan(character=None):
         v = max(pool, key=lambda v: (v["area"] in prefer_areas, v["left"]))
         return v, bool(whole)
 
-    def best_vault(tid, prefer_areas):
-        cands = [v for v in vaults.values() if v["left"] > 0]
-        if not cands:
-            return None
-        return max(cands, key=lambda v: (v["vault"] in held.get(tid, ()), v["area"] in prefer_areas, v["left"]))
-
-    # Two passes: trash and gear first (they fix the vendor stops), then everything else leaning on those areas.
     def classify(it):
         e = cdn.get(f"item_{it.get('TypeID')}") or {}
         kws = item_keywords(e)
@@ -1510,18 +1499,18 @@ def plan(character=None):
             return "sell", kws, sellable       # the keep list wins, gear included
         if it.get("Slot") or it.get("TSysPowers"):
             return "gear", kws, sellable
-        if mark == "store":
-            return "store", kws, sellable
+        if mark == "store":                     # the Keep mark (stored as "store" so old marks.json files keep working)
+            return "keep", kws, sellable
         if PLAN_TRASH in kws:
             return "sell", kws, sellable
-        return "store", kws, sellable
+        return "keep", kws, sellable
     rows = [(it, *classify(it)) for it in inv]
-    rows.sort(key=lambda r: {"sell": 0, "gear": 1, "store": 2}[r[1]])
+    rows.sort(key=lambda r: {"sell": 0, "gear": 1, "keep": 2}[r[1]])
     for it, kind, kws, sellable in rows:
         qty = it.get("StackSize") or 1
         unit = int(round((it.get("Value") or 0) * mult))
         row = {"typeId": it.get("TypeID"), "name": it.get("Name"), "qty": qty, "value": it.get("Value") or 0, "unit": unit,
-               "price": unit * qty, "kind": kind, "action": None, "sellTo": None, "storeAt": None, "note": None,
+               "price": unit * qty, "kind": kind, "action": kind, "sellTo": None, "storeAt": None, "note": None,
                "mark": marks.get(str(it.get("TypeID"))), "sellable": sellable}
         prefer = {a for a, n in areas_used.items() if n}
         if sellable:
@@ -1529,66 +1518,49 @@ def plan(character=None):
             if v is not None:
                 n = qty if whole else max(0, v["left"] // unit) if unit else 0
                 row["sellTo"] = {"npc": v["npc"], "name": v["name"], "area": v["area"], "qty": n, "councils": unit * n, "left": v["left"], "whole": whole}
-        if kind in ("sell", "gear") and row["sellTo"] and row["sellTo"]["qty"] > 0:
-            if kind == "sell":
-                row["action"] = "sell"
+        if kind == "sell":
+            if row["sellTo"] and row["sellTo"]["qty"] > 0:
                 v = next(x for x in vrows if x["npc"] == row["sellTo"]["npc"])
                 v["left"] -= row["sellTo"]["councils"]
                 areas_used[v["area"]] += 1
                 if not row["sellTo"]["whole"]:
                     row["note"] = f"{v['name']} can take {row['sellTo']['qty']} of {qty}; the rest stays"
             else:
-                row["action"] = "gear"
-        if row["action"] is None:
-            vt = best_vault(it.get("TypeID"), prefer)
-            if vt is not None:
-                row["storeAt"] = {"vault": vt["vault"], "name": vt["name"], "area": vt["area"], "free": vt["left"], "holdsSome": vt["vault"] in held.get(it.get("TypeID"), ())}
-                row["action"] = "gear" if kind == "gear" else "store"
-                if kind != "gear":
-                    vt["left"] -= 1
-                    areas_used[vt["area"]] += 1
-            else:
-                row["action"] = "gear" if kind == "gear" else "stays"
-                row["note"] = "no vault with room"
-            if kind == "store" and not sellable:
-                row["why"] = "no vendor buys it" if (it.get("Value") or 0) > 0 else "worth nothing to a vendor"
+                row["action"] = "keep"           # trash nobody can pay for right now stays in the bags
+                row["sellTo"] = None
+                row["note"] = "no vendor with councils left buys it" if vrows else None
+        if row["action"] == "keep" and not sellable:
+            row["why"] = "no vendor buys it" if (it.get("Value") or 0) > 0 else "worth nothing to a vendor"
         out.append(row)
-    # Stops: one per area, selling and storing grouped by vendor / vault; the carried saddlebag stop is "Anywhere".
+    # Stops: one per area, selling grouped by vendor.
     stops = {}
     for r in out:
-        if r["action"] == "sell":
-            t, key = r["sellTo"], ("sell", r["sellTo"]["npc"])
-        elif r["action"] == "store":
-            t, key = r["storeAt"], ("store", r["storeAt"]["vault"])
-        else:
+        if r["action"] != "sell":
             continue
-        stop = stops.setdefault(t["area"] or "Elsewhere", {"area": t["area"] or "Elsewhere", "sell": {}, "store": {}, "stacks": 0, "councils": 0})
-        g = stop[key[0]].setdefault(key[1], {"id": key[1], "name": t["name"], "items": [], "councils": 0, "stacks": 0,
-                                             **({"left": t["left"]} if key[0] == "sell" else {"free": t["free"]})})
-        g["items"].append({"typeId": r["typeId"], "name": r["name"], "qty": t.get("qty", r["qty"]), "councils": t.get("councils", 0)})
+        t = r["sellTo"]
+        stop = stops.setdefault(t["area"] or "Elsewhere", {"area": t["area"] or "Elsewhere", "sell": {}, "stacks": 0, "councils": 0})
+        g = stop["sell"].setdefault(t["npc"], {"id": t["npc"], "name": t["name"], "items": [], "councils": 0, "stacks": 0, "left": t["left"]})
+        g["items"].append({"typeId": r["typeId"], "name": r["name"], "qty": t["qty"], "councils": t["councils"]})
         g["stacks"] += 1
-        g["councils"] += t.get("councils", 0)
+        g["councils"] += t["councils"]
         stop["stacks"] += 1
-        stop["councils"] += t.get("councils", 0)
+        stop["councils"] += t["councils"]
     stop_rows = []
     for stp in stops.values():
         sells = sorted(stp["sell"].values(), key=lambda g: -g["councils"])
-        stores = sorted(stp["store"].values(), key=lambda g: -g["stacks"])
         for g in sells:
             g["after"] = g["left"] - g["councils"]
-        for g in stores:
-            g["after"] = g["free"] - g["stacks"]
-        stop_rows.append({"area": stp["area"], "stacks": stp["stacks"], "councils": stp["councils"], "sell": sells, "store": stores})
-    stop_rows.sort(key=lambda s: (s["area"] in ("Anywhere", "Elsewhere"), -s["stacks"]))  # carried storage last: it can be done any time
+        stop_rows.append({"area": stp["area"], "stacks": stp["stacks"], "councils": stp["councils"], "sell": sells})
+    stop_rows.sort(key=lambda s: (s["area"] in ("Anywhere", "Elsewhere"), -s["councils"]))
     sell_rows = [r for r in out if r["action"] == "sell"]
     gear_rows = [r for r in out if r["action"] == "gear"]
+    keep_rows = [r for r in out if r["action"] == "keep"]
     summary = {
         "stacks": len(inv), "inventoryFree": next((v.get("free") for v in st["vaults"] if v["vault"] == "Inventory"), None),
         "sell": {"stacks": len(sell_rows), "councils": sum(r["sellTo"]["councils"] for r in sell_rows), "vendors": len({r["sellTo"]["npc"] for r in sell_rows})},
-        "store": {"stacks": sum(1 for r in out if r["action"] == "store"), "vaults": len({r["storeAt"]["vault"] for r in out if r["action"] == "store"})},
         "gear": {"stacks": len(gear_rows), "councils": sum(r["sellTo"]["councils"] for r in gear_rows if r["sellTo"])},
-        "stays": sum(1 for r in out if r["action"] == "stays"),
-        "unsellable": sum(1 for r in out if r["action"] == "store" and r.get("why")),
+        "keep": {"stacks": len(keep_rows), "sellable": sum(1 for r in keep_rows if r["sellable"])},
+        "unsellable": sum(1 for r in keep_rows if r.get("why")),
         "stops": len(stop_rows),
     }
     # Vendor trash sitting in vaults: where it is and what it would fetch, so a trip can pick it up (not routed).
