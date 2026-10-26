@@ -1552,8 +1552,9 @@ function sessionRows(fights, area) {
   return { rows: [...rows.values()].sort((a, b) => b.dmg - a.dmg), total, secs, kills, fights: fightsIn.size };
 }
 /* Which session the table shows: the one picked, else the running manual one, else the newest automatic one. */
+const autoSessions = p => (p.sessions || []).filter(x => x.kind === 'auto');   // manual Start/Stop is dormant (ROADMAP: needs the room design)
 function pickedSession(p) {
-  const ss = p.sessions || [];
+  const ss = autoSessions(p);
   if (pUI.session === '') return null;
   const want = pUI.session && ss.find(x => x.id === pUI.session);
   return want || ss.find(x => x.kind === 'manual' && x.open) || ss[0] || null;
@@ -1567,21 +1568,13 @@ function sessionLabel(x) {
 /* The session table: every player and pet over a session's fights, summed, the way a group meter shows it. The
    session comes from the server (manual Start/Stop, or an automatic run in one area); "All today" sums everything. */
 function sessionTable(p, all) {
-  const ss = p.sessions || [];
+  const ss = autoSessions(p);
   const cur = pickedSession(p);
   const s = cur ? { rows: cur.rows, total: cur.total, secs: cur.secs, kills: cur.kills, fights: cur.fights } : sessionRows(all, '');
-  const running = ss.find(x => x.kind === 'manual' && x.open);
-  const sel = `<label class="small dim" for="d-psess">Session</label> <select id="d-psess" aria-label="Session">${ss.map(x => `<option value="${esc(x.id)}"${cur && x.id === cur.id ? ' selected' : ''}>${esc(sessionLabel(x))}</option>`).join('')}<option value=""${cur ? '' : ' selected'}>All today</option></select>`;
-  const startStop = running
-    ? `<button type="button" class="btn" data-psess="stop">Stop session</button>`
-    : `<button type="button" class="btn" data-psess="start" title="Fights from now until you press Stop become one session to post">Start session</button>`;
+  const sel = `<label class="small dim" for="d-psess">Session</label> <select id="d-psess" aria-label="Session" title="A session is a run of fights in one area with no gap over 15 minutes">${ss.map(x => `<option value="${esc(x.id)}"${cur && x.id === cur.id ? ' selected' : ''}>${esc(sessionLabel(x))}</option>`).join('')}<option value=""${cur ? '' : ' selected'}>All today</option></select>`;
   const post = cur && S.party?.discord?.webhook && s.rows.length ? `<button type="button" class="btn primary" data-psess-post="${esc(cur.id)}">Post session to Discord</button>` : '';
-  const forget = cur && cur.kind === 'manual' && !cur.open ? `<button type="button" class="linkbtn" data-psess="forget" data-psess-id="${esc(cur.id)}">Forget this session</button>` : '';
-  const tools = `<span class="party-sess-tools">${sel}${startStop}${post}${forget}</span>`;
-  if (!s.rows.length) {
-    const why = cur ? (cur.open ? 'No fight has closed since this session started; each one that does lands here, and Post session appears.' : 'No fight overlapped this session, so there is nothing to post.') : 'No fights yet.';
-    return `<div class="party-sess"><div class="party-sess-head"><span class="small dim">${why}</span>${tools}</div></div>`;
-  }
+  const tools = `<span class="party-sess-tools">${sel}${post}</span>`;
+  if (!s.rows.length) return `<div class="party-sess"><div class="party-sess-head"><span class="small dim">No fights yet.</span>${tools}</div></div>`;
   const split = s.rows.some(r => r.split);
   const head = `<div class="party-sess-head"><span class="small dim">${plural(s.fights, 'fight')} · ${secs(s.secs)} fighting · <b>${fmt(s.total)}</b> damage${s.kills ? ` · ${plural(s.kills, 'kill')}` : ''}</span>${tools}</div>`;
   const th = `<tr><th>Player</th>${split ? '<th class="num d-only">Health</th><th class="num d-only">Armor</th>' : ''}<th class="num">Damage</th><th class="num">Per second</th><th class="num">Share</th><th class="num">Kills</th></tr>`;
@@ -1761,19 +1754,7 @@ function initParty() {
     if (disc) { postDiscord({ party: disc.dataset.pdisc }, 'the party fight'); return; }
     const sp = e.target.closest('[data-psess-post]');
     if (sp) { postDiscord({ session: sp.dataset.psessPost }, 'the session'); return; }
-    const ss = e.target.closest('[data-psess]');
-    if (ss) {
-      const action = ss.dataset.psess;
-      postParty(action === 'forget' ? { session: 'forget', id: ss.dataset.psessId } : { session: action }).then(p => {
-        if (!p) return;
-        pUI.session = null;
-        if (action === 'start') sysLine('status', 'Session started. Every fight that closes until you press Stop session is in it, the one running now too.');
-        else if (action === 'stop') sysLine('status', 'Session stopped. It stays picked in the Session list; Post session to Discord sends it.');
-        else sysLine('status', 'Session forgotten.');
-        renderParty(); $('#d-party [data-psess]')?.focus();
-      });
-      return;
-    }
+
     if (e.target.closest('[data-ppaste]')) { pUI.paste = true; renderParty(); $('#d-pastetext').focus(); return; }
     if (e.target.closest('[data-pall]')) { pUI.all = !pUI.all; renderParty(); $('#d-party [data-pall]')?.focus(); }
     else if (e.target.closest('[data-psolo]')) { pUI.solo = !pUI.solo; renderParty(); $('#d-party [data-psolo]')?.focus(); }
