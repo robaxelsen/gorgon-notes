@@ -906,3 +906,29 @@ li[role="treeitem"]:focus-visible > .jrow { outline: 2px solid var(--selection);
   .tpcodes { justify-content: flex-start; }
 }
 @media (pointer: coarse) { .tpcode { min-height: 44px; } }
+
+/* ---------- Statehelm: one block per tracked trainer, a gift counter, the items to give ---------- */
+.shtrainer { padding: 12px 0; border-bottom: 1px solid var(--rule); }
+.shtrainer:first-child { padding-top: 4px; }
+.shtrainer:last-child { border-bottom: 0; padding-bottom: 0; }
+.shtrainer h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0 0 8px; font-size: 16px; }
+.shtrainer.done h3 > .tpfold span:last-child { color: var(--text-dim); }
+.shcount { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+.shcount .btn.icon-only { width: 32px; height: 32px; font-size: 18px; line-height: 1; }
+.shnum { font-variant-numeric: tabular-nums lining-nums; min-width: 6ch; text-align: center; }
+.shnum b { font-size: 20px; font-weight: 700; }
+.shnum.done b { color: var(--text-dim); }
+.shcount-note { flex: 1 1 240px; min-width: 0; }
+.shprefs { margin: 0 0 8px; max-width: none; }
+.tbl.shitems td.m1, .tbl.shpick td.m1 { min-width: 0; }
+.tbl.shitems td.m1 img, .tbl.shitems td.m1 .slot { width: 24px; height: 24px; vertical-align: middle; margin-right: 8px; }
+.tbl.shitems .tag { margin-left: 6px; }
+.tbl.shpick th.shchk, .tbl.shpick td.shchk { width: 32px; padding-right: 0; }
+.tbl.shpick tr.picked td .nm { font-weight: 700; }
+.tbl.shitems .sh-m, .tbl.shpick .sh-m { display: none; }
+@media (max-width: 719px) {
+  .tbl.shitems .sh-d, .tbl.shpick .sh-d { display: none; }
+  .tbl.shitems .sh-m, .tbl.shpick .sh-m { display: block; }
+  .tbl.shitems td, .tbl.shpick td { height: auto; min-height: 44px; padding: 8px; vertical-align: top; }
+}
+@media (pointer: coarse) { .shcount .btn.icon-only { width: 44px; height: 44px; } }

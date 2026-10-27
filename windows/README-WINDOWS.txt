@@ -35,7 +35,7 @@ Where the data comes from
 - Exports: in game, VIP menu -> Export Character JSON and Export Storage JSON. They land in
   C:\Users\<you>\AppData\LocalLow\Elder Game\Project Gorgon\Reports\ and the app reads them there.
   The top of every view says how old your data is and what to export to improve it.
-- Chat logs: the game writes ChatLogs\Chat-<date>.log only with Log All Chat turned on. The Session
+- Chat logs: the game writes ChatLogs\Chat-<date>.log only with Save Chat Logs turned on. The Session
   and Combat views come from these, live, while you play.
 - The app only reads the game folder. It writes two things, both in its own folder: capacity.json
   (vault sizes you type in) and cache\ (downloaded game data).

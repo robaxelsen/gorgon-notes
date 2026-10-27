@@ -1,4 +1,4 @@
-/* Gorgon Notes app. Vanilla JS, no build step. Sections: core, health, session, vendors, storage, character, files, teleports, reminders, main. */
+/* Gorgon Notes app. Vanilla JS, no build step. Sections: core, health, session, vendors, storage, character, files, teleports, statehelm, reminders, main. */
 'use strict';
 
 /* ===================== core ===================== */
@@ -7,8 +7,8 @@
 const APP_NAME = 'Gorgon Notes';
 const PAGE_BUILD = 'dev';   // windows/build.sh stamps the release tag in here, so the page can tell a server behind it is older
 const FAN_LINE = 'fan-made, not affiliated with Elder Game';
-const VIEWS = ['session', 'combat', 'vendors', 'storage', 'character', 'files', 'teleports'];
-const VIEW_TITLE = { session: 'Session', combat: 'Combat', vendors: 'Vendors', storage: 'Storage', character: 'Character', files: 'Files', teleports: 'Teleports' };
+const VIEWS = ['session', 'combat', 'vendors', 'storage', 'character', 'files', 'teleports', 'statehelm'];
+const VIEW_TITLE = { session: 'Session', combat: 'Combat', vendors: 'Vendors', storage: 'Storage', character: 'Character', files: 'Files', teleports: 'Teleports', statehelm: 'Statehelm' };
 const FAVOR = ['Despised', 'Hated', 'Disliked', 'Tolerated', 'Neutral', 'Comfortable', 'Friends', 'CloseFriends', 'BestFriends', 'LikeFamily', 'SoulMates'];
 const FAVOR_LABEL = { CloseFriends: 'Close Friends', BestFriends: 'Best Friends', LikeFamily: 'Like Family', SoulMates: 'Soul Mates' };
 const DEFAULT_CHANS = ['Status', 'Guild', 'Nearby', 'Error', 'System'];
@@ -25,7 +25,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const lastHTML = new WeakMap();
 const FOCUS_ATTRS = ['data-sort', 'data-zarea', 'data-zback', 'data-zmore', 'data-table', 'data-area', 'data-npc', 'data-vault', 'data-loc', 'data-type', 'data-sec', 'data-fold',
   'data-fix', 'data-chan', 'data-clear', 'data-sclear', 'data-newest', 'data-notnow', 'data-retry', 'data-w', 'data-m', 'data-s',
-  'data-path', 'data-file', 'data-fmore', 'data-crumb', 'data-copy', 'data-hit', 'data-fight', 'data-dminor'];
+  'data-path', 'data-file', 'data-fmore', 'data-crumb', 'data-copy', 'data-hit', 'data-fight', 'data-dminor', 'data-shpick', 'data-shinc', 'data-shdec', 'data-shfold', 'data-shlog', 'data-shunpick'];
 function focusKey(el, root) {
   if (el.id) return '#' + CSS.escape(el.id);
   const attrs = FOCUS_ATTRS.filter(a => el.hasAttribute(a)).map(a => `[${a}="${CSS.escape(el.getAttribute(a))}"]`);
@@ -183,6 +183,7 @@ const S = {
   itemsFile: null, itemsPicked: false, itemsData: null,
   icons: { base: null, byName: {}, byTypeId: {}, byType: {} },
   lookup: { quests: {}, powers: {} },
+  statehelm: null, statehelmAt: null, statehelmOld: false, // /api/statehelm (trainers, gifts this week); statehelmOld = no such endpoint
   errors: {},
   lastGood: {},
   down: false, downSince: null,
@@ -251,13 +252,13 @@ function fixText(key, args = {}, opts = {}) {
     'export-character': ['VIP menu → Export Character JSON', "Next time you're in game: VIP menu → Export Character JSON, while fully logged in"],
     'export-storage': ['VIP menu → Export Storage JSON', "Next time you're in game: VIP menu → Export Storage JSON"],
     'export-again': ['Export again while fully logged in, not right before logout: VIP menu → Export Character JSON', "Next time you're in game: VIP menu → Export Character JSON, while fully logged in"],
-    'chat-logging': ['Settings → GUI → Log All Chat'],
-    'chat-logging-ok': ['If it ever stops: Settings → GUI → Log All Chat'],
+    'chat-logging': ['Settings → V.I.P. → Save Chat Logs'],
+    'chat-logging-ok': ['If it ever stops: Settings → V.I.P. → Save Chat Logs'],
     // No storage export: there is no Slots column to type into yet, so the fix names the export first.
     'vault-size': [`${storageMissing() ? 'After a storage export: check' : 'Check'} the size in game, then type it in the Slots column${S.view === 'storage' ? '' : ' on Storage'}`],
     'alt-export': [`Next time you play ${args.alt || 'that character'}: VIP menu → Export Character JSON and Export Storage JSON`],
     'auto-export': ['Nothing to do.'],
-    'combat-logging': [S.view === 'combat' ? 'Combat logging settings in game (names not verified yet). The meter needs every combat log category fully on.' : 'Combat logging settings in game (names not verified yet). Deaths still count; kills and killers need it.'],
+    'combat-logging': [S.view === 'combat' ? 'Settings → V.I.P. → Combat Logging: every "Log when…" row on a Log File option, Log non-damaging abilities on, and Save Chat Logs on. The meter needs every category.' : 'Settings → V.I.P. → Combat Logging: every "Log when…" row on a Log File option, with Save Chat Logs on. Deaths still count; kills and killers need it.'],
     'player-log': ['Nothing to do. Exports cover it.'],
     'vip': ['Exports need VIP. Check your VIP status in game.'],
     'server': ['Start it again: python3 server.py'],
@@ -273,7 +274,7 @@ function plaqueFor(key) {
     'export-character': ['Export Character JSON', inGame ? 'In game: VIP menu, while fully logged in' : "Next time you're in game: VIP menu, while fully logged in"],
     'export-again': ['Export Character JSON again', inGame ? 'In game: VIP menu, while fully logged in, not right before logout' : "Next time you're in game: VIP menu, while fully logged in"],
     'export-storage': ['Export Storage JSON', inGame ? 'In game: VIP menu' : "Next time you're in game: VIP menu"],
-    'chat-logging': ['Log All Chat', 'In game: Settings → GUI → Log All Chat'],
+    'chat-logging': ['Save Chat Logs', 'In game: Settings → V.I.P. → Save Chat Logs'],
     'vault-size': ['Type in the vault size', `${storageMissing() ? 'After a storage export: check' : 'Check'} it in game, then enter it in the Slots column${S.view === 'storage' ? '' : ' on Storage'}`],
   };
   return map[key] || null;
@@ -310,7 +311,7 @@ function browserVerdicts() {
   const hasLog = s && s.log;
   if (!hasLog) {
     add({ source: 'game', severity: 'info', title: 'Game', evidence: 'Not known without a chat log.', unknown: true });
-    add({ source: 'chat-log', severity: 'bad', title: 'Chat log', evidence: 'No chat log found. The game only writes one with Log All Chat on.', fixKey: 'chat-logging', views: VIEWS.slice() }); // includes files
+    add({ source: 'chat-log', severity: 'bad', title: 'Chat log', evidence: 'No chat log found. The game only writes one with Save Chat Logs on.', fixKey: 'chat-logging', views: VIEWS.slice() }); // includes files
   } else {
     const lastAt = parseIso(s.lastLineAt) || (s.xpTimeline?.length ? parseChatTs(s.xpTimeline.at(-1)[0]) : null);
     const li = typeof s.loggedIn === 'boolean' ? s.loggedIn : s.live;
@@ -329,8 +330,8 @@ function browserVerdicts() {
       evidence: (age >= thr ? `It's ${ageWord(age)} old. ` : '') + 'Activity since export: not checked.', fixKey, views, file: rep.file });
   };
   // 'files' mirrors the server's FILES_SOURCES: the Files view lists every source it reads a file from.
-  expItem('character-export', cr, DEFAULT_THRESH['character-export'], 'Character export', 'export-character', ['vendors', 'character', 'storage', 'files']);
-  expItem('storage-export', sr, DEFAULT_THRESH['storage-export'], 'Storage export', 'export-storage', ['storage', 'files']);
+  expItem('character-export', cr, DEFAULT_THRESH['character-export'], 'Character export', 'export-character', ['vendors', 'character', 'storage', 'statehelm', 'files']);
+  expItem('storage-export', sr, DEFAULT_THRESH['storage-export'], 'Storage export', 'export-storage', ['storage', 'statehelm', 'files']);
   const partials = reps.filter(r => r.report === 'CharacterSheet' && r.character === '???');
   if (partials.length) {
     const p = partials.sort((a, b) => parseUtc(b.timestamp) - parseUtc(a.timestamp))[0], pt = parseUtc(p.timestamp);
@@ -390,7 +391,7 @@ function computeVerdicts() {
   }
   if (PREVIEW.sim === 'broken') ov('partial-export', v => { v.severity = 'bad'; v.fixKey = 'export-again'; v.views = ['character', 'vendors', 'storage']; v.evidence = 'That export came out a bit… partial (name "???"). Export again while fully logged in.'; });
   if (PREVIEW.sim === 'nolog') {
-    ov('chat-log', v => { v.severity = 'bad'; v.evidence = 'No chat log found. The game only writes one with Log All Chat on.'; v.fixKey = 'chat-logging'; v.views = ['session', 'combat', 'files']; v.at = null; v.ageSec = null; });
+    ov('chat-log', v => { v.severity = 'bad'; v.evidence = 'No chat log found. The game only writes one with Save Chat Logs on.'; v.fixKey = 'chat-logging'; v.views = ['session', 'combat', 'files']; v.at = null; v.ageSec = null; });
     ov('game', v => { v.severity = 'info'; v.evidence = 'Not known without a chat log.'; v.unknown = true; });
   }
   if (PREVIEW.sim === 'noexport') {
@@ -787,11 +788,11 @@ function renderSession() {
   if (noLog && !S.loading) {
     const pl = plaqueFor('chat-logging');
     plaqueInView = 'chat-logging';
-    xpBox.html = `<p class="empty">No chat log, so no experience to chart. The game writes one only with Log All Chat on.</p>
+    xpBox.html = `<p class="empty">No chat log, so no experience to chart. The game writes one only with Save Chat Logs on.</p>
       <button type="button" class="plaque plaque-wide" data-fix="chat-logging" aria-label="${esc(pl[0] + '. ' + pl[1] + '. Then check again.')}"><span class="p1">${pl[0]}</span><span class="p2">${pl[1]}</span></button>`;
   } else if (S.loading && !S.session) xpBox.html = '<div class="zeroline" style="height:200px;border:0;background:var(--well);border-radius:4px"></div>';
   else drawXp(s);
-  setFoot('w-s-xp', live, noLog ? '' : 'Logging: Settings → GUI → Log All Chat');
+  setFoot('w-s-xp', live, noLog ? '' : 'Logging: Settings → V.I.P. → Save Chat Logs');
 
   // XP by skill
   const sk = $('#s-skill');
@@ -3550,7 +3551,7 @@ function renderFiles() {
     $('#title-extra').hidden = true;
     if (old) { $('#finding').textContent = 'Needs a newer server.py to list the files.'; setStamp('File list', 'not available', 'bad'); }
     else if (loading) { $('#finding').html = '<span class="dim">Reading Reports/, capacity.json, cache/ and ChatLogs/…</span>'; setStamp('Newest export', '…', 'ok'); }
-    else if (none) { $('#finding').textContent = 'No files yet. Exports land in Reports/ once you use the VIP menu, the chat log appears with Log All Chat on, and game data is fetched the first time Vendors or Storage loads.'; setStamp('No exports found', 'missing', 'bad'); }
+    else if (none) { $('#finding').textContent = 'No files yet. Exports land in Reports/ once you use the VIP menu, the chat log appears with Save Chat Logs on, and game data is fetched the first time Vendors or Storage loads.'; setStamp('No exports found', 'missing', 'bad'); }
     else if (err) { $('#finding').textContent = "Couldn't load the file list."; setStamp('File list', 'not loaded', 'bad'); }
     else {
       const parts = [`<em class="n">${fmt(reps.length)}</em> ${reps.length === 1 ? 'export' : 'exports'}`];
@@ -3629,7 +3630,7 @@ function renderFilePane({ old, err, loading, none, cur, cdnCur, cap, reps }) {
   if (none) {
     plaqueInView = 'export-character';
     const pl = plaqueFor('export-character');
-    box.html = `<p class="pane-empty" style="padding:12px 12px 0">No files yet. Exports land in Reports/ once you use the VIP menu, the chat log appears with Log All Chat on, and game data is fetched the first time Vendors or Storage loads.</p>
+    box.html = `<p class="pane-empty" style="padding:12px 12px 0">No files yet. Exports land in Reports/ once you use the VIP menu, the chat log appears with Save Chat Logs on, and game data is fetched the first time Vendors or Storage loads.</p>
       <div style="padding:0 12px 12px"><button type="button" class="plaque plaque-wide" data-fix="export-character" aria-label="${esc(pl[0] + '. ' + pl[1] + '. Then check again.')}"><span class="p1">${pl[0]}</span><span class="p2">${pl[1]}</span></button></div>`;
     setFoot('w-f-list', footL, esc(fixText('export-character')));
     return;
@@ -4861,7 +4862,7 @@ function renderAbout() {
     <section><p>${esc(APP_NAME)} is ${esc(FAN_LINE)}. It reads the files the game already writes on this computer.</p><p class="small dim" style="margin-top:6px">${versionLine()}</p></section>
     <section><h3>Where the data comes from</h3><ul>
       <li>VIP exports in Reports/ (Character and Storage JSON) · <a href="#files" data-rem="close">Inspect the files</a></li>
-      <li>Chat logs in ChatLogs/ (Settings → GUI → Log All Chat)</li>
+      <li>Chat logs in ChatLogs/ (Settings → V.I.P. → Save Chat Logs)</li>
       <li>Game data from cdn.projectgorgon.com, version ${esc(ver)}</li>
       <li>GorgonSettings.txt for logging settings</li>
       <li>${esc(plog)}</li></ul></section>
@@ -5141,6 +5142,236 @@ function initTeleports() {
   });
 }
 
+/* ===================== statehelm ===================== */
+/* Statehelm view: the trainers you gift for Prodigy Potential (GET /api/statehelm). Each takes five gifts a week;
+   what they like is game data, the items you hold come from the storage export, favor from the character export,
+   and the gifts given this week are counted from the chat log (or set by hand, saved in settings.json). */
+
+const shUI = { q: '', busy: false, err: null, inflight: null, saving: null, folded: new Set() };
+const SH_WIKI = 'https://wiki.projectgorgon.com/wiki/Prodigy_Potential';
+
+function loadStatehelm() {
+  if (shUI.inflight) return shUI.inflight;
+  shUI.inflight = (async () => {
+    shUI.busy = true;
+    if (S.view === 'statehelm') renderStatehelm();
+    try {
+      const d = await api('/api/statehelm' + (S.character ? '?character=' + encodeURIComponent(S.character) : ''));
+      if (d && Array.isArray(d.trainers)) { S.statehelm = d; S.statehelmAt = NOW(); shUI.err = null; S.statehelmOld = false; markUp(); }
+      else shUI.err = new Error(d?.error || 'bad answer');
+    } catch (e) {
+      if (e.status === 404) { S.statehelmOld = true; shUI.err = Object.assign(new Error('old server'), { old: true }); }
+      else { shUI.err = e; onFetchError(e); }
+    }
+    shUI.busy = false; shUI.inflight = null;
+    if (S.view === 'statehelm') renderAll();
+    return !shUI.err;
+  })();
+  return shUI.inflight;
+}
+/* Picks and counts go to the server (settings.json), which answers with the whole view again. */
+async function saveStatehelm(body, what) {
+  if (shUI.saving) await shUI.saving;
+  shUI.saving = (async () => {
+    try {
+      const d = await api('/api/statehelm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, character: S.character || undefined }) });
+      if (d && Array.isArray(d.trainers)) { S.statehelm = d; S.statehelmAt = NOW(); shUI.err = null; markUp(); }
+      if (what) sysLine('status', what(d));
+    } catch (e) {
+      onFetchError(e);
+      sysLine('error', S.down ? "The dashboard server isn't answering, so that wasn't saved. Start it again: python3 server.py" : `Couldn't save that: ${e.message}`);
+    }
+    shUI.saving = null;
+    if (S.view === 'statehelm') renderAll();
+  })();
+  return shUI.saving;
+}
+async function refreshStatehelm() {
+  if (shUI.inflight) await shUI.inflight;
+  await loadStatehelm();
+  const d = S.statehelm;
+  if (shUI.err?.old) return sysLine('error', 'The Statehelm view needs a newer server.py.');
+  if (!d) return sysLine('error', S.down ? "The dashboard server isn't answering. Start it again: python3 server.py" : `Couldn't read the trainers: ${shUI.err?.message || 'no answer'}`);
+  const c = shCounts(d);
+  const logs = d.week?.logs?.length || 0;
+  sysLine('status', `${plural(c.logged, 'gift')} logged this week in ${plural(logs, 'chat log')}${d.sources?.storage ? `, items from the storage export of ${hhmm(parseUtc(d.sources.storage.timestamp))}` : ', no storage export to match items against'}. ${plural(c.left, 'gift')} left across ${plural(c.picked, 'picked trainer')}.`);
+}
+function shPicked(d) { return (d?.trainers || []).filter(t => t.picked); }
+function shCounts(d) {
+  const mine = shPicked(d);
+  return {
+    picked: mine.length, trainers: (d?.trainers || []).length,
+    left: mine.reduce((a, t) => a + t.gifts.left, 0), cap: mine.length * (d?.cap || 5),
+    given: mine.reduce((a, t) => a + t.gifts.given, 0), logged: (d?.trainers || []).reduce((a, t) => a + t.gifts.logged, 0),
+    items: mine.reduce((a, t) => a + t.items.length, 0), ready: mine.filter(t => t.gifts.left && t.items.length).length,
+  };
+}
+function shWeekLabel(d) {
+  const s = parseIso(d?.week?.start);
+  return s ? `since Mon ${dayMon(s)}` : 'this week';
+}
+function shPrefText(t) {
+  const loves = t.prefs.filter(p => p.desire === 'Love').map(p => p.name + (p.favor ? ` (from ${favorLabel(p.favor)})` : ''));
+  const likes = t.prefs.filter(p => p.desire === 'Like').map(p => p.name + (p.favor ? ` (from ${favorLabel(p.favor)})` : ''));
+  const parts = [];
+  if (loves.length) parts.push(`Loves ${joinNames(loves)}`);
+  if (likes.length) parts.push(`Likes ${joinNames(likes)}`);
+  return parts.join(' · ') || 'Likes no gifts the game data names';
+}
+function shWhere(w) { return w === 'Inventory' ? 'Bags' : pretty(w); }
+function shFavor(t) {
+  if (!t.met) return '<span class="dim">not met yet</span>';
+  const pts = t.favorPoints != null ? ` (${fmt(Math.round(t.favorPoints))})` : '';
+  return `${esc(favorLabel(t.favor))}${pts}`;
+}
+/* Footer: both exports (the items and the favor) and the chat log (the count); the fix for the worst of the exports. */
+function shFootHtml() {
+  const src = sevOf('storage-export') === 'bad' ? 'storage-export' : ['storage-export', 'character-export'].find(k => ['warn', 'bad'].includes(sevOf(k))) || 'storage-export';
+  const missing = sevOf(src) === 'bad' && V(src)?.ageSec == null;
+  const left = `${srcAge('storage-export', 'Storage export')} · ${srcAge('character-export', 'Character export')} · ${chatLive()}`;
+  const right = S.statehelmOld ? 'Statehelm needs a newer server.py' : srcFix(src, missing ? '' : src === 'storage-export' ? 'After gifting or storing:' : 'After gifting:');
+  return [left, right];
+}
+function shTrainerHtml(t, d) {
+  const g = t.gifts, cap = d.cap || 5;
+  const done = g.left === 0;
+  const folded = shUI.folded.has(t.npc);
+  const id = 'sh-' + t.npc.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const skills = t.skills.length ? t.skills.join(', ') : 'trainer';
+  const prodigy = t.prodigyReady ? '<span class="tag">Close Friends reached</span>' : `<span class="small dim">${esc(favorLabel(t.prodigyAt))} unlocks Prodigy Potential</span>`;
+  const manual = g.manual != null;
+  const counter = `<div class="shcount" role="group" aria-label="Gifts to ${esc(t.name)} this week">
+      <button type="button" class="btn icon-only" data-shdec="${esc(t.npc)}" aria-label="One gift fewer" ${g.given <= 0 ? 'disabled' : ''}>−</button>
+      <span class="shnum${done ? ' done' : ''}"><b>${fmt(g.given)}</b> of ${cap}</span>
+      <button type="button" class="btn icon-only" data-shinc="${esc(t.npc)}" aria-label="One gift more" ${g.given >= 99 ? 'disabled' : ''}>+</button>
+      <span class="small dim shcount-note">${done ? 'done for the week' : `${plural(g.left, 'gift')} left`} · ${manual ? `set by you${g.logged !== g.given ? ` · <button type="button" class="linkbtn" data-shlog="${esc(t.npc)}" style="text-decoration:underline">use the chat log's ${fmt(g.logged)}</button>` : ''}` : `${plural(g.logged, 'favor gain')} logged in Statehelm ${esc(shWeekLabel(d))}`}${!manual && g.quests ? `, ${plural(g.quests, 'quest turn-in')} left out` : ''}</span>
+    </div>`;
+  const items = t.items;
+  let body;
+  if (!d.sources?.storage) body = '<p class="needs">Needs a storage export to find the items you hold.</p>';
+  else if (!items.length) body = `<p class="empty">Nothing in your bags or vaults matches what ${esc(t.name)} likes.</p>`;
+  else {
+    const rows = items.map(i => `<tr class="row"><td class="m1">${iconImg(i.icon, 24, '', (i.name || '?')[0])}<span class="nm">${esc(i.name)}</span>${i.desire === 'Love' ? ' <span class="tag">loves</span>' : ''}<div class="small dim sh-m">${esc([i.rarity, shWhere(i.where), i.stack > 1 ? `×${fmt(i.stack)}` : ''].filter(Boolean).join(' · '))}</div></td>
+      <td class="sh-d">${esc(i.rarity || '')}</td><td class="sh-d">${esc(shWhere(i.where))}</td><td class="num sh-d">${i.stack > 1 ? fmt(i.stack) : ''}</td><td class="num sh-d">${COIN}${fmt(i.value)}</td></tr>`).join('');
+    body = `<table class="tbl shitems"><thead><tr><th>Item</th><th class="sh-d">Rarity</th><th class="sh-d">Where</th><th class="num sh-d">Stack</th><th class="num sh-d">Value</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+  const unchecked = t.unchecked.length ? `<p class="small dim">${esc(joinNames(t.unchecked))} can't be checked from the export.</p>` : '';
+  return `<section class="shtrainer${done ? ' done' : ''}" id="${id}" aria-labelledby="t-${id}">
+    <h3 id="t-${id}"><button type="button" class="tpfold" data-shfold="${esc(t.npc)}" aria-expanded="${!folded}" aria-controls="b-${id}">${TRI(!folded)}<span>${esc(t.name)}</span></button> <span class="small dim">${esc(skills)}</span> <span class="small">· ${shFavor(t)}</span> ${prodigy}</h3>
+    ${counter}
+    <div id="b-${id}" ${folded ? 'hidden' : ''}>
+      <p class="small dim shprefs">${esc(shPrefText(t))}${items.length ? ` · ${plural(items.length, 'item')} you hold` : ''}</p>
+      ${body}${unchecked}
+      <p class="small"><button type="button" class="linkbtn" data-shunpick="${esc(t.npc)}" style="text-decoration:underline">Stop tracking ${esc(t.name)}</button></p>
+    </div>
+  </section>`;
+}
+function shMatch(t, q) {
+  if (!q) return true;
+  return t.name.toLowerCase().includes(q) || t.skills.some(s => s.toLowerCase().includes(q)) || t.prefs.some(p => p.name.toLowerCase().includes(q));
+}
+function renderStatehelm() {
+  const d = S.statehelm;
+  const old = !!shUI.err?.old;
+  const loading = !d && (shUI.busy || (!shUI.err && !S.down));
+  const down = !d && !loading && S.down;
+  const retry = !shUI.err || (isNetworkError(shUI.err) && !shUI.err.old);
+  if (S.view === 'statehelm' && !d && !shUI.busy && retry && !S.down && PREVIEW.sim !== 'loading') loadStatehelm();
+  const c = shCounts(d);
+  const storageMissing = d && !d.sources?.storage;
+  if (S.view === 'statehelm') {
+    $('#h1').textContent = 'Statehelm';
+    $('#title-extra').hidden = true;
+    if (old) { $('#finding').textContent = 'Needs a newer server.py to read the trainers.'; setStamp('Statehelm trainers', 'not available', 'bad'); }
+    else if (loading) { $('#finding').html = '<span class="dim">Reading the trainers, your exports and this week\'s chat log…</span>'; setStamp('From your exports and the chat log', '…', 'ok'); }
+    else if (down) { $('#finding').textContent = "The dashboard server isn't answering, so the trainers haven't been read. Start it again: python3 server.py"; setStamp('Statehelm trainers', `as of ${hhmm(S.downSince || NOW())}`, 'bad'); }
+    else if (!d) { $('#finding').textContent = `Couldn't read the trainers. ${shUI.err?.message || ''}`.trim(); setStamp('Statehelm trainers', 'not read', 'bad'); }
+    else {
+      let f;
+      if (!c.picked) f = `Pick the trainers you gift below. Each takes <em class="n">${fmt(d.cap)}</em> gifts a week, and Close Friends unlocks Prodigy Potential.`;
+      else if (!c.left) f = `All <em class="n">${fmt(c.cap)}</em> gifts given this week across <em class="n">${fmt(c.picked)}</em> trainers. The count starts again on Monday.`;
+      else f = `<em class="n">${fmt(c.left)}</em> gifts left this week across <em class="n">${fmt(c.picked)}</em> trainers, and ${storageMissing ? 'no storage export to find items in' : `<em class="n">${fmt(c.items)}</em> items you hold to give`}.`;
+      if (sevOf('storage-export') === 'warn') f += ` <span class="suffix">The storage export is ${ageWord(V('storage-export').ageSec)} old.</span>`;
+      $('#finding').html = f;
+      exportStamp('storage-export', 'storage');
+    }
+  }
+  // At a glance
+  const glance = $('#sh-glance');
+  if (!d) glance.html = loading ? '<div class="fig lead"><div class="lb">Gifts left this week</div><div class="val loading"></div></div>' : '';
+  else {
+    const figs = [
+      { lb: `Gifts left this week`, val: fmt(c.left), sub: c.picked ? `of ${fmt(c.cap)} across ${plural(c.picked, 'trainer')} · ${shWeekLabel(d)}` : 'no trainers picked yet' },
+      { lb: `Items to give ${ageMarkOf(V('storage-export'))}`, val: storageMissing ? '—' : fmt(c.items), sub: storageMissing ? 'needs a storage export' : `in bags and vaults, for ${plural(c.ready, 'trainer')} with gifts left` },
+      { lb: 'Trainers picked', val: fmt(c.picked), sub: `of ${fmt(c.trainers)} in Statehelm` },
+    ];
+    glance.html = figs.map((f, i) => `<div class="fig${i ? '' : ' lead'}"><div class="lb">${f.lb}</div><div class="val">${f.val}</div><div class="sub">${esc(f.sub)}</div></div>`).join('');
+  }
+  // Your trainers
+  const mine = $('#sh-mine');
+  if (old) mine.html = '<p class="empty">Needs a newer server.py.</p>';
+  else if (loading) mine.html = '<p><span class="loading-bar"></span></p>';
+  else if (down) mine.html = `<p class="txt-bad" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${shape('bad')}<span>The dashboard server isn't answering.</span><button type="button" class="btn" data-shretry="1">Retry</button></p>`;
+  else if (!d) mine.html = `<p class="txt-bad" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${shape('bad')}<span>Couldn't read the trainers.${shUI.err && !isNetworkError(shUI.err) ? ` ${esc(shUI.err.message)}` : ''}</span><button type="button" class="btn" data-shretry="1">Retry</button></p>`;
+  else if (!c.picked) mine.html = '<p class="empty">No trainers picked yet. Tick them in Pick trainers below and they show up here with the items you can give.</p>';
+  else {
+    const ordered = [...shPicked(d)].sort((a, b) => (b.gifts.left > 0) - (a.gifts.left > 0) || (b.items.length > 0) - (a.items.length > 0) || a.name.localeCompare(b.name));
+    mine.html = ordered.map(t => shTrainerHtml(t, d)).join('');
+  }
+  $('#sh-mine-count').textContent = d && c.picked ? `${plural(c.picked, 'trainer')} · ${plural(c.left, 'gift')} left` : '';
+  // Pick trainers
+  const q = shUI.q.trim().toLowerCase();
+  const inp = $('#shq');
+  inp.disabled = !d;
+  if (inp.value !== shUI.q) inp.value = shUI.q;
+  const pick = $('#sh-pick');
+  if (!d) pick.html = loading ? '<p><span class="loading-bar"></span></p>' : '';
+  else {
+    const list = d.trainers.filter(t => shMatch(t, q));
+    const rows = list.map(t => `<tr class="row${t.picked ? ' picked' : ''}"><td class="shchk"><label class="check"><input type="checkbox" data-shpick="${esc(t.npc)}" ${t.picked ? 'checked' : ''} aria-label="Track ${esc(t.name)}"></label></td>
+      <td class="m1"><div class="nm">${esc(t.name)}</div><div class="small dim">${esc(t.skills.length ? t.skills.join(', ') : 'trainer')}</div><div class="small dim sh-m">${esc(shPrefText(t))}</div></td>
+      <td class="sh-d small">${esc(shPrefText(t))}</td><td class="small">${shFavor(t)}</td><td class="num small">${t.items.length ? plural(t.items.length, 'item') : '<span class="dim">none</span>'}</td></tr>`).join('');
+    pick.html = rows ? `<table class="tbl shpick"><thead><tr><th class="shchk"><span class="sr">Track</span></th><th>Trainer</th><th class="sh-d">Likes</th><th>Favor</th><th class="num">You hold</th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="empty">No trainer, skill or gift matches "${esc(shUI.q.trim())}".</p>`;
+    const note = $('#shq-note');
+    if (q) { note.hidden = false; note.textContent = rows ? `${plural(list.length, 'trainer')} match "${shUI.q.trim()}".` : ''; } else { note.hidden = true; note.textContent = ''; }
+  }
+  $('#sh-pick-count').textContent = d ? `${fmt(c.trainers)} trainers` : '';
+  const [fl, fr] = shFootHtml();
+  setFoot('w-sh-glance', fl, fr);
+  setFoot('w-sh-mine', fl, fr);
+  setFoot('w-sh-pick', d ? `Game data v${esc(cdnVersion())} · ${plural(c.trainers, 'trainer')} in Statehelm · picks saved in settings.json` : 'Game data', `<a href="${SH_WIKI}" target="_blank" rel="noopener">Prodigy Potential on the wiki</a>`);
+}
+function initStatehelm() {
+  $('#shq').addEventListener('input', e => { shUI.q = e.target.value; renderStatehelm(); });
+  $('#v-statehelm').addEventListener('change', e => {
+    const cb = e.target.closest('[data-shpick]');
+    if (!cb || !S.statehelm) return;
+    const picked = new Set(S.statehelm.picked || []);
+    cb.checked ? picked.add(cb.dataset.shpick) : picked.delete(cb.dataset.shpick);
+    const name = S.statehelm.trainers.find(t => t.npc === cb.dataset.shpick)?.name || cb.dataset.shpick;
+    saveStatehelm({ picked: [...picked] }, () => cb.checked ? `${name} added. ${plural(picked.size, 'trainer')} tracked.` : `${name} removed. ${plural(picked.size, 'trainer')} tracked.`);
+  });
+  $('#v-statehelm').addEventListener('click', e => {
+    const d = S.statehelm;
+    const step = e.target.closest('[data-shinc],[data-shdec]');
+    if (step && d) {
+      const npc = step.dataset.shinc || step.dataset.shdec;
+      const t = d.trainers.find(x => x.npc === npc);
+      if (!t) return;
+      const n = Math.max(0, Math.min(99, t.gifts.given + (step.dataset.shinc ? 1 : -1)));
+      saveStatehelm({ npc, count: n }, () => `${t.name}: ${fmt(n)} of ${d.cap} gifted this week.`);
+      return;
+    }
+    const log = e.target.closest('[data-shlog]');
+    if (log && d) { const t = d.trainers.find(x => x.npc === log.dataset.shlog); saveStatehelm({ npc: log.dataset.shlog, count: null }, () => `${t?.name || ''}: back to the chat log's count.`); return; }
+    const un = e.target.closest('[data-shunpick]');
+    if (un && d) { const picked = (d.picked || []).filter(k => k !== un.dataset.shunpick); const t = d.trainers.find(x => x.npc === un.dataset.shunpick); saveStatehelm({ picked }, () => `${t?.name || ''} removed. ${plural(picked.length, 'trainer')} tracked.`); return; }
+    const fold = e.target.closest('[data-shfold]');
+    if (fold) { const k = fold.dataset.shfold; shUI.folded.has(k) ? shUI.folded.delete(k) : shUI.folded.add(k); renderStatehelm(); $(`#v-statehelm [data-shfold="${CSS.escape(k)}"]`)?.focus(); return; }
+    if (e.target.closest('[data-shretry]')) { shUI.err = null; loadStatehelm(); }
+  });
+}
+
 /* ===================== main ===================== */
 /* Boot, routing, polling, Check again, shared helpers. */
 
@@ -5219,7 +5450,7 @@ async function fetchLookup() {
 }
 
 /* ---------- rendering ---------- */
-const RENDER = { session: () => renderSession(), combat: () => renderCombatView(), vendors: () => renderVendors(), storage: () => renderStorage(), character: () => renderCharacter(), files: () => renderFiles(), teleports: () => renderTeleports() };
+const RENDER = { session: () => renderSession(), combat: () => renderCombatView(), vendors: () => renderVendors(), storage: () => renderStorage(), character: () => renderCharacter(), files: () => renderFiles(), teleports: () => renderTeleports(), statehelm: () => renderStatehelm() };
 function renderView() {
   plaqueInView = null;
   try { RENDER[S.view](); } catch (e) { console.error(e); }
@@ -5331,7 +5562,7 @@ function pickCharacter() {
 }
 async function selectCharacter(who) {
   S.character = who; store.set('pgdash.character', who);
-  S.charPicked = false; S.itemsPicked = false; vUI.selected = null; sUI.selected = null; sUI.iloc = '';
+  S.charPicked = false; S.itemsPicked = false; vUI.selected = null; sUI.selected = null; sUI.iloc = ''; S.statehelm = null;
   await refreshExports(true).catch(onFetchError);
   await loadHealth().catch(onFetchError);
   computeVerdicts(); renderAll();
@@ -5352,6 +5583,7 @@ async function refreshExports(force) {
   const itf = S.itemsPicked && storageReports().some(r => r.file === S.itemsFile) ? S.itemsFile : newestItemsFile();
   if (force || itf !== S.itemsFile || !S.itemsData) await loadItems(itf);
   if (S.view === 'files' || S.files) await loadFiles(); // the file list polls only once the Files view has been opened
+  if (S.view === 'statehelm' && S.statehelm) await loadStatehelm(); // items and favor follow the exports; gifts the chat log
 }
 async function fullRound() {
   try {
@@ -5383,6 +5615,7 @@ async function tailRound() {
   try {
     const lines = await pollTail();
     markUp();
+    if (S.view === 'statehelm' && S.statehelm && lines.some(l => /^\[Status\] You gained [\d.,]+ favor with /.test(l.msg))) loadStatehelm();
     if (lines.some(l => /XP|added to inventory|Entering Area|Logged In|Logged Out/.test(l.msg))) {
       await loadSession(); computeVerdicts(); if (S.view === 'session') renderAll(); else renderShell();
     }
@@ -5458,13 +5691,14 @@ async function checkAgain(source) {
   const after = exportSnapshot();
   if (S.view === 'files' && !source) return filesChecked(filesBefore);
   if (S.view === 'teleports' && !source) return refreshTeleports();
+  if (S.view === 'statehelm' && !source) return refreshStatehelm();
   const view = source === 'export-storage' ? 'storage' : source === 'export-character' || source === 'export-again' ? 'vendors' : source === 'chat-logging' ? 'session' : S.view;
   if (view === 'session') {
     const newLines = sessUI.feed.length - tailBefore;
     const last = S.session?.lastLineAt ? hhmm(parseIso(S.session.lastLineAt)) : (sessUI.feed.at(-1)?.ts.slice(9, 14) || '?');
     if (newLines > 0 || (S.session?.lastLineAt && S.session.lastLineAt !== lastBefore)) sysLine('status', `Chat log read to ${last}. ${plural(Math.max(newLines, 0), 'new line')}.`);
-    else if (last === '?') sysLine('error', `Still no chat log file. ${S.health?.settings?.readable && S.health.settings.LogChat === 0 ? "The game's settings file still says chat logging is off." : ''} Check Settings → GUI → Log All Chat is on, log out and back in, then check again.`.replace('  ', ' '));
-    else if (['warn', 'bad'].includes(sevOf('chat-log'))) sysLine(sevOf('chat-log') === 'bad' ? 'error' : 'warn', `No new lines since ${last}. Check Settings → GUI → Log All Chat is on, then check again.`);
+    else if (last === '?') sysLine('error', `Still no chat log file. ${S.health?.settings?.readable && S.health.settings.LogChat === 0 ? "The game's settings file still says chat logging is off." : ''} Check Settings → V.I.P. → Save Chat Logs is on, log out and back in, then check again.`.replace('  ', ' '));
+    else if (['warn', 'bad'].includes(sevOf('chat-log'))) sysLine(sevOf('chat-log') === 'bad' ? 'error' : 'warn', `No new lines since ${last}. Check Settings → V.I.P. → Save Chat Logs is on, then check again.`);
     else sysLine('note', `No new lines since ${last}. The chat log only grows while you're in game.`);
     return;
   }
@@ -5492,7 +5726,7 @@ function boot() {
   $$('[data-fan-aria]').forEach(el => el.setAttribute('aria-label', `About: ${APP_NAME} is ${FAN_LINE}`));
   $$('[data-brand-aria]').forEach(el => el.setAttribute('aria-label', `${APP_NAME}, Session`));
   $('#favicon').href = FAVICONS.ok;
-  initSession(); initCombat(); initVendors(); initStorage(); initCharacter(); initFiles(); initTeleports(); initReminders();
+  initSession(); initCombat(); initVendors(); initStorage(); initCharacter(); initFiles(); initTeleports(); initStatehelm(); initReminders();
   $('#checkbtn').addEventListener('click', () => checkAgain());
   document.addEventListener('click', e => {
     const p = e.target.closest('[data-fix]');
@@ -5517,7 +5751,7 @@ function boot() {
   PHONE_MQ.addEventListener('change', () => { renderMargin(); if (!PHONE_MQ.matches && document.querySelector('.pop[aria-modal]')) closePops(); });
   document.addEventListener('keydown', e => {
     if (e.key === '/' && !e.target.closest('input, select, textarea')) {
-      const s = { session: '#lootq', vendors: '#vq', storage: '#sq', character: '#skillq', files: '#fileq', teleports: '#tpq' }[S.view];
+      const s = { session: '#lootq', vendors: '#vq', storage: '#sq', character: '#skillq', files: '#fileq', teleports: '#tpq', statehelm: '#shq' }[S.view];
       if (s && !$(s).disabled) { e.preventDefault(); $(s).focus(); }
     }
     if (e.key === 'Escape' && e.target.matches('input[type=search]') && e.target.value) { e.target.value = ''; e.target.dispatchEvent(new Event('input')); }

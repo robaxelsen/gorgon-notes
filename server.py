@@ -3184,7 +3184,7 @@ def health(character=None):
     if not newest:
         # Say exactly what was looked at, so a player on a new machine can tell a wrong folder from a setting
         # that is still off (seen on a friend's Windows PC, 2026-10-24: exports fine, no ChatLogs file).
-        ev = "No chat log found. The game only writes one with Log All Chat on."
+        ev = "No chat log found. The game only writes one with Save Chat Logs on."
         looked = f" Looked in {CHATLOGS}" + ("" if CHATLOGS.is_dir() else ", which doesn't exist") + "."
         if settings.get("readable"):
             state = {1: "on", 0: "off"}.get(settings.get("LogChat"))
@@ -3209,21 +3209,21 @@ def health(character=None):
         today = newest.name == now.strftime("Chat-%y-%m-%d.log")
         if logged_in and effective_running and silence is not None and silence >= 900:
             add("chat-log", "warn", "Chat log", f"You're logged in but nothing was written since {lat.strftime('%H:%M')}.",
-                "chat-logging", views=["session", "combat"], at=lat)
+                "chat-logging", views=["session", "combat", "statehelm"], at=lat)
         elif running is True and not today:
             add("chat-log", "warn", "Chat log", "The game is running but there's no chat log for today yet.",
-                "chat-logging", views=["session", "combat"], at=lat)
+                "chat-logging", views=["session", "combat", "statehelm"], at=lat)
         elif logged_in and not effective_running:
             add("chat-log", "info", "Chat log", "The last session has no Logged Out line, so it may have been cut short (quit or crash).",
-                "chat-logging-ok", views=["session", "combat"], at=lat)
+                "chat-logging-ok", views=["session", "combat", "statehelm"], at=lat)
         else:
             ev = "Being written as you play." if logged_in else "Logging is on. It fills in next time you play."
-            add("chat-log", "ok", "Chat log", ev, "chat-logging-ok", views=["session", "combat"], at=lat)
+            add("chat-log", "ok", "Chat log", ev, "chat-logging-ok", views=["session", "combat", "statehelm"], at=lat)
 
     # character export
     if not char_rep:
         add("character-export", "bad", "Character export", f"No character export{' for ' + character if character else ''} yet.",
-            "export-character", views=["vendors", "character", "storage"], item_id=f"character-export:{character}")
+            "export-character", views=["vendors", "character", "storage", "statehelm"], item_id=f"character-export:{character}")
     else:
         at = report_dt(char_rep["timestamp"])
         act = since(at, character)
@@ -3235,14 +3235,14 @@ def health(character=None):
         age = (now - at).total_seconds()
         sev = "warn" if bits or age >= THRESHOLDS["character-export"] else "ok"
         ev = " ".join(bits) or ("No councils received or favor gained since it." if sev == "ok" else f"It's {human_age(age).replace(' ago', '')} old.")
-        add("character-export", sev, "Character export", ev, "export-character", views=["vendors", "character", "storage"],
+        add("character-export", sev, "Character export", ev, "export-character", views=["vendors", "character", "storage", "statehelm"],
             at=at, item_id=f"character-export:{character}", evidence_data=act, file=char_rep["file"])
 
     # storage export
     stor_act, stor_activity = None, False  # the storage export's since() result; whether searches or loot made it warn
     if not stor_rep:
         add("storage-export", "bad", "Storage export", f"No storage export{' for ' + character if character else ''} yet.",
-            "export-storage", views=["storage", "vendors"], item_id=f"storage-export:{character}")
+            "export-storage", views=["storage", "vendors", "statehelm"], item_id=f"storage-export:{character}")
     else:
         at = report_dt(stor_rep["timestamp"])
         act = stor_act = since(at, character, vault_areas)
@@ -3260,7 +3260,7 @@ def health(character=None):
         ev = " ".join(bits) or (f"No vault visits or storage searches since it, and under {ACTIVITY['lootStacks']} stacks of loot." if sev == "ok"
                                 else f"It's {human_age(age).replace(' ago', '')} old.")
         act["vaultAreas"] = visited
-        add("storage-export", sev, "Storage export", ev, "export-storage", views=["storage"] + (["vendors"] if sev != "ok" else []),
+        add("storage-export", sev, "Storage export", ev, "export-storage", views=["storage", "statehelm"] + (["vendors"] if sev != "ok" else []),
             at=at, item_id=f"storage-export:{character}", evidence_data=act, file=stor_rep["file"])
 
     # partial export
@@ -4452,12 +4452,267 @@ def teleports(refresh=False):
                 "stale": age is None or age >= TELEPORT_MAX_AGE, "error": error}
 
 
+# ---------------------------------------------------------------------------
+# Statehelm gifts (GET/POST /api/statehelm). Prodigy Potential (wiki): the Statehelm trainers unlock it at Close
+# Friends, and each takes at most five gifts a week. What a trainer likes is game data (npcs.json Preferences:
+# Love / Like, keywords such as "Sword" + "MinRarity:Epic", "SkillPrereq:FireMagic", "!Stock", a Pref multiplier,
+# sometimes a favor gate). Favor per NPC is in the character export; the gift count is in nothing the game writes
+# out, so it is counted from this week's chat logs ("[Status] You gained N favor with <NPC>" while in Statehelm,
+# a quest turn-in in the same second excluded) and can be set by hand (settings.json, per week). The week is
+# assumed to start Monday 00:00 local: the game's reset rule is not in the data (docs/DATA-SOURCES.md §5).
+# ---------------------------------------------------------------------------
+STATEHELM_AREAS = {"AreaStatehelm", "AreaStatehelmCaves"}
+GIFTS_PER_WEEK = 5
+PRODIGY_FAVOR = "CloseFriends"
+RARITY_RANK = {r: i for i, r in enumerate(["Common", "Uncommon", "Rare", "Epic", "Legendary"])}
+STATEHELM_LOCK = threading.Lock()
+_statehelm_logs = {}   # log path -> (size, mtime, [(ts, character, area, npc_name, quest)]) favor-gain lines, parsed once
+
+
+def week_start(now=None):
+    """Monday 00:00 local of the week holding `now` (assumed reset; see the header comment)."""
+    now = now or datetime.now().astimezone()
+    start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    return start
+
+
+def skill_label(code):
+    """Readable skill name: skills.json Name when it has one, else the code split on capitals."""
+    try:
+        name = (cdn_data("skills").get(code) or {}).get("Name")
+    except Exception:
+        name = None
+    return name or re.sub(r"(?<=[a-z])(?=[A-Z])", " ", code)
+
+
+def statehelm_trainers():
+    """Every Statehelm NPC with a Training service: key, name, skills taught, the favor tiers that unlock more, gifts."""
+    out = []
+    for key, info in cdn_data("npcs").items():
+        if info.get("AreaName") not in STATEHELM_AREAS:
+            continue
+        training = [sv for sv in info.get("Services", []) if sv.get("Type") == "Training"]
+        if not training:
+            continue
+        skills = [s for sv in training for s in (sv.get("Skills") or []) if s and s != "Unknown"]
+        unlocks = sorted({u for sv in training for u in (sv.get("Unlocks") or [])}, key=lambda f: FAVOR_RANK.get(f, 99))
+        prefs = []
+        for p in info.get("Preferences", []):
+            if p.get("Desire") not in ("Love", "Like"):
+                continue
+            prefs.append({"desire": p["Desire"], "name": p.get("Name") or " + ".join(p.get("Keywords") or []),
+                          "keywords": p.get("Keywords") or [], "pref": p.get("Pref"),
+                          "favor": p.get("Favor") if p.get("Favor") not in (None, "Error") else None})
+        out.append({"npc": key, "name": info.get("Name", key), "desc": info.get("Desc") or "", "area": info.get("AreaFriendlyName", ""),
+                    "skills": [skill_label(s) for s in dict.fromkeys(skills)], "unlocks": unlocks, "prefs": prefs})
+    out.sort(key=lambda t: t["name"])
+    return out
+
+
+def pref_match(pref, row, entry):
+    """Does an exported item satisfy a gift preference? None when a keyword can't be judged from the export."""
+    kws = item_keywords(entry)
+    for k in pref["keywords"]:
+        if k.startswith("MinRarity:"):
+            if RARITY_RANK.get(row.get("Rarity") or "Common", 0) < RARITY_RANK.get(k.split(":", 1)[1], 0):
+                return False
+        elif k.startswith("SkillPrereq:"):
+            if k.split(":", 1)[1] not in (entry.get("SkillReqs") or {}):
+                return False
+        elif k.startswith("!"):
+            if k[1:] in kws:
+                return False
+        elif ":" in k:   # "Special:MastercraftedOrForetold" and the like: not in the export
+            return None
+        elif k not in kws:
+            return False
+    return True
+
+
+def statehelm_gift_lines(path):
+    """Favor-gain lines of one chat log with the character, the area and whether a quest reward landed in the same
+    second: parsed once per (size, mtime)."""
+    st = path.stat()
+    key = (st.st_size, st.st_mtime_ns)
+    cached = _statehelm_logs.get(path)
+    if cached and cached[0] == key:
+        return cached[1]
+    lines = []
+    with path.open(encoding="utf-8", errors="replace") as f:
+        for raw in f:
+            m = LINE_RE.match(raw.rstrip("\n"))
+            if m:
+                lines.append((m.group(1), m.group(2)))
+    loot_at = {ts for ts, msg in lines if LOOT_RE.match(msg)}
+    out, character, area = [], None, None
+    for ts, msg in lines:
+        if m := LOGIN_RE.match(msg):
+            character = m.group(1)
+        elif m := AREA_RE.match(msg):
+            area = m.group(1)
+        elif m := FAVOR_GAIN_RE.match(msg):
+            out.append((ts, character, area, m.group(2).strip(), ts in loot_at, float(m.group(1).replace(",", ""))))
+    _statehelm_logs[path] = (key, out)
+    return out
+
+
+def statehelm_gifts(trainers, character, start):
+    """Gifts this week per trainer, from the chat logs written since the week started."""
+    by_name = {t["name"]: t["npc"] for t in trainers}
+    names = set(by_name)
+    areas = {area_name(a) for a in STATEHELM_AREAS} | {cdn_data("areas").get(a, {}).get("FriendlyName") for a in STATEHELM_AREAS}
+    areas.discard(None)
+    gifts = {t["npc"]: {"logged": 0, "times": [], "quests": 0} for t in trainers}
+    logs_read = []
+    if not CHATLOGS.is_dir():
+        return gifts, logs_read
+    for p in sorted(CHATLOGS.glob("Chat-*.log")):
+        m = re.fullmatch(r"Chat-(\d\d)-(\d\d)-(\d\d)\.log", p.name)
+        if not m:
+            continue
+        day = datetime(2000 + int(m.group(1)), int(m.group(2)), int(m.group(3))).astimezone()
+        if day.date() < start.date():
+            continue
+        logs_read.append(p.name)
+        for ts, who, area, npc, quest, amount in statehelm_gift_lines(p):
+            if npc not in names or (character and who and who != character):
+                continue
+            dt = chat_dt(ts)
+            if dt is None or dt.astimezone() < start:
+                continue
+            if area is not None and area not in areas:   # gifts are handed over in person; favor earned elsewhere is a quest
+                continue
+            g = gifts[by_name[npc]]
+            if quest:
+                g["quests"] += 1
+                continue
+            g["logged"] += 1
+            g["times"].append({"at": chat_iso(ts), "favor": amount})
+    return gifts, logs_read
+
+
+def statehelm_settings():
+    d = load_settings().get("statehelm")
+    return d if isinstance(d, dict) else {}
+
+
+def statehelm_save(fn):
+    with APP_SETTINGS_LOCK:
+        d = load_settings()
+        sh = d.get("statehelm") if isinstance(d.get("statehelm"), dict) else {}
+        fn(sh)
+        d["statehelm"] = sh
+        save_settings(d)
+        return sh
+
+
+def statehelm_set(body):
+    """POST /api/statehelm: {picked: [npc keys]} replaces the picks; {npc, count} sets this week's gift count for one
+    trainer (null goes back to the chat-log count)."""
+    keys = {t["npc"] for t in statehelm_trainers()}
+    if "picked" in body:
+        picked = body["picked"]
+        if not isinstance(picked, list) or not all(isinstance(k, str) for k in picked):
+            raise BadRequest("picked must be a list of NPC keys")
+        bad = [k for k in picked if k not in keys]
+        if bad:
+            raise BadRequest(f"not a Statehelm trainer: {bad[0]}")
+        statehelm_save(lambda sh: sh.__setitem__("picked", list(dict.fromkeys(picked))))
+        return
+    if "npc" in body:
+        npc, count = body.get("npc"), body.get("count")
+        if npc not in keys:
+            raise BadRequest("npc must be a Statehelm trainer key")
+        if count is not None and (isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= 99):
+            raise BadRequest("count must be a whole number from 0 to 99, or null")
+        wk = week_start().isoformat()
+
+        def apply(sh):
+            counts = sh.get("counts") if isinstance(sh.get("counts"), dict) else {}
+            counts = {k: v for k, v in counts.items() if k == wk}   # older weeks fall away
+            mine = counts.get(wk) if isinstance(counts.get(wk), dict) else {}
+            if count is None:
+                mine.pop(npc, None)
+            else:
+                mine[npc] = count
+            counts[wk] = mine
+            sh["counts"] = counts
+        statehelm_save(apply)
+        return
+    raise BadRequest("body must carry picked or npc")
+
+
+def statehelm(character=None):
+    """GET /api/statehelm: the Statehelm trainers, what each likes, the matching items you hold, favor, and the
+    gifts given this week (counted from the chat log, or set by hand)."""
+    trainers = statehelm_trainers()
+    head = latest_report("CharacterSheet", character)
+    sheet = load_report(head["file"]) if head else {}
+    met = sheet.get("NPCs", {}) if isinstance(sheet.get("NPCs"), dict) else {}
+    who = character or (head or {}).get("character")
+    items_head = latest_report("Storage", who)
+    rows = load_report(items_head["file"]).get("Items", []) if items_head else []
+    items_cdn = cdn_data("items")
+    by_name, by_internal, by_type_id = item_maps()
+    start = week_start()
+    end = start + timedelta(days=7)
+    sh = statehelm_settings()
+    picked = [k for k in (sh.get("picked") or []) if isinstance(k, str)]
+    counts = (sh.get("counts") or {}).get(start.isoformat()) or {}
+    gifts, logs_read = statehelm_gifts(trainers, who, start)
+    out = []
+    for t in trainers:
+        mine = met.get(t["npc"]) or {}
+        favor_level = mine.get("FavorLevel")
+        matches, unchecked = [], []
+        for p in t["prefs"]:
+            found = []
+            judged = True
+            for row in rows:
+                entry = items_cdn.get(f"item_{row.get('TypeID')}")
+                if not entry:
+                    continue
+                ok = pref_match(p, row, entry)
+                if ok is None:
+                    judged = False
+                    break
+                if ok:
+                    found.append({"name": row.get("Name"), "typeId": row.get("TypeID"), "rarity": row.get("Rarity"),
+                                  "where": row.get("StorageVault") or ("Inventory" if row.get("IsInInventory") else "Unknown"),
+                                  "stack": row.get("StackSize") or 1, "value": row.get("Value") or 0,
+                                  "icon": entry.get("IconId"), "desire": p["desire"], "pref": p["name"]})
+            if not judged:
+                unchecked.append(p["name"])
+                continue
+            found.sort(key=lambda r: (-(RARITY_RANK.get(r["rarity"] or "Common", 0)), -r["value"], r["name"] or ""))
+            matches.extend(found)
+        g = gifts.get(t["npc"], {"logged": 0, "times": [], "quests": 0})
+        manual = counts.get(t["npc"]) if isinstance(counts.get(t["npc"]), int) else None
+        given = manual if manual is not None else g["logged"]
+        out.append({**t, "picked": t["npc"] in picked, "favor": favor_level, "favorPoints": mine.get("Favor"),
+                    "met": bool(mine), "notes": mine.get("PlayerNotes") or "",
+                    "prodigyAt": PRODIGY_FAVOR, "prodigyReady": FAVOR_RANK.get(favor_level, -1) >= FAVOR_RANK[PRODIGY_FAVOR],
+                    "items": matches, "unchecked": unchecked,
+                    "gifts": {"given": given, "left": max(GIFTS_PER_WEEK - given, 0), "cap": GIFTS_PER_WEEK,
+                              "logged": g["logged"], "manual": manual, "quests": g["quests"], "times": g["times"]}})
+    return {"trainers": out, "picked": picked, "cap": GIFTS_PER_WEEK,
+            "week": {"start": start.isoformat(), "end": end.isoformat(), "rule": "Monday 00:00 local (assumed)", "logs": logs_read},
+            "sources": {"character": head, "storage": items_head}, "cdnVersion": cdn_version()}
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=str(STATIC), **kw)
 
     def log_message(self, fmt, *args):
         pass
+
+    def end_headers(self):
+        # The page and its files: always revalidate. Without this WKWebView (the Mac app) kept an old index.html
+        # and app.js by Last-Modified heuristics after a server update, so a new view never appeared (27 Oct).
+        if not self.path.startswith("/api/"):
+            self.send_header("Cache-Control", "no-cache")
+        super().end_headers()
 
     def send_json(self, obj, status=200):
         body = json.dumps(obj).encode()
@@ -4543,6 +4798,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(lookup(q))
             if url.path == "/api/teleports":
                 return self.send_json(teleports(q.get("refresh") == "1"))
+            if url.path == "/api/statehelm":
+                return self.send_json(statehelm(q.get("character") or None))
             if url.path == "/api/files":
                 return self.send_json(list_files())
             if url.path == "/api/file/node":
@@ -4631,6 +4888,17 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error": repr(e)}, 500)
             return self.send_json(dict(res, ok=True, discord=discord_info()))
+        if url.path == "/api/statehelm":
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                if not isinstance(body, dict):
+                    raise BadRequest("body must be a JSON object")
+                statehelm_set(body)
+            except (BadRequest, json.JSONDecodeError) as e:
+                return self.send_json({"error": str(e) if isinstance(e, BadRequest) else "body must be JSON"}, 400)
+            except Exception as e:
+                return self.send_json({"error": repr(e)}, 500)
+            return self.send_json(dict(ok=True, **statehelm(body.get("character") or None)))
         if url.path == "/api/quit":
             # The Windows launcher asks an older server (left running from before a self-update) to make room for the
             # new one. Local only, like every POST here; answers first, exits a moment later.
@@ -4696,7 +4964,7 @@ def main(argv):
     if not exports:
         print("  No exports yet: in game, VIP menu -> Export Character JSON and Export Storage JSON.")
     if not logs:
-        print("  No chat logs yet: the game only writes one with Log All Chat on (the app's top bar says how).")
+        print("  No chat logs yet: the game only writes one with Save Chat Logs on (the app's top bar says how).")
     print("Close this window (or press Ctrl+C) to stop.")
     if open_browser:
         import webbrowser

@@ -13,7 +13,7 @@ import WebKit
 let info = Bundle.main.infoDictionary ?? [:]
 let port = info["GNPort"] as? String ?? "8787"
 let base = URL(string: "http://127.0.0.1:\(port)/")!
-let views = ["session", "combat", "vendors", "storage", "character", "files", "teleports"]
+let views = ["session", "combat", "vendors", "storage", "character", "files", "teleports", "statehelm"]
 
 // Replaces window.Notification inside the page. Permission is injected at document start.
 let notificationShim = """
@@ -368,7 +368,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     window.contentView = web
     window.center()
     window.setFrameAutosaveName("GorgonNotesMain")
-    web.load(URLRequest(url: base))
+    // Drop the cached page and scripts first: the server's files may have changed since the last launch, and the
+    // cache would otherwise serve the old app.js (the Statehelm tab was missing that way on 27 Oct). Settings in
+    // localStorage are not touched.
+    let store = WKWebsiteDataStore.default()
+    store.removeData(ofTypes: [WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache], modifiedSince: .distantPast) { [web] in
+      web?.load(URLRequest(url: base, cachePolicy: .reloadRevalidatingCacheData))
+    }
   }
 
   func showWindow(view: String?) {

@@ -21,7 +21,7 @@ One central **Data Health** object, computed server-side, drives every channel. 
 | Character export age | `Character_<Name>_*.json` `Timestamp` | VIP → Export Character JSON |
 | **Broken export** | `Character: "???"`, `Race: "Error"`, empty quests/recipes | Re-export while fully logged in (not right before logout) |
 | Activity since export | chat log after export time, only lines while that character was logged in: storage/vendor areas visited, `You received N Councils`, 1+ storage searches, 50+ stacks of loot since the storage export (built 24 Oct; the `export-stale` moment fires on a search, or on a zone change after 50 more stacks, unless it is within 15 min after entering a vault area, where the `zone-storage` reminder already fired; then on the next one, and again after 2 h, until the next storage export) | Re-export: your storage/vendor numbers have changed |
-| Chat logging on | `GorgonSettings.txt` → `LogChat 1`; and today's chat log is growing while game runs | Settings → GUI → "Log All Chat" |
+| Chat logging on | `GorgonSettings.txt` → `LogChat 1`; and today's chat log is growing while game runs | Settings → V.I.P. → "Save Chat Logs" |
 | Combat logging levels | `GorgonSettings.txt` → `combatLog_*`, `LogNonAttacks` | Enable for death tracker |
 | Game running / logged in | `Project Gorgon` process (binary inside `MacPlayer.app`, verified 2026-10-23); `Logged In As` / `Logged Out` lines | — (context for reminders) |
 | Player.log live events | presence of `LocalPlayer: Process` lines | Unknown fix (open question); explain what's missing |

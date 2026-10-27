@@ -18,6 +18,7 @@ Every number in the app says where it came from, how old it is, and the exact in
 - **Character**: skills, currencies, stats, NPC favor and active quests with readable names, from any export, partial ones labelled.
 - **Files**: every file the app reads, with a JSON tree and search for the exports and the cached game data, and a pager and search for the chat logs.
 - **Teleports**: every Teleportation Machine code from the wiki's player-kept list, one window per zone with the zone you are in first, a search over zones, landmarks and codes, and a click to copy a code; each window says when the page was fetched and when the wiki last confirmed the numbers.
+- **Statehelm**: pick the trainers you gift for Prodigy Potential and see, per trainer, how many of the week's five gifts are left and which items in your bags and vaults they like; the count follows the chat log and can be set by hand.
 - **Reminders**: opt-in notifications at the moments that matter: logging in, arriving where your vaults are, after selling, when an export is broken or stale, when vendors reset. Native notifications in the Mac app.
 
 ![Session view: XP at a glance and the NPCs where you are](docs/screenshots/session.jpg)
@@ -65,7 +66,7 @@ Two optional layers on top:
 ## In the game
 
 - **Exports**: VIP menu → **Export Character JSON** and **Export Storage JSON**. They land in the game's `Reports` folder and the app reads them there. Export storage again after a big sorting session; the app tells you when it is time.
-- **Chat log**: Settings → GUI → **Log All Chat**. The Session and Combat views come from it, live. Without it the app still shows everything the exports hold.
+- **Chat log**: Settings → V.I.P. → **Save Chat Logs**. The Session and Combat views come from it, live. Without it the app still shows everything the exports hold.
 - **VIP auto-export**: the VIP settings can save the character automatically on logout and area changes. The app notices those files too.
 
 ## Playing with friends
@@ -93,4 +94,4 @@ A Python standard-library server (`server.py`) plus one HTML page with vanilla J
 
 Releasing: commit, push, tag `v0.<n>.<m>` and push the tag; `.github/workflows/release.yml` builds the exe, the zip and `version.txt` and attaches them to a GitHub release, which the Windows copies pick up at their next start. The Mac app needs no rebuild for UI changes, since it shows the page from the server.
 
-Open a view directly with a hash: `#session`, `#combat`, `#vendors`, `#storage`, `#character`, `#files`, `#teleports`. Preview modes for development, never saved: `?sim=stale|broken|nolog|noexport|loading|down`, `?shift=72`, `?theme=dark|daylight|auto`.
+Open a view directly with a hash: `#session`, `#combat`, `#vendors`, `#storage`, `#character`, `#files`, `#teleports`, `#statehelm`. Preview modes for development, never saved: `?sim=stale|broken|nolog|noexport|loading|down`, `?shift=72`, `?theme=dark|daylight|auto`.
