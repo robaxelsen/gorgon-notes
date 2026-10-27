@@ -5208,7 +5208,7 @@ function shCounts(d) {
 }
 function shWeekLabel(d) {
   const s = parseIso(d?.week?.start);
-  return s ? `since Mon ${dayMon(s)}` : 'this week';
+  return s ? `since Mon ${dayMon(s)} ${hhmm(s)}` : 'this week';
 }
 function shPrefText(t) {
   const loves = t.prefs.filter(p => p.desire === 'Love').map(p => p.name + (p.favor ? ` (from ${favorLabel(p.favor)})` : ''));
@@ -5289,7 +5289,7 @@ function renderStatehelm() {
     else {
       let f;
       if (!c.picked) f = `Pick the trainers you gift below. Each takes <em class="n">${fmt(d.cap)}</em> gifts a week, and Close Friends unlocks Prodigy Potential.`;
-      else if (!c.left) f = `All <em class="n">${fmt(c.cap)}</em> gifts given this week across <em class="n">${fmt(c.picked)}</em> trainers. The count starts again on Monday.`;
+      else if (!c.left) f = `All <em class="n">${fmt(c.cap)}</em> gifts given this week across <em class="n">${fmt(c.picked)}</em> trainers. The count starts again Monday${parseIso(d.week?.end) ? ` at ${hhmm(parseIso(d.week.end))}` : ''}.`;
       else f = `<em class="n">${fmt(c.left)}</em> gifts left this week across <em class="n">${fmt(c.picked)}</em> trainers, and ${storageMissing ? 'no storage export to find items in' : `<em class="n">${fmt(c.items)}</em> items you hold to give`}.`;
       if (sevOf('storage-export') === 'warn') f += ` <span class="suffix">The storage export is ${ageWord(V('storage-export').ageSec)} old.</span>`;
       $('#finding').html = f;

@@ -17,7 +17,7 @@ import threading
 import time
 from array import array
 from collections import Counter, OrderedDict, defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -4458,8 +4458,10 @@ def teleports(refresh=False):
 # Love / Like, keywords such as "Sword" + "MinRarity:Epic", "SkillPrereq:FireMagic", "!Stock", a Pref multiplier,
 # sometimes a favor gate). Favor per NPC is in the character export; the gift count is in nothing the game writes
 # out, so it is counted from this week's chat logs ("[Status] You gained N favor with <NPC>" while in Statehelm,
-# a quest turn-in in the same second excluded) and can be set by hand (settings.json, per week). The week is
-# assumed to start Monday 00:00 local: the game's reset rule is not in the data (docs/DATA-SOURCES.md §5).
+# a quest turn-in in the same second excluded) and can be set by hand (settings.json, per week). The week turns
+# Monday 00:00 US Eastern (the user's rule, 27 Oct; glogger uses Monday 00:00 UTC): the game data doesn't say
+# (docs/DATA-SOURCES.md §5). WEEK_RESET_TZ names the zone; the Windows embeddable Python has no tz database, so
+# _USEastern carries the US DST rule as a fallback.
 # ---------------------------------------------------------------------------
 STATEHELM_AREAS = {"AreaStatehelm", "AreaStatehelmCaves"}
 GIFTS_PER_WEEK = 5
@@ -4469,11 +4471,55 @@ STATEHELM_LOCK = threading.Lock()
 _statehelm_logs = {}   # log path -> (size, mtime, [(ts, character, area, npc_name, quest)]) favor-gain lines, parsed once
 
 
+WEEK_RESET_TZ = "America/New_York"
+WEEK_RESET_RULE = "Monday 00:00 US Eastern"
+
+
+class _USEastern(tzinfo):
+    """US Eastern without a tz database: UTC-5, UTC-4 from the second Sunday of March 02:00 to the first Sunday
+    of November 02:00 (the rule since 2007). Used only when zoneinfo has no America/New_York."""
+
+    @staticmethod
+    def _dst_bounds(year):
+        march = datetime(year, 3, 1)
+        start = march + timedelta(days=(6 - march.weekday()) % 7 + 7, hours=2)
+        nov = datetime(year, 11, 1)
+        end = nov + timedelta(days=(6 - nov.weekday()) % 7, hours=2)
+        return start, end
+
+    def _is_dst(self, dt):
+        if dt is None:
+            return False
+        start, end = self._dst_bounds(dt.year)
+        naive = dt.replace(tzinfo=None)
+        if dt.fold:
+            naive -= timedelta(hours=1)
+        return start <= naive < end
+
+    def utcoffset(self, dt):
+        return timedelta(hours=-4 if self._is_dst(dt) else -5)
+
+    def dst(self, dt):
+        return timedelta(hours=1 if self._is_dst(dt) else 0)
+
+    def tzname(self, dt):
+        return "EDT" if self._is_dst(dt) else "EST"
+
+
+def reset_tz():
+    """The zone the gift week turns in: zoneinfo when the machine has tz data, else the built-in US Eastern rule."""
+    try:
+        from zoneinfo import ZoneInfo
+        return ZoneInfo(WEEK_RESET_TZ)
+    except Exception:
+        return _USEastern()
+
+
 def week_start(now=None):
-    """Monday 00:00 local of the week holding `now` (assumed reset; see the header comment)."""
-    now = now or datetime.now().astimezone()
+    """Monday 00:00 US Eastern of the week holding `now`, as a local-time datetime (see the header comment)."""
+    now = (now or datetime.now().astimezone()).astimezone(reset_tz())
     start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
-    return start
+    return start.astimezone()
 
 
 def skill_label(code):
@@ -4655,7 +4701,7 @@ def statehelm(character=None):
     items_cdn = cdn_data("items")
     by_name, by_internal, by_type_id = item_maps()
     start = week_start()
-    end = start + timedelta(days=7)
+    end = (start.astimezone(reset_tz()) + timedelta(days=7)).astimezone()   # next Monday 00:00 Eastern, DST-safe
     sh = statehelm_settings()
     picked = [k for k in (sh.get("picked") or []) if isinstance(k, str)]
     counts = (sh.get("counts") or {}).get(start.isoformat()) or {}
@@ -4696,7 +4742,7 @@ def statehelm(character=None):
                     "gifts": {"given": given, "left": max(GIFTS_PER_WEEK - given, 0), "cap": GIFTS_PER_WEEK,
                               "logged": g["logged"], "manual": manual, "quests": g["quests"], "times": g["times"]}})
     return {"trainers": out, "picked": picked, "cap": GIFTS_PER_WEEK,
-            "week": {"start": start.isoformat(), "end": end.isoformat(), "rule": "Monday 00:00 local (assumed)", "logs": logs_read},
+            "week": {"start": start.isoformat(), "end": end.isoformat(), "rule": WEEK_RESET_RULE, "tz": WEEK_RESET_TZ, "logs": logs_read},
             "sources": {"character": head, "storage": items_head}, "cdnVersion": cdn_version()}
 
 
