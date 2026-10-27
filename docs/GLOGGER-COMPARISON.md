@@ -29,7 +29,7 @@ glogger parses `LocalPlayer: ProcessAddItem / ProcessDeleteItem / ProcessUpdateI
 
 ## Blocked without Player.log `LocalPlayer` events
 - Live inventory; items outgoing (sold/stored/consumed)
-- Live favor changes; **Statehelm weekly gift tracker** (uses `ProcessDeltaFavor` with gift flag; 5 gifts/NPC/week, resets Monday 00:00 UTC)
+- Live favor changes; **Statehelm weekly gift tracker** (uses `ProcessDeltaFavor` with gift flag; 5 gifts/NPC/week, resets Monday 00:00 UTC; the game's Give Gift dialog says Monday EDT, see DATA-SOURCES §5)
 - Vendor's actual available gold while at the sell screen (we estimate from export: cap − CouncilsSpent)
 - Live storage deposits/withdrawals
 - Words of Power capture (`ProcessBook`), milking timers

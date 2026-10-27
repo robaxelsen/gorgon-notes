@@ -4510,8 +4510,8 @@ def teleports(refresh=False):
 # sometimes a favor gate). Favor per NPC is in the character export; the gift count is in nothing the game writes
 # out, so it is counted from this week's chat logs ("[Status] You gained N favor with <NPC>" while in Statehelm,
 # a quest turn-in in the same second excluded) and can be set by hand (settings.json, per week). The week turns
-# Monday 00:00 US Eastern (the user's rule, 27 Oct; glogger uses Monday 00:00 UTC): the game data doesn't say
-# (docs/DATA-SOURCES.md §5). WEEK_RESET_TZ names the zone; the Windows embeddable Python has no tz database, so
+# Monday 00:00 US Eastern: the Give Gift dialog says "up to 5 gifts per calendar week … (The week resets on Monday
+# EDT.)" (seen 28 Oct; docs/DATA-SOURCES.md §5). The game data doesn't say, and the dialog is not in the chat log. WEEK_RESET_TZ names the zone; the Windows embeddable Python has no tz database, so
 # _USEastern carries the US DST rule as a fallback.
 # ---------------------------------------------------------------------------
 STATEHELM_AREAS = {"AreaStatehelm", "AreaStatehelmCaves"}
