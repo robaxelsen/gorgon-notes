@@ -983,6 +983,30 @@ class DpsTracker:
         self.last_combat = None     # ts of the last [Combat] line
         self.last_damage = None     # ts of the last direct-damage line
         self.first_ts = self.last_ts = None
+        self.seeded_from = None     # the previous day's log fed first, so a run across midnight stays one (dps_tracker)
+
+    def begin_log(self, prev_name):
+        """Called after the previous day's log was fed: its lines gave this tracker the area, the character, the
+        party and the fights, and from here on the counters describe the newest log alone."""
+        self.seeded_from = prev_name
+        self.first_ts = self.last_ts = self.last_combat = None
+        self.lines = 0
+
+    def day_boundary(self):
+        """Where the day scope starts: the newest log's first line (midnight, when the game rolled the log over),
+        moved back to the start of a run in progress then: fights at most SESSION_GAP_SEC apart, chained back
+        from the first one in this log (or from its first line) into the previous day's."""
+        if not self.first_ts:
+            return None
+        boundary = nxt = chat_dt(self.first_ts)
+        for f in reversed(self.fights):
+            if f.start_dt >= boundary:
+                nxt = f.start_dt
+            elif (nxt - f.end_dt).total_seconds() <= SESSION_GAP_SEC:
+                boundary = nxt = f.start_dt
+            else:
+                break
+        return boundary
 
     def _open(self, ts, dt):
         f = self.cur
@@ -1195,11 +1219,12 @@ class DpsTracker:
         live = (now.timestamp() - st.st_mtime) < 15 * 60
         me = self.char
         pets, enemies = self.classify()
-        # Scope: the day starts at the day's first login (like /api/session); "login" at the last one.
-        boundary = None
-        if self.logins:
-            boundary = chat_dt(self.logins[-1][0] if scope == "login" else self.logins[0][0])
+        # Scope: "login" starts at the last login line (yesterday's when the game rolled the log at midnight mid-
+        # session); "day" at this log's first line, moved back over a run in progress then (day_boundary).
+        boundary = chat_dt(self.logins[-1][0]) if scope == "login" and self.logins else self.day_boundary()
         fights = [f for f in self.fights if boundary is None or f.start_dt >= boundary]
+        log_start = chat_dt(self.first_ts) if self.first_ts else None
+        carried = sum(1 for f in fights if log_start and f.start_dt < log_start)
         last = fights[-1] if fights else None
         open_fight = bool(live and last is not None and (now - last.end_dt).total_seconds() <= DPS_GAP_SEC)
         rows = [self.fight_json(f, self.char_at(f.start_dt), pets, enemies, now if (open_fight and f is last) else None) for f in fights]
@@ -1216,6 +1241,7 @@ class DpsTracker:
                 nowfig["recent"] = round(sum(d for dt, att, d in last.recent if dt >= cut and att in mine) / DPS_NOW_SEC, 1)
         return {
             "log": path.name, "scope": scope, "character": me, "live": live,
+            "since": local_iso(boundary) if boundary else None, "carried": carried, "seededFrom": self.seeded_from,
             "lastLineAt": chat_iso(self.last_ts), "lastCombatAt": chat_iso(self.last_combat),
             "combatLines": self.lines, "gapSec": DPS_GAP_SEC, "nowSec": DPS_NOW_SEC, "minor": DPS_MINOR,
             "pets": sorted(pets), "unclassified": unclassified,
@@ -1411,9 +1437,22 @@ _dps = {}
 _dps_lock = threading.Lock()
 
 
+def previous_chatlog(path):
+    """The chat log of the calendar day before `path`'s, if it exists (the game starts a new file at midnight, so a
+    run in progress then continues in the next file with no login or area line)."""
+    try:
+        day = datetime.strptime(path.name[5:13], "%y-%m-%d")
+    except ValueError:
+        return None
+    prev = path.with_name((day - timedelta(days=1)).strftime("Chat-%y-%m-%d.log"))
+    return prev if prev.is_file() else None
+
+
 def dps_tracker(path):
     """The DpsTracker for a chat log, fed only the bytes written since the last call (the game appends; a shrink
-    means a rewrite, so the tracker starts over). The offset stops after the last complete line."""
+    means a rewrite, so the tracker starts over). The offset stops after the last complete line. A new tracker is
+    fed the previous day's log first (whole), so the area, the character, the party and a run that crossed
+    midnight carry over; the day scope then starts at that run (DpsTracker.day_boundary)."""
     st = path.stat()
     key = (st.st_size, st.st_mtime)
     with _dps_lock:
@@ -1421,7 +1460,19 @@ def dps_tracker(path):
         if ent and ent["key"] == key:
             return ent["tracker"], st
         if not ent or st.st_size < ent["offset"]:
-            ent = {"offset": 0, "key": None, "tracker": DpsTracker(resolve=lambda: last_login_before(path)[0])}
+            tracker = DpsTracker(resolve=lambda: last_login_before(path)[0])
+            prev = previous_chatlog(path)
+            if prev is not None:
+                try:
+                    with prev.open(encoding="utf-8", errors="replace") as f:
+                        for raw in f:
+                            m = LINE_RE.match(raw.rstrip("\r\n"))
+                            if m:
+                                tracker.feed(m.group(1), m.group(2))
+                    tracker.begin_log(prev.name)
+                except OSError:
+                    tracker = DpsTracker(resolve=lambda: last_login_before(path)[0])
+            ent = {"offset": 0, "key": None, "tracker": tracker}
             _dps.clear()  # one tracker: the newest log only
             _dps[path] = ent
         with path.open("rb") as f:

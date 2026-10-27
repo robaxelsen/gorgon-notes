@@ -37,7 +37,7 @@ Created via in-game **VIP menu → Export Character JSON / Export Storage JSON**
 - Older exports also exist as `.csv`.
 
 ### `ChatLogs/Chat-YY-MM-DD.log` — the live source
-Requires Settings → V.I.P. → "Save Chat Logs" (user, 27 Oct 2026: the GUI tab was the wrong place; the Settings window's V.I.P. tab holds "Combat Logging" with per-category "Log when…" dropdowns ("Log File Only (if enabled)") and "Log non-damaging abilities", and its hint says "Remember to enable 'Save Chat Logs' if you want your combat logs to be written to a file!"). Format: `YY-MM-DD HH:MM:SS\t<message>`; continuation lines have no timestamp. Local time. A new file starts at midnight (sessions spanning midnight are split across files).
+Requires Settings → V.I.P. → "Save Chat Logs" (user, 27 Oct 2026: the GUI tab was the wrong place; the Settings window's V.I.P. tab holds "Combat Logging" with per-category "Log when…" dropdowns ("Log File Only (if enabled)") and "Log non-damaging abilities", and its hint says "Remember to enable 'Save Chat Logs' if you want your combat logs to be written to a file!"). Format: `YY-MM-DD HH:MM:SS\t<message>`; continuation lines have no timestamp. Local time. A new file starts at midnight, with no login or area line when you were playing then (sessions spanning midnight are split across files: user, 28 Oct 2026, an egg run from 23:45 to 00:17 showed only its post-midnight fights as "Unknown area 00:00 to 00:18"). The DPS tracker feeds the previous day's log first (`previous_chatlog`, `DpsTracker.begin_log`, `day_boundary`), so such a run is one session with its area.
 
 Useful patterns (regexes in `server.py`):
 - `**** Logged In As Robchew. Server Arisetsu. Timezone Offset 02:00:00.` / `**** Logged Out`

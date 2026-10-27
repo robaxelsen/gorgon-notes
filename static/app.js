@@ -1876,6 +1876,7 @@ function combatFinding(c, scopeWord) {
   if (t.best) out += ` Best: <em class="n">${fmt(t.best.dps)}</em> a second at ${t.best.start.slice(9, 14)}, over ${secs(t.best.dur)}.`;
   if (t.dmg && t.pet) out += ` Your pets did ${pctOf(t.pet, t.dmg)} of it.`;
   if (t.deaths) out += ` Died ${t.deaths === 1 ? 'once' : t.deaths === 2 ? 'twice' : `${fmt(t.deaths)} times`}.`;
+  if (c.carried && c.since && scopeWord === 'today') out += ` <span class="dim">Counted from ${hhmm(parseIso(c.since))} yesterday: that run was still going at midnight, when the game starts a new log.</span>`;
   return out;
 }
 
