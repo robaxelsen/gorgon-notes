@@ -2504,14 +2504,14 @@ def discord_table_text(card, party):
 
 
 def discord_embed(card, party, with_image):
-    """With the picture: title, facts, picture, note (the picture is the table). Without: the narrow text table too."""
-    e = {"title": card["title"][:256], "color": DISCORD_COLOR,
+    """Title, the narrow text table, facts, the picture when the page drew one, note. The text table is always there
+    (29 Oct): a forwarded message and a Discord client that hides uploaded pictures both drop the attachment, and
+    then the embed must still show every player's numbers on its own."""
+    e = {"title": card["title"][:256], "color": DISCORD_COLOR, "description": discord_table_text(card, party)[:4096],
          "fields": [{"name": k, "value": v[:1024], "inline": k not in ("Top", "Fought")} for k, v in card["facts"]],
          "footer": {"text": card["note"][:2048]}}
     if with_image:
         e["image"] = {"url": "attachment://fight.png"}
-    else:
-        e["description"] = discord_table_text(card, party)[:4096]
     return e
 
 

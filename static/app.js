@@ -1465,7 +1465,7 @@ async function postDiscord(body, what) {
     try { image = fightCardPng(pv.card); } catch { image = null; }
     const r = await api('/api/discord', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, image }) });
     if (S.party && r.discord) S.party.discord = r.discord;
-    sysLine('status', `Posted ${what} to Discord${r.withImage ? ' with a picture of the table' : ' (table as text; the picture could not be drawn here)'}.`);
+    sysLine('status', `Posted ${what} to Discord${r.withImage ? ' (table as text, plus a picture of it)' : ' (table as text; the picture could not be drawn here)'}.`);
     return r;
   } catch (e) {
     sysLine('error', e?.status === 400 ? e.message : "Couldn't post to Discord. The server didn't answer; try again.");
