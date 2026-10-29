@@ -5,6 +5,12 @@ main = "src/worker.js"
 compatibility_date = "2025-11-01"
 workers_dev = true
 
+# The everyone page is a plain HTML file imported as text (src/everyone.html).
+[[rules]]
+type = "Text"
+globs = ["**/*.html"]
+fallthrough = true
+
 # Discord "Connect a channel" (docs/DISCORD.md): the application's client id is public; the secret is set once with
 # `npx wrangler secret put DISCORD_CLIENT_SECRET`, never written here. Register the redirect
 # https://<this worker>/discord/callback on the application's OAuth2 page in the Discord Developer Portal.

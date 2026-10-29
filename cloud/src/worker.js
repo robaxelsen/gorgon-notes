@@ -10,6 +10,12 @@
 //   POST /room/<code>/tick               body: { who, dps, recent, fightStart, inFight } -> { ok }
 //   GET  /room/<code>/live               -> { live: [{ who, dps, recent, fightStart, at }] }
 //
+// The everyone feed (29 Oct): the same Room, named "everyone", that every app posts every closed fight to, party
+// code or not, and the page that groups them into runs the way the app's Party window does (src/everyone.html).
+//
+//   GET  /everyone                       the page
+//   POST /everyone/fights, GET /everyone/fights?after=<ms>&since=<id>, /everyone/tick, /everyone/live  as a room
+//
 // Discord "Connect a channel" broker (docs/DISCORD.md option B). The app makes an unguessable `state`, opens
 // /discord/start in the player's browser, Discord shows its own server + channel picker and sends the player
 // back to /discord/callback with a code; this Worker swaps the code for the webhook (that needs the app's
@@ -26,12 +32,15 @@
 // replaces the old row under a new id, so a poller with `since` sees the update.
 
 import { DurableObject } from "cloudflare:workers";
+import EVERYONE_HTML from "./everyone.html";
 
 const V = 2;
 const CODE_RE = /^gn-[a-z0-9]{12}$/;
 const BODY_MAX = 8 * 1024;
 const KEEP_MS = 30 * 24 * 3600 * 1000;
 const KEEP_ROWS = 5000;
+const KEEP_ROWS_EVERYONE = 20000;
+const EVERYONE = "everyone";
 const LIVE_MS = 20 * 1000;
 const PAGE = 500;
 
@@ -41,12 +50,16 @@ const json = (obj, status = 200) =>
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (url.pathname === "/") return json({ ok: true, service: "gorgon-notes-room", v: V, discord: !!(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET) });
+    if (url.pathname === "/") return json({ ok: true, service: "gorgon-notes-room", v: V, discord: !!(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET), everyone: "/everyone" });
     if (url.pathname.startsWith("/discord/")) return discord(request, url, env);
-    const m = url.pathname.match(/^\/room\/([^/]+)\/(fights|tick|live)$/);
+    if (url.pathname === "/everyone" || url.pathname === "/everyone/") {
+      if (request.method !== "GET" && request.method !== "HEAD") return json({ error: "method not allowed" }, 405);
+      return new Response(EVERYONE_HTML, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } });
+    }
+    const m = url.pathname.match(/^\/(?:room\/([^/]+)|(everyone))\/(fights|tick|live)$/);
     if (!m) return json({ error: "not found" }, 404);
-    const code = m[1].toLowerCase();
-    if (!CODE_RE.test(code)) return json({ error: "a party code looks like gn- and 12 letters or digits" }, 400);
+    const code = m[2] ? EVERYONE : m[1].toLowerCase();
+    if (!m[2] && !CODE_RE.test(code)) return json({ error: "a party code looks like gn- and 12 letters or digits" }, 400);
     const id = env.ROOM.idFromName(code);
     return env.ROOM.get(id).fetch(request);
   },
@@ -122,9 +135,10 @@ export class Room extends DurableObject {
 
   getFights(url, now) {
     const since = Math.max(0, parseInt(url.searchParams.get("since") || "0", 10) || 0);
+    const after = Math.max(0, parseInt(url.searchParams.get("after") || "0", 10) || 0);   // rows received after this ms time (the everyone page)
     const who = (url.searchParams.get("who") || "").trim().slice(0, 40);
     if (who) this.touch(who, now, null);
-    const rows = this.sql.exec(`SELECT id, who, start, at, json FROM fights WHERE id > ? ORDER BY id LIMIT ?`, since, PAGE).toArray();
+    const rows = this.sql.exec(`SELECT id, who, start, at, json FROM fights WHERE id > ? AND at > ? ORDER BY id LIMIT ?`, since, after, PAGE).toArray();
     const fights = rows.map(r => ({ id: r.id, at: r.at, summary: JSON.parse(r.json) }));
     const last = rows.length ? rows[rows.length - 1].id : since;
     const more = rows.length === PAGE;
@@ -143,8 +157,9 @@ export class Room extends DurableObject {
 
   prune(now) {
     this.sql.exec(`DELETE FROM fights WHERE at < ?`, now - KEEP_MS);
+    const keep = this.ctx.id.name === EVERYONE ? KEEP_ROWS_EVERYONE : KEEP_ROWS;
     const n = this.sql.exec(`SELECT COUNT(*) AS n FROM fights`).one().n;
-    if (n > KEEP_ROWS) this.sql.exec(`DELETE FROM fights WHERE id IN (SELECT id FROM fights ORDER BY id LIMIT ?)`, n - KEEP_ROWS);
+    if (n > keep) this.sql.exec(`DELETE FROM fights WHERE id IN (SELECT id FROM fights ORDER BY id LIMIT ?)`, n - keep);
     this.sql.exec(`DELETE FROM members WHERE lastSeen < ?`, now - KEEP_MS);
   }
 }

@@ -1672,7 +1672,8 @@ ROOM_LIVE_MAX_SEC = 20       # a tick older than this is over
 _party = {"code": None, "since": None, "posted": {}, "remote": {}, "sinceId": None, "lastPoll": 0.0, "lastReq": 0.0,
           "lastOkAt": None, "lastErrAt": None, "lastErr": None, "lastPostAt": None, "lastMsgAt": None, "thread": None,
           "roomSince": 0, "roomOkAt": None, "roomErrAt": None, "roomErr": None, "live": {}, "roomMembers": [], "inFight": False,
-          "sessions": []}   # manual sessions: [{"start": iso, "end": iso | None}], Start/Stop in the Party window
+          "sessions": [],
+          "allPostAt": None, "allErr": None, "allErrAt": None}   # the everyone feed (everyone_publish)   # manual sessions: [{"start": iso, "end": iso | None}], Start/Stop in the Party window
 SESSION_GAP_SEC = 15 * 60   # automatic sessions: merged fights in one area, at most this far apart
 SESSION_KEEP = 40           # manual sessions remembered
 
@@ -1807,14 +1808,15 @@ def link_name():
     return "the party room" if ROOM_BASE else "ntfy.sh"
 
 
-def party_local_rows():
-    """This machine's closed, non-minor fights since the code was set (the day scope of the live tracker)."""
+def party_local_rows(all_day=False):
+    """This machine's closed, non-minor fights since the code was set (the day scope of the live tracker);
+    `all_day` ignores the join clock (the everyone feed takes the whole day scope)."""
     log = latest_chatlog()
     if not log:
         return None, []
     tracker, st = dps_tracker(log)
     rep = tracker.result("day", log, st)
-    since = iso_dt(_party["since"]) if _party["code"] else None
+    since = iso_dt(_party["since"]) if _party["code"] and not all_day else None
     rows = [r for r in rep["fights"] if not r["open"] and not r["minor"] and r["dmg"] > 0 and r["endAt"]
             and (since is None or (iso_dt(r["endAt"]) or since) >= since)]
     return rep["character"], rows
@@ -1858,6 +1860,75 @@ def party_publish():
             _party["posted"][key] = r["endAt"]
         _party.update(lastPostAt=now, lastOkAt=now)
     party_save()
+
+
+# The everyone feed (29 Oct; cloud/ GET /everyone): every closed fight of the day scope goes up with or without a
+# party code, so a player who never picked a code still lands on the page, and the fights fought while the app
+# was closed go up at its next start (the day scope, plus the previous day's run carried over at midnight; older
+# days are not read). Keyed all|<start> in party.json `posted`, so a restart never re-posts. Off with
+# settings.json {"shareEveryone": false} (POST /api/settings).
+EVERYONE_KEY = "all"
+EVERYONE_KEEP_H = 48
+
+
+def everyone_on():
+    v = load_settings().get("shareEveryone")
+    return True if v is None else bool(v)
+
+
+def everyone_url():
+    return f"{ROOM_BASE}/everyone" if ROOM_BASE else None
+
+
+def everyone_publish():
+    """Post every closed fight of the day scope not posted to the everyone feed yet. A failure leaves the rest
+    for the next tick."""
+    if not room_usable() or not everyone_on():
+        return
+    me, rows = party_local_rows(all_day=True)
+    if not me:
+        return
+    cutoff = local_iso(datetime.now() - timedelta(hours=EVERYONE_KEEP_H))
+    for k in [k for k, v in _party["posted"].items() if k.startswith(EVERYONE_KEY + "|") and v < cutoff]:
+        del _party["posted"][k]
+    sent = 0
+    for r in rows:
+        key = f"{EVERYONE_KEY}|{r['at']}"
+        if key in _party["posted"]:
+            continue
+        summ = party_summary(r, r.get("character") or me, f"gorgon-notes {app_version()[0]}")
+        try:
+            room_req("everyone/fights", summ)
+        except Exception as e:
+            _party.update(allErr=f"post: {e}"[:200], allErrAt=local_iso(datetime.now()))
+            break
+        _party["posted"][key] = r["endAt"]
+        _party.update(allPostAt=local_iso(datetime.now()), allErr=None, allErrAt=None)
+        sent += 1
+    if sent:
+        party_save()
+
+
+def everyone_tick():
+    with PARTY_LOCK:
+        try:
+            everyone_publish()
+        except Exception as e:
+            _party.update(allErr=f"publish: {e}"[:200], allErrAt=local_iso(datetime.now()))
+
+
+def everyone_info():
+    """/api/party `everyone`: on or off, the page, what was sent today and what waits. Call under PARTY_LOCK."""
+    on = room_usable() and everyone_on()
+    try:
+        _, rows = party_local_rows(all_day=True)
+    except Exception:
+        rows = []
+    posted = len([k for k in _party["posted"] if k.startswith(EVERYONE_KEY + "|")])
+    pending = len([r for r in rows if f"{EVERYONE_KEY}|{r['at']}" not in _party["posted"]]) if on else 0
+    err_at, ok_at = _party["allErrAt"], _party["allPostAt"]
+    return {"on": on, "available": room_usable(), "url": everyone_url(), "lastPostAt": ok_at, "lastError": _party["allErr"], "lastErrorAt": err_at,
+            "down": bool(err_at and (not ok_at or err_at > ok_at)), "posted": posted, "pending": pending}
 
 
 def room_poll(code):
@@ -1999,6 +2070,10 @@ def party_tick():
             party_publish()
         except Exception as e:
             _party.update(lastErr=f"publish: {e}"[:200], lastErrAt=local_iso(datetime.now()))
+        try:
+            everyone_publish()
+        except Exception as e:
+            _party.update(allErr=f"publish: {e}"[:200], allErrAt=local_iso(datetime.now()))
         if time.time() - _party["lastReq"] < PARTY_IDLE_SEC:
             party_poll()
 
@@ -2049,14 +2124,17 @@ def party_thread():
         while True:
             time.sleep(ROOM_LIVE_SEC)
             discord_claim_tick()
-            if not _party["code"]:
-                continue
             i += 1
+            slow = i % max(1, PARTY_TICK_SEC // ROOM_LIVE_SEC) == 0
+            if not _party["code"]:
+                if slow:
+                    everyone_tick()   # the everyone feed needs no code
+                continue
             with PARTY_LOCK:
                 party_live_tick()
                 watching = time.time() - _party["lastReq"] < PARTY_IDLE_SEC
                 fast = room_usable() and watching and (_party["inFight"] or bool(_party["live"]))
-            if i % max(1, PARTY_TICK_SEC // ROOM_LIVE_SEC) == 0:
+            if slow:
                 party_tick()
             elif fast:
                 with PARTY_LOCK:
@@ -2249,7 +2327,7 @@ def party_state():
                          "lastPostAt": _party["lastPostAt"], "lastMessageAt": _party["lastMsgAt"],
                          "posted": len([k for k in _party["posted"] if code and k.startswith(code + "|")]),
                          "pending": pending, "received": len(_party["remote"]) - pasted, "pasted": pasted},
-                "roster": dict(roster, notSharing=not_sharing), "discord": discord_info(),
+                "roster": dict(roster, notSharing=not_sharing), "discord": discord_info(), "everyone": everyone_info(),
                 "transport": {"kind": "room" if room_usable() else "ntfy", "name": link_name(), "base": ROOM_BASE or NTFY_BASE,
                               "roomOkAt": _party["roomOkAt"], "roomErrorAt": _party["roomErrAt"], "roomError": _party["roomErr"],
                               "fallback": bool(room_usable() and _party["roomErrAt"] and (not _party["roomOkAt"] or _party["roomErrAt"] > _party["roomOkAt"]))},
@@ -3452,6 +3530,18 @@ def health(character=None):
     else:
         add("cdn", "ok", "Game data", f"Game data v{ver}, current.", views=[], server_only=True)
 
+    # the everyone feed (cloud/ GET /everyone): a warning only when it stopped taking fights and some wait
+    with PARTY_LOCK:
+        try:
+            ev = everyone_info()
+        except Exception:
+            ev = None
+        if ev and ev["on"] and ev["down"] and ev["pending"]:
+            err_t = iso_dt(ev["lastErrorAt"])
+            add("everyone-feed", "warn", "Everyone's fights",
+                f"The everyone page hasn't taken fights since {err_t.strftime('%H:%M') if err_t else 'a while'}; "
+                f"{plural(ev['pending'], 'fight waits', 'fights wait')} and {'goes' if ev['pending'] == 1 else 'go'} out when it answers.",
+                "everyone-feed", views=["combat"], at=err_t.replace(tzinfo=None) if err_t else None, evidence_data={"pending": ev["pending"]})
     # party sharing over ntfy.sh, only while joined (docs/SHARING.md)
     with PARTY_LOCK:
         pcode = _party["code"]
@@ -4977,9 +5067,20 @@ class Handler(SimpleHTTPRequestHandler):
         if url.path == "/api/settings":
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
-                if not isinstance(body, dict) or "discordWebhook" not in body:
-                    raise BadRequest("body must be a JSON object with discordWebhook")
-                res = set_discord_webhook(body.get("discordWebhook"))
+                if not isinstance(body, dict) or not ({"discordWebhook", "shareEveryone"} & set(body)):
+                    raise BadRequest("body must be a JSON object with discordWebhook or shareEveryone")
+                res = {}
+                if "shareEveryone" in body:
+                    d = load_settings()
+                    d["shareEveryone"] = bool(body["shareEveryone"])
+                    save_settings(d)
+                    with PARTY_LOCK:
+                        _party.update(allErr=None, allErrAt=None)
+                        res["everyone"] = everyone_info()
+                    if d["shareEveryone"]:
+                        threading.Thread(target=everyone_tick, daemon=True).start()   # send what waits now, not in 10 s
+                if "discordWebhook" in body:
+                    res.update(set_discord_webhook(body.get("discordWebhook")))
             except (BadRequest, json.JSONDecodeError) as e:
                 return self.send_json({"error": str(e) if isinstance(e, BadRequest) else "body must be JSON"}, 400)
             except Exception as e:
@@ -5053,8 +5154,7 @@ def main(argv):
     exports = len(list(REPORTS.glob("*.json"))) if REPORTS.is_dir() else 0
     logs = len(list(CHATLOGS.glob("Chat-*.log"))) if CHATLOGS.is_dir() else 0
     party_load()
-    if _party["code"]:
-        party_thread()  # keep posting closed fights to the party's topic even while no view is open
+    party_thread()  # keeps posting closed fights to the party's topic and the everyone feed even while no view is open
     print(f"Gorgon Notes on {url}")
     print(f"Game data: {GAME_DIR}")
     print(f"  {plural(exports, 'export')} in Reports, {plural(logs, 'chat log')} in ChatLogs")

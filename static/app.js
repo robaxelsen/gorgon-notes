@@ -263,6 +263,7 @@ function fixText(key, args = {}, opts = {}) {
     'vip': ['Exports need VIP. Check your VIP status in game.'],
     'server': ['Start it again: python3 server.py'],
     'party-sharing': ['Nothing to do but wait: the app retries every 10 s. Copy for Discord on the Breakdown shares a fight by hand.'],
+    'everyone-feed': ['Nothing to do but wait: the app retries every 10 s and sends what waits.'],
   }[key];
   if (!T) return '';
   return (!inGame && T[1]) ? T[1] : T[0];
@@ -1584,6 +1585,16 @@ function sessionTable(p, all) {
   const tr = s.rows.map(r => `<tr${r.mine ? ' class="mine"' : ''}><td>${esc(r.who)}${r.owner ? ` <span class="dim small">· ${esc(r.owner)}'s pet</span>` : r.mine ? ' <span class="tag">you</span>' : ''}</td>${split ? `<td class="num d-only">${r.split ? fmt(r.health) : '<span class="dim">·</span>'}</td><td class="num d-only">${r.split ? fmt(r.armor) : '<span class="dim">·</span>'}</td>` : ''}<td class="num"><b>${fmt(r.dmg)}</b></td><td class="num">${fmt(r.secs ? r.dmg / r.secs : 0)}</td><td class="num">${pctOf(r.dmg, s.total)}</td><td class="num">${r.kills ? fmt(r.kills) : '<span class="dim">0</span>'}</td></tr>`).join('');
   return `<div class="party-sess">${head}<table class="tbl"><thead>${th}</thead><tbody>${tr}</tbody></table></div>`;
 }
+/* The everyone feed (29 Oct): every closed fight goes to the room's everyone page, code or not, unless turned off here. */
+function everyoneLine(p) {
+  const ev = p?.everyone; if (!ev || !ev.available) return '';
+  const page = `<a href="${esc(ev.url)}" target="_blank" rel="noopener">everyone's fights page</a>`;
+  if (!ev.on) return `<p class="small dim party-everyone">Your fights are not sent to the ${page}. <button type="button" class="linkbtn" data-pev="1">Start sending</button></p>`;
+  const sent = ev.posted ? ` · ${plural(ev.posted, 'fight')} sent today` : ' · nothing sent yet today';
+  const wait = ev.pending ? ` · ${fmt(ev.pending)} waiting` : '';
+  const bad = ev.down ? ` · <span class="txt-bad">${shape('bad', 's13')}not answering since ${hhmm(parseIso(ev.lastErrorAt))}</span>` : '';
+  return `<p class="small dim party-everyone">Every fight also goes to the ${page}, where anyone can see runs without a code${sent}${wait}${bad}. <button type="button" class="linkbtn" data-pev="0">Stop sending</button></p>`;
+}
 /* The party per the chat log (hunting-party lines and party chat), and who in it is not sharing yet. */
 function rosterLine(p) {
   const r = p?.roster; if (!r?.inParty) return '';
@@ -1648,7 +1659,7 @@ function renderParty() {
   const link = tr.kind === 'room' ? 'Party room' : 'ntfy.sh';
   const all = (p.fights || []).slice().reverse();
   const roster = rosterLine(p);
-  const rosterHtml = `${liveLine(p)}${roster ? `<p class="small dim party-roster">${roster}</p>` : ''}`;
+  const rosterHtml = `${liveLine(p)}${everyoneLine(p)}${roster ? `<p class="small dim party-roster">${roster}</p>` : ''}`;
   if (!code && !all.length) {
     cnt.textContent = '';
     if (!pUI.note) partyState('plain', '');
@@ -1757,6 +1768,14 @@ function initParty() {
     if (disc) { postDiscord({ party: disc.dataset.pdisc }, 'the party fight'); return; }
     const sp = e.target.closest('[data-psess-post]');
     if (sp) { postDiscord({ session: sp.dataset.psessPost }, 'the session'); return; }
+    const ev = e.target.closest('[data-pev]');
+    if (ev) {
+      const on = ev.dataset.pev === '1';
+      api('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ shareEveryone: on }) })
+        .then(r => { if (S.party && r.everyone) S.party.everyone = r.everyone; renderParty(); sysLine('status', on ? "Your fights go to everyone's fights page again; the ones waiting are sent now." : "Your fights stay off everyone's fights page until you press Start sending."); })
+        .catch(() => sysLine('error', "The server didn't answer; try again."));
+      return;
+    }
 
     if (e.target.closest('[data-ppaste]')) { pUI.paste = true; renderParty(); $('#d-pastetext').focus(); return; }
     if (e.target.closest('[data-pall]')) { pUI.all = !pUI.all; renderParty(); $('#d-party [data-pall]')?.focus(); }
