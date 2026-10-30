@@ -95,7 +95,7 @@ Windows vs Mac: every tool parses the same `[Combat]` text, and the line format 
    - Strip ` #\d+` for display names and ` \d+$` for ability grouping (keep the raw text for levels).
 3. Sides:
    - **me** = the active character (no `#`).
-   - **pets** = `#` entities that deal damage to a target **you** also damaged that day, plus PGCombatTracker's known-summon list and the `(Pet)` tag. This found Cardi Bee, Doomstorm and Tornado with no config.
+   - **pets** = `#` entities that deal damage to a target **you** also damaged that day, plus PGCombatTracker's known-summon list and the `(Pet)` tag. This found Cardi Bee, Doomstorm and Tornado with no config. **30 Oct correction:** Animal Handling's Unnatural Wrath (`Target: PermanentPet`, "Energize your pet's next attack at the cost of its health") logs its cost as `Robchew: Unnatural Wrath 6 on Cardi Bee #1470160! Dmg: 226 health, 151 armor`, which put Cardi Bee among your targets (an enemy), so its damage dropped out and every mob it killed after hitting you for `none` became a "pet" (29 Oct from 19:57: 1,032,500 damage and 65 kills missing; 30 Oct: 412,041 and 144). Now a line from you with one of the 12 pet-targeted abilities marks its target a pet and is not counted as damage (`server.py` `PET_ABILITIES`).
    - **enemies** = anything that hit me or a pet, or that me or a pet hit.
 4. **Fights.** A fight opens on the first damage event involving me or a pet (dealt or taken) and closes after **15 s** with none (the same default as PGCT; make it configurable). Duration = last − first + 1 s, so 1 s fights don't divide by zero. Hide fights under about 5 s or 500 damage by default.
 5. Per fight, keep:

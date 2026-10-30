@@ -273,7 +273,7 @@ const STEPS = {
                    'Log out and back in. The log file appears then.'],
   'chat-logging-relog': ['Log out and back in. The game starts the log file at login.'],
   'combat-logging': ['In the game, open <em class="t">Settings → V.I.P. → Combat Logging</em>.',
-                     'Set every <em class="t">Log when…</em> row to anything but Off.{offNow}',
+                     'Set every <em class="t">Log when…</em> row to <em class="t">Log File Only (if enabled)</em>. <em class="t">Chat Window (and log file if enabled)</em> works too and also shows the lines in your chat.{offNow}',
                      'Tick <em class="t">Log non-damaging abilities</em>.'],
   'export-character': ['In the game, open the <em class="t">VIP menu</em>.', 'Press <em class="t">Export Character JSON</em> while fully logged in, not right before logging out.'],
   'export-storage':   ['In the game, open the <em class="t">VIP menu</em>.', 'Press <em class="t">Export Storage JSON</em>.'],
@@ -313,8 +313,8 @@ function fixText(key, args = {}, opts = {}) {
   return (!inGame && T[1]) ? T[1] : T[0];
 }
 const COMBAT_LOGGING_FIX = () => S.view === 'combat'
-  ? 'Settings → V.I.P. → Combat Logging: every "Log when…" row not Off, Log non-damaging abilities on.'
-  : 'Settings → V.I.P. → Combat Logging: every "Log when…" row not Off. Deaths still count; kills and killers need it.';
+  ? 'Settings → V.I.P. → Combat Logging: every "Log when…" row to Log File Only, Log non-damaging abilities on.'
+  : 'Settings → V.I.P. → Combat Logging: every "Log when…" row to Log File Only. Deaths still count; kills and killers need it.';
 /* Plaque copy for fixes that need a game action: [p1, p2]. `where` = 'margin' (default: the margin note's plaque, one
    line of in-game directions) or 'setup' (the Setup window row: the steps are listed above the plaque, so p2 points at them). */
 function plaqueFor(key, where = 'margin') {
@@ -3095,7 +3095,7 @@ function renderVendorFilters() {
   note.hidden = false;
 }
 
-const VENDOR_COMPACT_W = 860;
+const VENDOR_COMPACT_W = 960; // 860 at the 15 px body; raised with the 17 px body (30 Oct a11y)
 let vendorCompact = false;
 const WHERE_TOP = 5; // keeps the Vendors pane header on the first screen at 1440 x 900
 const V_COLS = [
@@ -3126,7 +3126,7 @@ function vendorRow(r, list, compact = false) {
   const sel = vUI.selected === r.npc;
   const icon = iconImg(S.icons.byType[r.types.find(t => S.icons.byType[t] != null) || r.types[0]], 28, '', r.name);
   const resetCell = r.resetSinceExport
-    ? `<span class="tag" title="Reset ${r.exportResetAt ? dateTime(parseIso(r.exportResetAt)) : ''}, after the export">reset</span> <span class="small">+${fmt(r.restored)} back</span>`
+    ? `<span class="tag" title="Reset ${r.exportResetAt ? dateTime(parseIso(r.exportResetAt)) : ''}, after the export">reset</span>${compact ? '<br>' : ' '}<span class="small">+${fmt(r.restored)} back</span>`
     : r.resetT ? `<span title="${dateTime(r.resetT)}">${dur(r.resetT - NOW())}</span>` : '';
   const line2 = [r.drained ? 'drained' : `of ${fmt(r.cap)}`, r.area, favorLabel(r.favor), r.types.map(typeLabel).join(', '), r.resetSinceExport ? `reset, +${fmt(r.restored)} back` : r.resetT ? `resets ${dur(r.resetT - NOW())}` : ''].filter(Boolean).join(' · ');
   return `<tr class="row selectable${r.drained ? ' drained' : ''}" tabindex="0" data-npc="${esc(r.npc)}" aria-selected="${sel}">
@@ -3642,7 +3642,7 @@ const S_COLS = [
 /* Narrow pane (tablet, or desktop with the margin beside it): Favor moves under the vault name and
    Accepts drops, so Slots, Free and Value held stay in view without a sideways scroll. */
 const PHONE_TABLE_MQ = window.matchMedia('(max-width: 639px)');
-const VAULT_COMPACT_W = 900;
+const VAULT_COMPACT_W = 1000; // 900 at the 15 px body; raised with the 17 px body (30 Oct a11y)
 let vaultCompact = false;
 function vaultRow(v, compact = false, tight = false) {
   const sel = sUI.selected === v.vault;
@@ -4077,7 +4077,7 @@ function renderCharacter() {
     const zero = entries.filter(([, v]) => !v);
     const show = cUI.zeroCur ? [...nz, ...zero] : nz;
     const colsN = show.length >= 9 ? 3 : show.length >= 4 ? 2 : 1;
-    cur.html = `<dl style="display:grid;grid-template-columns:repeat(${colsN},minmax(0,1fr));gap:12px 24px;margin:0">${show.map(([k, v]) => `<div><dt class="small dim">${esc(curLabel(k))}</dt><dd style="margin:0;font-size:20px;line-height:1.2">${k === 'GOLD' ? COIN : ''}${fmt(v)}</dd></div>`).join('')}</dl>
+    cur.html = `<dl style="display:grid;grid-template-columns:repeat(${colsN},minmax(0,1fr));gap:12px 24px;margin:0">${show.map(([k, v]) => `<div><dt class="small dim">${esc(curLabel(k))}</dt><dd style="margin:0;font-size:22px;line-height:1.2">${k === 'GOLD' ? COIN : ''}${fmt(v)}</dd></div>`).join('')}</dl>
       ${zero.length ? `<p style="margin-top:12px"><button type="button" class="linkbtn" id="curzero" style="text-decoration:underline">${cUI.zeroCur ? 'Hide the ones at zero' : `${zero.length} at zero`}</button></p>` : ''}`;
   }
   setFoot('w-c-cur', ageL(''), footR);

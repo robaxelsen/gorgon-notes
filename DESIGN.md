@@ -62,26 +62,26 @@ colors:
   chat-player: "#CABD00"
   chat-timestamp: "#CCCCCC"
   # Daylight: a non-game accessibility mode. Neutral warm grey chrome; khaki stays on the main pane only.
-  day-world: "#D6D0C6"
-  day-window: "#E9E6E1"
-  day-titlebar: "#E1DBD1"
-  day-footer: "#DDD6CB"
-  day-well: "#DDD6CB"
-  day-row-hover: "#E2DCD2"
-  day-frame: "#C8C0B3"
-  day-rule: "#D0C8BB"
-  day-control: "#776A5A"
-  day-field: "#F4F3F0"
-  day-text: "#1C1610"
-  day-text-dim: "#5E5244"
-  day-icon: "#6E6252"
-  day-title: "#5A3A14"
+  day-world: "#DFDAD2"
+  day-window: "#F4F3F1"
+  day-titlebar: "#EAE6DF"
+  day-footer: "#E6E1D9"
+  day-well: "#E6E1D9"
+  day-row-hover: "#ECE7DF"
+  day-frame: "#D2CBBF"
+  day-rule: "#D6CFC3"
+  day-control: "#6B5F50"
+  day-field: "#FFFFFF"
+  day-text: "#15100A"
+  day-text-dim: "#4E4336"
+  day-icon: "#5A4E41"
+  day-title: "#4A2D0E"
   day-selection: "#6B2A12"
-  day-data: "#76590C"
+  day-data: "#614806"
   day-track: "#D0C8BB"
-  day-alert: "#844500"
-  day-error: "#AE111A"
-  day-status: "#6A4410"
+  day-alert: "#753C00"
+  day-error: "#9A0E16"
+  day-status: "#583809"
   day-pane: "#CDBB95"
   day-pane-hover: "#C4B18A"
   day-pane-head: "#C2AE86"
@@ -94,47 +94,47 @@ colors:
 typography:
   headline:
     fontFamily: "Carlito, Calibri, 'Segoe UI', sans-serif"
-    fontSize: "22px"
+    fontSize: "24px"
     fontWeight: 700
     lineHeight: 1.2
     letterSpacing: "normal"
   lead-figure:
     fontFamily: "Carlito, Calibri, 'Segoe UI', sans-serif"
-    fontSize: "22px"
+    fontSize: "24px"
     fontWeight: 700
     lineHeight: 1.2
     fontFeature: "'tnum' 1, 'lnum' 1"
   figure:
     fontFamily: "Carlito, Calibri, 'Segoe UI', sans-serif"
-    fontSize: "20px"
+    fontSize: "22px"
     fontWeight: 400
     lineHeight: 1.2
     fontFeature: "'tnum' 1, 'lnum' 1"
   title:
     fontFamily: "Carlito, Calibri, 'Segoe UI', sans-serif"
-    fontSize: "16px"
+    fontSize: "18px"
     fontWeight: 700
     lineHeight: 1.25
   body:
     fontFamily: "Carlito, Calibri, 'Segoe UI', sans-serif"
-    fontSize: "15px"
+    fontSize: "17px"
     fontWeight: 400
     lineHeight: 1.45
     fontFeature: "'tnum' 1, 'lnum' 1"
   small:
     fontFamily: "Carlito, Calibri, 'Segoe UI', sans-serif"
-    fontSize: "13px"
+    fontSize: "15px"
     fontWeight: 400
     lineHeight: 1.35
   tab-caps:
     fontFamily: "Carlito, Calibri, 'Segoe UI', sans-serif"
-    fontSize: "13px"
+    fontSize: "15px"
     fontWeight: 700
     lineHeight: 1
     letterSpacing: "0.06em"
   pane-section:
     fontFamily: "Carlito, Calibri, 'Segoe UI', sans-serif"
-    fontSize: "16px"
+    fontSize: "18px"
     fontWeight: 700
     lineHeight: 1.25
 rounded:
@@ -323,7 +323,7 @@ A warm brown-black chrome sampled from the game's windows, a flat khaki pane for
 
 ### The Khaki Pane
 - **Content Pane** (`pane`, `pane-hover`, `pane-head`): the main ledger table of each view. The game's `#7E6642` pane, lifted only as far as ink needs (`#8F7650` gives 4.51:1, too thin, so the pane is `#937A53` at 4.77:1).
-- **Pane Ink** (`pane-ink`): **all** text on the pane, including inline messages from the vault size input. Secondary text on the pane is the same ink at 13 px, never a lighter colour (nothing lighter reaches 4.5:1). No status colour (amber, peach, red, gold) is ever text on the pane.
+- **Pane Ink** (`pane-ink`): **all** text on the pane, including inline messages from the vault size input. Secondary text on the pane is the same ink at 15 px, never a lighter colour (nothing lighter reaches 4.5:1). No status colour (amber, peach, red, gold) is ever text on the pane.
 - **Pane Rule** (`pane-rule`): row dividers and the double rule above subtotals.
 - **Pane Bar** (`pane-bar`): bars, used slot cells and the coin rim on the pane (3.99:1, graphic).
 - **Pane Flag** (`pane-flag`): a status shape on the pane (3.45:1, graphic only, always paired with an ink word).
@@ -360,7 +360,7 @@ The game has no light theme. Daylight is an **accessibility mode for bright room
 
 **DECISION override (§2, §3).** DECISION.md says "Daylight theme = the khaki pane promoted to the window" and "a khaki Daylight theme". This document overrides that: khaki promoted to every window fills well over half of a 1440 screenshot with one tan hue, which is the "old paper / parchment" look the brief and DECISION's own Don'ts reject, and it removes the one thing that makes the main table stand out (the pane as the only khaki surface). Neutral warm-grey chrome with khaki on the pane keeps the game's composition (khaki pane inside darker chrome) in light form.
 
-**Lint allowance (DECISION #27 requires every WARN argued).** `day-window` `#E9E6E1` (HSL s 0.154) and `day-field` `#F4F3F0` (s 0.154) were desaturated to sit just under taste's `palette-cream` floor (s ≥ 0.16 at l ≥ 0.88), so that rule does not fire. `day-frame` was lightened to `#C8C0B3` (1.45:1 on `day-window`, inside the 1.1 to 1.5 band `heavy-borders` expects); the dark `frame` is 1.31:1 on `window`. If either rule still warns after a token tweak, the argument is: Daylight's warmth is the game's warm grey-brown chrome, not a yellow cream; the frame is a hairline, and control boundaries are carried by `day-control`, not the frame. Test: a 1440 screenshot of each view in Daylight must not read as "old paper" (more than 50% of the viewport in a tan hue fails; today the khaki pane is under 40%).
+**Lint allowance (DECISION #27 requires every WARN argued).** `day-window` `#F4F3F1` (HSL s 0.12) and `day-field` `#FFFFFF` (s 0) sit under taste's `palette-cream` floor (s ≥ 0.16 at l ≥ 0.88), so that rule does not fire (30 Oct; before: `#E9E6E1` and `#F4F3F0`). `day-frame` is `#D2CBBF` (1.45:1 on `day-window`, inside the 1.1 to 1.5 band `heavy-borders` expects); the dark `frame` is 1.31:1 on `window`. If either rule still warns after a token tweak, the argument is: Daylight's warmth is the game's warm grey-brown chrome, not a yellow cream; the frame is a hairline, and control boundaries are carried by `day-control`, not the frame. Test: a 1440 screenshot of each view in Daylight must not read as "old paper" (more than 50% of the viewport in a tan hue fails; today the khaki pane is under 40%).
 
 **Token swap table** (every component maps through it; nothing is dark-only except the chat window):
 | Dark token | Daylight token | Dark token | Daylight token |
@@ -381,52 +381,52 @@ The game has no light theme. Daylight is an **accessibility mode for bright room
 | pane-flag | day-pane-flag | pane-focus | day-pane-focus |
 | rust family, on-rust | unchanged | oxblood and `sel-*` | unchanged |
 
-On the Daylight pane, `day-pane-dim` is allowed for secondary text (7.19:1). Daylight keeps four distinct hues for four meanings: data is ochre (`day-data`), selection is oxblood-brown (`day-selection`), error is a clear red (`day-error`), and alert is burnt orange (`day-alert`). Text and dim text sit 2.36:1 apart; the pane sits 1.51:1 below the window.
+On the Daylight pane, `day-pane-dim` is allowed for secondary text (7.19:1). Daylight keeps four distinct hues for four meanings: data is ochre (`day-data`), selection is oxblood-brown (`day-selection`), error is a clear red (`day-error`), and alert is burnt orange (`day-alert`). Text and dim text sit 1.96:1 apart; the pane sits 1.70:1 below the window.
 
 Text on the page ground: the title row, the system line, the preview notice and the server-down banner sit on `world` / `day-world`, not inside a window, and they carry the freshness stamp. Every status colour used there is measured on the ground too (rows marked "on world" below).
 
 ### Contrast (measured)
-Recomputed after the Daylight token changes (`day-window`, `day-field`, `day-frame`, `day-alert`, `day-error`).
+Recomputed 30 Oct after the accessibility pass (user: "the contrast is a bit low on light mode"): Daylight's ground and windows lifted, every Daylight text and status colour darkened. Daylight dim text now clears 7:1 (AAA) on every window surface and 6.9:1 on the ground, because Carlito's small x-height makes small dim text read lighter than its ratio.
 | Pair | Ratio | Pair | Ratio |
 |---|---|---|---|
-| text on window | 13.61 | day-text on day-window | 14.40 |
-| text on footer | 11.69 | day-text on day-field | 16.15 |
-| text-dim on window | 5.68 | day-text-dim on day-window | 6.10 |
-| text-dim on footer | 4.87 | day-text-dim on day-footer | 5.26 |
-| text-dim on row-hover | 4.53 | day-text-dim on day-world (on world) | 4.95 |
-| emphasis-tan on titlebar | 10.16 | day-title on day-titlebar | 7.44 |
-| emphasis-tan on window (in-sentence) | 10.84 | day-title on day-window (in-sentence) | 8.23 |
-| selection-gold on window | 6.11 | day-selection on day-window | 8.59 |
-| selection-gold on well | 5.35 | day-selection on day-well | 7.41 |
-| alert-amber on footer | 8.38 | day-alert on day-footer | 5.14 |
-| error-red on footer | 4.91 | day-error on day-footer | 5.03 |
-| error-red on window | 5.72 | day-error on day-window | 5.83 |
-| error-red on row-hover | 4.57 | day-error on day-row-hover | 5.32 |
-| status-peach on window | 10.48 | day-status on day-footer | 5.95 |
-| text on world (on world) | 14.54 | day-text on day-world (on world) | 11.69 |
-| text-dim on world (on world) | 6.06 | day-alert on day-world (on world) | 4.84 |
-| emphasis-tan on world (on world) | 11.58 | day-error on day-world (on world) | 4.73 |
-| alert-amber on world (on world) | 10.42 | day-title on day-world (on world) | 6.68 |
-| error-red on world (on world) | 6.11 | day-status on day-world (on world) | 5.60 |
-| status-peach on world (on world) | 11.20 | day-alert on day-window | 5.96 |
-| selection-gold on world (focus, title row) | 6.53 | day-selection on day-world (focus, title row) | 6.97 |
+| text on window | 13.61 | day-text on day-window | 17.05 |
+| text on footer | 11.69 | day-text on day-field | 18.91 |
+| text-dim on window | 5.68 | day-text-dim on day-window | 8.69 |
+| text-dim on footer | 4.87 | day-text-dim on day-footer | 7.40 |
+| text-dim on row-hover | 4.53 | day-text-dim on day-world (on world) | 6.92 |
+| emphasis-tan on titlebar | 10.16 | day-title on day-titlebar | 10.09 |
+| emphasis-tan on window (in-sentence) | 10.84 | day-title on day-window (in-sentence) | 11.32 |
+| selection-gold on window | 6.11 | day-selection on day-window | 9.64 |
+| selection-gold on well | 5.35 | day-selection on day-well | 8.21 |
+| alert-amber on footer | 8.38 | day-alert on day-footer | 6.72 |
+| error-red on footer | 4.91 | day-error on day-footer | 6.59 |
+| error-red on window | 5.72 | day-error on day-window | 7.73 |
+| error-red on row-hover | 4.57 | day-error on day-row-hover | 6.97 |
+| status-peach on window | 10.48 | day-status on day-footer | 8.13 |
+| text on world (on world) | 14.54 | day-text on day-world (on world) | 13.60 |
+| text-dim on world (on world) | 6.06 | day-alert on day-world (on world) | 6.28 |
+| emphasis-tan on world (on world) | 11.58 | day-error on day-world (on world) | 6.17 |
+| alert-amber on world (on world) | 10.42 | day-title on day-world (on world) | 9.02 |
+| error-red on world (on world) | 6.11 | day-status on day-world (on world) | 7.61 |
+| status-peach on world (on world) | 11.20 | day-alert on day-window | 7.88 |
+| selection-gold on world (focus, title row) | 6.53 | day-selection on day-world (focus, title row) | 7.68 |
 | pane-ink on pane | 4.77 | day-pane-ink on day-pane | 9.83 |
 | pane-ink on pane-hover | 5.31 | day-pane-ink on day-pane-hover | 8.83 |
 | pane-ink on pane-head | 5.83 | day-pane-ink on day-pane-head | 8.55 |
 | on-rust on rust / rust-hover | 7.67 / 6.43 | day-pane-dim on day-pane | 7.19 |
 | sel-text on sel-bg | 12.45 | text on field | 14.91 |
-| control on window (3:1 rule) | 3.97 | day-control on day-window | 4.22 |
-| control on well / footer | 3.47 / 3.40 | day-control on day-well / day-footer | 3.64 |
-| control on row-hover | 3.17 | day-icon on day-well | 4.12 |
-| control on world (title-row ghost button) | 4.24 | day-control on day-world (title-row ghost button) | 3.43 |
-| icon-taupe on window (3:1 rule) | 4.72 | day-data on day-window / day-footer (graphic) | 5.26 / 4.54 |
+| control on window (3:1 rule) | 3.97 | day-control on day-window | 5.61 |
+| control on well / footer | 3.47 / 3.40 | day-control on day-well / day-footer | 4.78 / 4.78 |
+| control on row-hover | 3.17 | day-icon on day-well | 6.20 |
+| control on world (title-row ghost button) | 4.24 | day-control on day-world (title-row ghost button) | 4.47 |
+| icon-taupe on window (3:1 rule) | 4.72 | day-data on day-window / day-footer (graphic) | 7.77 / 6.62 |
 | pane-flag on pane (graphic) | 3.45 | day-pane-flag on day-pane (graphic) | 5.87 |
 | pane-bar on pane (graphic) | 3.99 | day-pane-bar on day-pane (graphic) | 7.33 |
 | pane-focus on pane / pane-hover (inset focus) | 4.77 / 5.31 | day-pane-focus on day-pane (inset focus) | 5.67 |
 | pane free cell (pane-ink) on pane | 4.77 | day free cell (day-pane-ink) on day-pane | 9.83 |
 | sel-bar on sel-bg (graphic) | 7.57 | sel-focus / sel-free on sel-bg (inset focus, chip border) | 5.55 |
 | sel-flag on sel-bg (graphic) | 12.45 | rust on window (button boundary, accepted) | 1.79 |
-| track on window (decorative, see Track) | 1.36 | day-track on day-window (decorative) | 1.33 |
+| track on window (decorative, see Track) | 1.36 | day-track on day-window (decorative) | 1.50 |
 | rust-lo on sel-bg (decorative) | 1.07 | day-frame on day-window (hairline) | 1.45 |
 
 **Chat window** (its body is `window`, not `world`): chat-error 4.81, chat-global 9.46, chat-guild 9.28, chat-party 8.62, chat-timestamp 10.91.
@@ -451,18 +451,19 @@ Gold as text is used only on window, well or footer. Status colours are never te
 **Character:** one plain office sans at the game's small sizes, with tabular figures everywhere. The khaki pane's area headings are Carlito 700 in pane ink, as the game's Recipes and Item Info panes use Calibri with "a darker heading" (research §2). The earlier Noto Serif heading is dropped: the client ships Noto Serif for books and inscriptions, not panes, and a serif on khaki pulled the pane toward the "ledger / old paper" cliché.
 
 ### Hierarchy
-- **Headline** (700, 22 px, 1.2, `emphasis-tan`): the one view title (h1): "Vendors". The game's large centred pane title is about 22 px. 20 px on a phone.
-- **Lead figure** (700, 22 px, 1.2, tabular): the one answer figure per view ("1,589,320" councils left), in the At a glance window. Capped at the game's top size, the headline's 22 px. 20 px on a phone.
-- **Readout** (700, 30 px, 1.1, tabular; 28 on a phone): one figure on one view, the live per-second rate on Combat (`.fig.lead .val.readout`). The one exception to the 22 px cap: the live meter is the one surface the game itself never ships, so the pane-title cap it borrows does not bind. Nothing else may use it (30 Oct).
-- **Figure** (400, 20 px, 1.2, tabular): sibling figures in the At a glance window. The lead is told apart by weight and position, not by size.
-- **Title** (700, 16 px, 1.25, `emphasis-tan`): window titles.
-- **Body** (400, 15 px, 1.45): findings, table cells, notes, the chat log and the "What happened" feed. 15 is the game's GUI default. Findings max 75ch. Emphasis in a finding is colour only; numbers in a finding are colour plus 700.
-- **Small** (400, 13 px, 1.35): column headers (sentence case, `text-dim`), footers, stamps, rail labels, meta. 13 px is the floor; nothing smaller.
-- **Tab caps** (700, 13 px, 0.06em, ALL CAPS): window tabs only.
-- **Pane section** (Carlito 700, 16 px, `pane-ink`): area headings inside a ledger pane.
-- **Fix plaque**: line 1 is body 15 at 700, line 2 small 13. No new size.
+Sizes raised 2 px across the board on 30 Oct (accessibility pass; user: "the text is very small, think it's below good thresholds for accessibility"). Carlito's x-height is about 0.47 em, against about 0.52 for a typical UI sans, so 15 px Carlito read like 13.5 px elsewhere and the old 13 px floor like 12 px. The game's own sizes (15 px GUI default, 22 px pane title) were the old anchor; they are a starting point, not a cap: the player reads this page at desk distance, often in a small window beside the game.
+- **Headline** (700, 24 px, 1.2, `emphasis-tan`): the one view title (h1): "Vendors". 22 px on a phone.
+- **Lead figure** (700, 24 px, 1.2, tabular): the one answer figure per view ("1,589,320" councils left), in the At a glance window. Capped at the headline's size. 22 px on a phone.
+- **Readout** (700, 32 px, 1.1, tabular; 30 on a phone): one figure on one view, the live per-second rate on Combat (`.fig.lead .val.readout`). The one exception to the headline cap: the live meter is the one surface the game itself never ships. Nothing else may use it (30 Oct).
+- **Figure** (400, 22 px, 1.2, tabular): sibling figures in the At a glance window. The lead is told apart by weight and position, not by size.
+- **Title** (700, 18 px, 1.25, `emphasis-tan`): window titles.
+- **Body** (400, 17 px, 1.45): findings, table cells, notes, the chat log and the "What happened" feed. Findings max 75ch. Emphasis in a finding is colour only; numbers in a finding are colour plus 700.
+- **Small** (400, 15 px, 1.35): column headers (sentence case, `text-dim`), footers, stamps, rail labels, meta. 15 px is the floor (about 13.5 px in a typical sans); the only exceptions are the rail's group band (14 px 700 tan) and the phone bar's labels under 420 px wide (14 px).
+- **Tab caps** (700, 15 px, 0.06em, ALL CAPS): window tabs only.
+- **Pane section** (Carlito 700, 18 px, `pane-ink`): area headings inside a ledger pane.
+- **Fix plaque**: line 1 is body 17 at 700, line 2 small 15. No new size.
 
-Five sizes: 13, 15, 16, 20, 22 (desktop and phone alike: on a phone the h1 and the lead figure drop to 20, which is already in the scale), plus the one named exception, the 30 px readout. The former 14 px chat size is merged into body so the bottom of the ladder carries hierarchy; 15 and 16 are kept apart by weight and colour (title is 700 tan, body 400 text). Well under taste's warn at more than 9 sizes.
+Five sizes: 15, 17, 18, 22, 24 (on a phone the h1 and the lead figure drop to 22, already in the scale), plus the one named exception, the 32 px readout. 17 and 18 are kept apart by weight and colour (title is 700 tan, body 400 text). Tables whose column fit was tuned at the old sizes switch to their compact layout earlier: `VENDOR_COMPACT_W` 960 (was 860), `VAULT_COMPACT_W` 1000 (was 900), measured so no pane scrolls sideways at 1600, 1440, 1180 and 900; a compact Vendors row stacks the "reset" chip over "+N back".
 
 ### Named Rules
 **The Tabular Rule.** `font-variant-numeric: tabular-nums lining-nums` on the body. Every number column is right-aligned with fixed decimals per metric and one abbreviation rule per column.
@@ -479,7 +480,7 @@ Five sizes: 13, 15, 16, 20, 22 (desktop and phone alike: on a phone the h1 and t
 
 **Shell at 1180 px and wider.**
 - **Shell header**, 44 px, on `world`, 1 px `frame` bottom: mark and product name at the left, then scope ("Robchew · Arisetsu"; a select when more than one character has exports), then the location line in the minimap's format, "Casino (logged out 00:56)". At the right: the health summary pill, the theme control (Auto / Dark / Daylight), and the "Reminders" button that opens the Reminders panel.
-- **Rail**, 64 px wide, a floating window at the right edge (Review decisions). Two labelled groups of 56 px cells: **Play** (Session, Combat, Vendors, Storage) and **Reference** (Character, Teleports, Statehelm). Each group label is a divider band, not a cell: 12 px 700 `title` tan with 0.04em tracking, a 1 px `rule` above and below, 6 px of space after it (30 Oct, user: the 13 px dim labels looked like menu items). The foot holds two tools: **Files** (18 px glyph + 13 px label, a link to `#files`) and the "fan-made / About" button.
+- **Rail**, 84 px wide (64 until 30 Oct; widened so "Reference" and "Statehelm" fit at 15 px), a floating window at the right edge (Review decisions). Two labelled groups of 56 px cells: **Play** (Session, Combat, Vendors, Storage) and **Reference** (Character, Teleports, Statehelm). Each group label is a divider band, not a cell: 14 px 700 `title` tan with 0.04em tracking, a 1 px `rule` above and below, 6 px of space after it (30 Oct, user: the 13 px dim labels looked like menu items). The foot holds two tools: **Files** (18 px glyph + 15 px label, a link to `#files`) and the "fan-made / About" button.
 - **Canvas**: padding 24 px; grid `minmax(0,1fr) 320px` with a 16 px gap (336 px margin column at 1440 and wider); content max width 1600 px, centred in the space left of the rail.
 - **Title row**: the same grid as the canvas, `minmax(0,1fr) 320px` (336 px at 1440 and wider) with a 16 px gap, so the stamp block lines up with the margin window under it. Min-height 64 px. Left: h1 and the finding. Right, fixed position on every view: the stamp (two lines, right-aligned) and Check again. The stamp never moves with the length of the finding. The title row is **not** a window: it borrows the game's one sanctioned on-world text, the quest tracker (research §5 item 11: a tan bold headline over a light sub-line), so the h1 is `emphasis-tan` 700 and the finding `text`, and it reads as HUD text rather than a web page header. The tracker's drop shadow is left out: this ground is flat, not 3D scenery, so the shadow has nothing to separate the text from.
 - **At a glance window**: the first window of the main column, full main width (Components → At a glance).
@@ -492,8 +493,8 @@ Five sizes: 13, 15, 16, 20, 22 (desktop and phone alike: on a phone the h1 and t
 |---|---|
 | ≥ 1440 | Margin 336 px. Windows are full main width (30 Oct, Components → Lower deck: no side-by-side pairs). |
 | 1180 to 1439 | Margin 320 px. Same structure. |
-| 768 to 1179 (tablet) | Rail stays (same 64 px, icon over label). The margin becomes a full-width **health window** directly under the title row (same title, notes and footer as the margin), notes in a `repeat(auto-fit, minmax(min(100%, 280px), 1fr))` grid. Windows stack in one column, as at every width. Tablets never get the health strip. |
-| < 768 | Rail becomes a **sticky bottom tab bar**, 56 px plus safe-area inset, **four Play items and More** (icon over 13 px label; 78 px cells at 390 px, 64 px at 320 px). More (`#morebtn`, a button, never a hash) opens a full-height sheet (`#morepop`): the Reference views with their purpose line and mark, Files, About (with the version), the theme control, the fan line in the footer. Shell header becomes a sticky 48 px top bar: mark, character name, health summary pill, Reminders button (icon only, `aria-label="Reminders"`). Gutter 16 px. Title row stacks: h1 (20 px), finding, then stamp and Check again on one row. At a glance: 2-column grid, lead figure (20 px) spans both. The health window becomes the **health strip** (phones only): one header line; it opens itself only when this view's margin holds a fix the player can do now (a plaque), never on Files and never while the Setup window shows (Data health → Health strip). |
+| 768 to 1179 (tablet) | Rail stays (same 84 px, icon over label). The margin becomes a full-width **health window** directly under the title row (same title, notes and footer as the margin), notes in a `repeat(auto-fit, minmax(min(100%, 280px), 1fr))` grid. Windows stack in one column, as at every width. Tablets never get the health strip. |
+| < 768 | Rail becomes a **sticky bottom tab bar**, 56 px plus safe-area inset, **four Play items and More** (icon over 15 px label, 14 px under 420 px wide; 78 px cells at 390 px, 64 px at 320 px). More (`#morebtn`, a button, never a hash) opens a full-height sheet (`#morepop`): the Reference views with their purpose line and mark, Files, About (with the version), the theme control, the fan line in the footer. Shell header becomes a sticky 48 px top bar: mark, character name, health summary pill, Reminders button (icon only, `aria-label="Reminders"`). Gutter 16 px. Title row stacks: h1 (22 px), finding, then stamp and Check again on one row. At a glance: 2-column grid, lead figure (22 px) spans both. The health window becomes the **health strip** (phones only): one header line; it opens itself only when this view's margin holds a fix the player can do now (a plaque), never on Files and never while the Setup window shows (Data health → Health strip). |
 | < 640 | Tables become two-line rows: line 1 is identity plus the key figure with its label ("71,197 left"); line 2 is the other fields in `small` dim, joined with " · " and no empty joins. Phone vendor and vault rows keep a small 48 px bar (spent of cap, slots used). The manual vault-size input stays reachable. The Reminders panel opens as a full-height sheet. |
 
 Rules: every grid track is `minmax(0, 1fr)`; chip rows and tab strips scroll in one line with a 24 px fade cue at the overflowing edge; nothing widens the page at a true 390 px (check with the inspector's device emulation, not `--window-size`).
@@ -517,7 +518,7 @@ Values are set under the taste-skill `heavy-shadow` limits (`scripts/lib/probe.m
 
 Small rounded rectangles from the game's 9-slice sprites: windows 6 px, panes and controls 4 px, slot cells 2 px, chips a capsule (the `Shared_ui` pill). Frames are 1 px warm lines. The only flourish is the **rust notch**: a small downward triangle (8 × 5 px, `rust` `#782A18`) centred under the title of a primary window, as under the game's "Recipes" title. The research samples that notch at `#6E2E13`; `rust` is the nearest existing token (1.67:1 on `titlebar` against the sample's 1.61:1, so it reads as quietly as the source), which saves a token used for one 8 px mark. It is not `rust-hi`, which was brighter and more decorative than the game's notch.
 
-Glyphs taken from the `Shared_ui` vocabulary: rounded fill and outline, rules, dot, ring, ▼, ▶, ✕, ✓, pill. **Added by this app in the same flat, single-colour style:** the warning triangle and the error square (the game has neither), the "i" inside a ring, the coin medallion, and the rail silhouettes. **Also added, for usability, and listed here for honesty:** the 13 px labels under the rail icons (the game's right-edge toolbar is icon-only taupe silhouettes; labels make five unfamiliar views findable without hovering). No ornamental corners, no torn edges, no scroll ends.
+Glyphs taken from the `Shared_ui` vocabulary: rounded fill and outline, rules, dot, ring, ▼, ▶, ✕, ✓, pill. **Added by this app in the same flat, single-colour style:** the warning triangle and the error square (the game has neither), the "i" inside a ring, the coin medallion, and the rail silhouettes. **Also added, for usability, and listed here for honesty:** the 15 px labels under the rail icons (the game's right-edge toolbar is icon-only taupe silhouettes; labels make five unfamiliar views findable without hovering). No ornamental corners, no torn edges, no scroll ends.
 
 ## Components
 
@@ -527,7 +528,7 @@ The universal container. Body `window`, 1 px `frame`, radius 6, Window shadow.
 - **Body** padding 12 px.
 - **Footer strip** 32 px, `footer`, `small` text, on every open window except the ones Views → Window footers names (folded deck windows, Teleports' zone windows, Statehelm's Your trainers, quiet windows on a zero day). Left: source and age ("Character export · 23 Oct 00:56 · 8 h ago"), the age as plain text for ok and warn (30 Oct: the stamp and the pill carry the amber), a red square and "missing" only for a source that was there and is gone. Right: when to act and the exact fix ("After selling: VIP menu → Export Character JSON"), on the view's **primary window only** and only when its source is warn or bad (Data health → Fix sentence rule). Live sources say so ("Chat log · live · last line 21:14"). Footers wrap to two lines on a phone, never truncate the fix.
 - **Collapsible areas** inside a window use the game's ▶/▼ foldout, and a collapsed area still shows its subtotal.
-- **Folded** (`.win.folded`, 30 Oct): a lower-deck window folded to its title bar. The h2 holds the fold button `<button class="foldh" data-deck="<winId>" aria-expanded aria-controls="<bodyId>">` (▶/▼ `tri` + the title in `.t`) and, beside the h2 in the bar (not inside it, so the window's accessible name is its title alone), the one-line summary `<span class="count sum">` (13 px dim, ellipsised; the title never wraps, the summary gives way). Body and footer are `display: none`, **except** when the window's own source is bad (`.keepfoot`: the footer with its fix stays, a missing source is never hidden). Deck bars are the window's 32 px (44 on a phone, every bar with a fold button); the bar's tools (a tab strip) go with the body. The deck header's Open all / Fold all carry `aria-label="Open all of More from today"` (the deck's name) so the five views' buttons are told apart. Zone windows on Teleports and the trainer blocks on Statehelm use the same button with their own state (`data-tpzone`, `data-shfold`).
+- **Folded** (`.win.folded`, 30 Oct): a lower-deck window folded to its title bar. The h2 holds the fold button `<button class="foldh" data-deck="<winId>" aria-expanded aria-controls="<bodyId>">` (▶/▼ `tri` + the title in `.t`) and, beside the h2 in the bar (not inside it, so the window's accessible name is its title alone), the one-line summary `<span class="count sum">` (15 px dim, ellipsised; the title never wraps, the summary gives way). Body and footer are `display: none`, **except** when the window's own source is bad (`.keepfoot`: the footer with its fix stays, a missing source is never hidden). Deck bars are the window's 32 px (44 on a phone, every bar with a fold button); the bar's tools (a tab strip) go with the body. The deck header's Open all / Fold all carry `aria-label="Open all of More from today"` (the deck's name) so the five views' buttons are told apart. Zone windows on Teleports and the trainer blocks on Statehelm use the same button with their own state (`data-tpzone`, `data-shfold`).
 
 ### Lower deck
 A view = title row → At a glance (open) → the primary window (open) → the **lower deck**: every other window, full width, folded to its title bar with a one-line summary, in the view's order (A-FINAL §3; SPEC §2.6). A deck with 2+ windows gets the header line `<div class="deck-h"><span>More from today</span><button class="linkbtn" data-deckall="open">Open all</button> · <button class="linkbtn" data-deckall="fold">Fold all</button></div>` ("More" on Vendors, Storage and Character, "Other zones" on Teleports; none on Combat and Statehelm, which have one deck window). Open state: `pgdash.open['deck-<view>']`, an array of open window ids saved by `saveOpen`; absent → the defaults below (`deckDefaults`). One delegated `#main` click handler for `[data-deck]` and `[data-deckall]` (`initDeck`); `applyDeck(view)` sets `.folded` and `aria-expanded` from the state at the end of every renderer; `deckSum(view, id, html)` writes the summary. A search typed into a deck window holds it open while the query is non-empty (`deckHold`, nothing stored). Summaries carry a plain-text age when the window's exports are older than the view's stamp source ("from exports 3 h old"), never a shape or colour.
@@ -569,8 +570,8 @@ The Files view's Contents window (added 24 Oct): a lazy disclosure tree over one
 - **Path bar** (`well` strip, `small`, one line, horizontal scroll with the 24 px fade cue; the strip scrolls itself to keep the current crumb in view by setting its own `scrollLeft`, never `scrollIntoView`, which would scroll the document to the Contents window wherever it sits below the fold): breadcrumbs for the focused row with the file name as the root crumb ("Character_Robchew_Arisetsu.json › Skills › Mycology › Abilities › 3"), each crumb a text button that moves focus to that ancestor; then the text buttons "Copy path" (dot/bracket notation, `Skills.Mycology.Abilities[3]`), "Copy value" (`GET /api/file/raw?id&path`; a `413` disables it with `title="Too big to copy: 1.2 MB. Open raw instead."`) and "Copy link" (`<origin>/#files?f=<id>&p=<pointer>`). Clipboard: `navigator.clipboard.writeText` in try/catch with a fallback to a hidden `<textarea>` + `execCommand('copy')`; success posts `[Status] Copied Skills.Mycology.Level.`, failure `[Error] Couldn't copy. Select the text and copy it instead.` and the path bar text becomes selectable. Phone: the three copies are 44 px icon-only buttons with `aria-label`s.
 
 ### Navigation rail and tab bar
-A standard labelled navigation (`<nav aria-label="Views">`) in two groups (`role="group"`, `aria-label` Play / Reference, each with a divider-band label (12 px 700 `title`, hairlines above and below), `aria-hidden`, above its cells): **Play** links to `#session`, `#combat`, `#vendors`, `#storage`; **Reference** to `#character`, `#teleports`, `#statehelm`. The foot (`.rail-foot`) holds **Files** (`a.rf`, `#files`, an 18 px page glyph over a 13 px label, 44 px tall, the same `well` and gold active state as a cell) and the About button. Placed where the game puts its toolbar. The Files silhouette is a flat page with a folded corner and two knocked-out text rules, drawn like the others; Combat (added 24 Oct) is two crossed blades with their guards and pommels; More (phone) is three dots.
-- Cells 64 × 56 on `window`. A 24 px flat silhouette (inline SVG, `icon-taupe`) over a 13 px label (`text-dim`). Hover: label to `text`. Active: cell `well`, icon and label `selection-gold`, a 2 px gold edge on the rail's inner side, `aria-current="page"` (on the phone, the More cell carries it when one of its views is open).
+A standard labelled navigation (`<nav aria-label="Views">`) in two groups (`role="group"`, `aria-label` Play / Reference, each with a divider-band label (14 px 700 `title`, hairlines above and below), `aria-hidden`, above its cells): **Play** links to `#session`, `#combat`, `#vendors`, `#storage`; **Reference** to `#character`, `#teleports`, `#statehelm`. The foot (`.rail-foot`) holds **Files** (`a.rf`, `#files`, an 18 px page glyph over a 15 px label, 44 px tall, the same `well` and gold active state as a cell) and the About button. Placed where the game puts its toolbar. The Files silhouette is a flat page with a folded corner and two knocked-out text rules, drawn like the others; Combat (added 24 Oct) is two crossed blades with their guards and pommels; More (phone) is three dots.
+- Cells 84 × 56 on `window`. A 24 px flat silhouette (inline SVG, `icon-taupe`) over a 15 px label (`text-dim`). Hover: label to `text`. Active: cell `well`, icon and label `selection-gold`, a 2 px gold edge on the rail's inner side, `aria-current="page"` (on the phone, the More cell carries it when one of its views is open).
 - Every item carries a `title` with one purpose clause: Session "what today earned", Combat "the damage meter, yours and your party's", Vendors "who can still pay you", Storage "where there is room", Character "skills, currencies, favor, quests", Teleports "Teleportation Machine codes, from the wiki", Statehelm "weekly gifts to trainers", Files "the files the app reads, as they are"; More lists the views it holds.
 - **Status mark on an item**: a 10 px amber triangle or red square at the icon's top-right for a warn or bad source **feeding that view** (`views[]`), never on the current view (its stamp and pill already say it), never for a source that has never been seen (a fresh install shows no marks). The item's `title` and `aria-label` append the reason (" · 1 to do: character export 3 h old", " · needs the chat log", " · 2 to do"). Files has no mark. The legend lives in About.
 - Phone: the four Play items and **More** in a bottom bar (`flex: 1` cells, 78 px at 390 px; labels 12 px under 420 px and ellipsised rather than overflowing), gold 2 px edge on top of the active item, the status mark centred above the label. The Reference group, the labels and the foot are hidden; More opens the **More sheet** (`.pop.more-sheet`, full screen, `aria-modal`, Escape closes, focus returns to the button): sections Reference (Character, Teleports, Statehelm as 48 px rows: icon, name, purpose line right-aligned, the view's mark), Tools (Files "the files the app reads", About "fan-made · v0.11.0", a button that opens the About popover), Theme (the segmented control), footer the fan line. Rows are real links that close the sheet on the way. Hash routing: clicking updates the hash; a `hashchange` listener switches views; the hash wins over the remembered tab on load.
@@ -587,7 +588,7 @@ A standard labelled navigation (`<nav aria-label="Views">`) in two groups (`role
   On Vendors, Storage and Character the export named is that view's worst export source; when every export is ok the nothing-new line is the plain "i" note "Nothing new since 00:56. Your exports are recent."
 
 ### At a glance window
-A real secondary window (title left: "At a glance"), not a strip and not tiles. Body: one row of label-over-value cells divided by 1 px `rule` lines; label `small` dim in the game's literal style ("Councils left", "Drained", "Slots Free"), value below it. The first cell is the **lead figure** (22/700), the rest are figures (20/400). Councils figures carry the coin medallion. Only figures with a value show; zeros fold into the finding ("No level-ups yet" lives in the sentence, not as a 0). When a figure's source is stale, its label carries the age as plain text ("8 d old"; 30 Oct: amber once per view, in the stamp and the pill). Each figure may carry one sub-line in `small` dim that names its window ("since login", "in 24 vaults"). A figure that links somewhere ("Slots Free 637" on Vendors → `#storage`) is a real link with an underline on hover. **Footer** (required, like every window): left, the source and age of the lead figure and of any other source used ("Character export · 8 h ago · Slots Free from storage export · 8 h ago"); right, the fix for the worst of them ("After selling: VIP menu → Export Character JSON"), per Views → Window footers. Phone: 2-column grid, lead figure (20 px) spans both. (Argument: Typography → The At-a-Glance Allowance.)
+A real secondary window (title left: "At a glance"), not a strip and not tiles. Body: one row of label-over-value cells divided by 1 px `rule` lines; label `small` dim in the game's literal style ("Councils left", "Drained", "Slots Free"), value below it. The first cell is the **lead figure** (24/700), the rest are figures (22/400). Councils figures carry the coin medallion. Only figures with a value show; zeros fold into the finding ("No level-ups yet" lives in the sentence, not as a 0). When a figure's source is stale, its label carries the age as plain text ("8 d old"; 30 Oct: amber once per view, in the stamp and the pill). Each figure may carry one sub-line in `small` dim that names its window ("since login", "in 24 vaults"). A figure that links somewhere ("Slots Free 637" on Vendors → `#storage`) is a real link with an underline on hover. **Footer** (required, like every window): left, the source and age of the lead figure and of any other source used ("Character export · 8 h ago · Slots Free from storage export · 8 h ago"); right, the fix for the worst of them ("After selling: VIP menu → Export Character JSON"), per Views → Window footers. Phone: 2-column grid, lead figure (22 px) spans both. (Argument: Typography → The At-a-Glance Allowance.)
 
 ### Bars
 - **Horizontal value bar**: 8 px tall, radius 2, `track` behind, `data-gold` fill (on pane: `pane-bar` on a 25% ink track; selected row: `sel-bar` on `rust-lo`; Daylight: `day-data`, on the Daylight pane `day-pane-bar`). Value label right-aligned outside the bar, tabular. Bars are relative to the largest row unless they show a share of a cap. Tracks are decorative (1.07 to 1.36:1); whenever the empty part carries meaning, the value label says it in text.
@@ -620,7 +621,7 @@ ALL CAPS 13/700, 0.06em, in a `well` strip, 32 px tall. Inactive `text-dim` (the
 - **Search**: 32 px, `field` fill, 1 px `control` border, radius 4, placeholder `text-dim` that says what it matches ("Vendor or what they buy, e.g. Gem"). `/` focuses the view's main search. Esc clears.
 - **Select** (area filter, export pickers): native `<select>` styled the same. Export pickers label each option "Robchew · 23 Oct 00:56", newest good export first, partial exports labelled "(partial)".
 - **Checkbox**: 16 px dark square, 1 px `control` border, gold check. Label sentence case ("Hide drained").
-- **Vault size input**: `type=number`, `min=1 max=999 step=1`, 64 px wide, inline in the Slots cell on the pane, placeholder "size", `pane-focus` ring. Saves on Enter or blur via `POST /api/capacity`; empty clears it. Feedback is set **inside the cell in `pane-ink` 13 px**, never in a status colour, and is repeated in the system line above the pane:
+- **Vault size input**: `type=number`, `min=1 max=999 step=1`, 64 px wide, inline in the Slots cell on the pane, placeholder "size", `pane-focus` ring. Saves on Enter or blur via `POST /api/capacity`; empty clears it. Feedback is set **inside the cell in `pane-ink` 15 px**, never in a status colour, and is repeated in the system line above the pane:
   - Saving: "Saving…".
   - Saved: "`[Status]` Saved, 75 slots" in ink (the `[Status]` word carries the meaning), fades after 4 s. System line: `[Status] Otis set to 75 slots.`
   - Cleared: "Cleared, size unknown again" in ink.
@@ -639,7 +640,7 @@ ALL CAPS 13/700, 0.06em, in a `well` strip, 32 px tall. Inactive `text-dim` (the
 ### Buttons
 - **Ghost** (default): `window` fill, 1 px `control` border, `text`, 32 px, radius 4, padding 0 16 px. Hover `row-hover`. Check again, Retry, Show more.
 - **Primary** (rust, one line, flat, no bevel): at most one per screen, for a deliberate commitment in the app. Today: "Remind Me!" in the Reminders panel (the game's "Craft It!" register: a verb, a little eager) and "Copy an invite line" on Combat. Never "Submit". **One rust element per screen.** The plaque while a Setup window shows; otherwise at most one `.btn.primary` on the view (Combat: "Copy an invite line" while someone in the party is not sharing; a plain ghost button while the Setup window sits above the page). Post, Connect and Copy are ghost buttons or text buttons.
-- **Fix plaque** (rust, two lines, bevel): line 1 the action in `on-rust` 15/700 ("Export Storage JSON"), line 2 where and when in 13 px ("In game: VIP menu, while fully logged in"). Pressing it means "I did it": it runs Check again for that source and posts the result. `aria-label` spells out both lines plus "then check again". Appears only for warn or bad notes that need a game action, **and only when the action is possible now** (`plaqueNow`: logged in for exports, the game open for settings); otherwise the note shows its one dim line ("Next time you're in game: …"). **At most one plaque per view**: in the Setup window while it shows, else in the margin for the first actionable listed verdict. In the Setup window line 2 always ends "then press here to check", and there is no "Not now". Distinct from the primary button by its two lines, its bevel and its "In game:" line; the two never appear in the same window.
+- **Fix plaque** (rust, two lines, bevel): line 1 the action in `on-rust` 17/700 ("Export Storage JSON"), line 2 where and when in 15 px ("In game: VIP menu, while fully logged in"). Pressing it means "I did it": it runs Check again for that source and posts the result. `aria-label` spells out both lines plus "then check again". Appears only for warn or bad notes that need a game action, **and only when the action is possible now** (`plaqueNow`: logged in for exports, the game open for settings); otherwise the note shows its one dim line ("Next time you're in game: …"). **At most one plaque per view**: in the Setup window while it shows, else in the margin for the first actionable listed verdict. In the Setup window line 2 always ends "then press here to check", and there is no "Not now". Distinct from the primary button by its two lines, its bevel and its "In game:" line; the two never appear in the same window.
 - **Text button** (`small`, underline on hover): "Not now", "Don't remind me about this", "Show all 7 sources", "Clear filter", "Undo".
 
 ### Feed: chat log
@@ -672,7 +673,7 @@ One health model yields one verdict per source. The server computes it at `GET /
 | Vault sizes (`vault-sizes`) | all known | some typed in by you (safebox drifts 1 to 150) | some unknown | n/a (not listed at all without a storage export: nothing to size) | Storage, Files | `vault-size` | no |
 | Alt exports stale (`alt-stale`, one per alt) | n/a | an alt's newest export is over 7 days old | n/a | n/a | Character, Files (listed); others folded | `alt-export` with `{alt}` | no (from `/api/reports`) |
 | Alt missing (`alt-missing`, one per alt) | n/a | a character seen in "Logged In As" lines in the last 30 days has no export at all (today: Boomchew, Raspby) | n/a | n/a | Character, Files (listed); others folded | `alt-export` with `{alt}` | yes (scans all logs) |
-| Combat logging (`combat-logging`) | every `combatLog_*` > 0 and `LogNonAttacks 1`: "Every "Log when…" row is on, and so is Log non-damaging abilities." (views none, folded) | n/a | (views `combat`) any row 0 or missing → "Log when my pets attack enemies and Log when my enemies attack my pets are Off, so those hits never reach the log. The meter counts what the log holds."; `LogNonAttacks 0` → "Log non-damaging abilities is off, so buffs and heals won't be in the log." (both sentences when both apply, then the closing sentence once). **Provisional, unverified (30 Oct)**: level 1 ("Chat Window (and log file if enabled)") is taken as writing the file; `VIP_CombatLogging` is not read (most likely the section's collapsed flag) and is reported in `evidenceData.vipCombatLogging`. `evidenceData.off` keeps the keys (sorted); the labels are the game's, joined in the settings window's row order (`COMBAT_ROW_LABEL` in `server.py`); `evidenceData.logNonAttacks` the raw value | n/a | Combat (listed when warn); never Session, so its pill never goes amber for a Combat setting (the Deaths and kills footer reads `evidenceData.off` for `EnemyAttackMe`, `MeAttackEnemy`, `PetAttackEnemy`) | `combat-logging` | yes |
+| Combat logging (`combat-logging`) | every `combatLog_*` > 0 and `LogNonAttacks 1`: "Every "Log when…" row is on, and so is Log non-damaging abilities." (views none, folded) | n/a | (views `combat`) any row 0 or missing → "Log when my pets attack enemies and Log when my enemies attack my pets are Off, so those hits never reach the log. The meter counts what the log holds."; `LogNonAttacks 0` → "Log non-damaging abilities is off, so buffs and heals won't be in the log." (both sentences when both apply, then the closing sentence once). Each row is a dropdown Off / "Chat Window (and log file if enabled)" / "Log File Only (if enabled)" = 0 / 1 / 2 (verified 30 Oct from the user's screenshot against the settings file); the game's label says 1 writes the file too, so any value above 0 is on, and the fix names Log File Only. `VIP_CombatLogging` is not read (most likely the section's collapsed flag) and is reported in `evidenceData.vipCombatLogging`. `evidenceData.off` keeps the keys (sorted); the labels are the game's, joined in the settings window's row order (`COMBAT_ROW_LABEL` in `server.py`); `evidenceData.logNonAttacks` the raw value | n/a | Combat (listed when warn); never Session, so its pill never goes amber for a Combat setting (the Deaths and kills footer reads `evidenceData.off` for `EnemyAttackMe`, `MeAttackEnemy`, `PetAttackEnemy`) | `combat-logging` | yes |
 | Combat lines (`combat-lines`) | any `[Combat]` line in today's log: "First combat line 18:44 · 6,965 so far today.", `at` = that line (`evidenceData.combatLines`, `firstCombatAt`, `lines`) | nothing to judge yet: logged in under 20 min, under 200 lines since the login, `combat-logging` not ok, logged out, or no log for today: "No combat line yet today. The log holds 1,204 lines." (`evidenceData.lines`, `sinceLogin`, `loggedInMin`) | logged in 20 min or more, 200+ lines since the login (the whole log when the login sits in yesterday's), zero `[Combat]` lines and `combat-logging` ok: "The log grew by 2,310 lines since you logged in and none is a combat line. The game writes combat lines for VIP accounts; if you have VIP, check the Combat Logging rows above." (hedged on purpose: that combat lines need VIP is what every log tool says, not something seen) | n/a | Combat (listed when warn; the Setup window's third row and the silent-meter finding read it) | `combat-logging` (warn only) | yes |
 | Live game events (`player-log`) | `LocalPlayer: Process` lines present in `Player.log` | none present (the Mac client today): "The Mac client doesn't write live inventory events, so vendor and storage numbers come from exports. Nothing to do." | n/a | n/a | Vendors and Storage, folded; About popover | `player-log` | yes |
 | VIP (`vip`) | an export of any kind in the last 14 days, or fewer than 3 logins since the newest export; or no export at all yet, with the honest evidence "No export yet, so VIP can't be told. The VIP menu's Export buttons prove it." (`at` null; ok and folded, because the page lists a non-ok `vip` on every view and the Setup window already carries the export step) | no export for 14 days across 3+ logins: "No exports in 14 days across 6 logins. If the VIP menu is missing, VIP may have lapsed." | no export for 30 days across 3+ logins | n/a | all, listed when info or warn | `vip` | yes (needs logins) |
@@ -1014,7 +1015,7 @@ The DPS meter. The newest chat log, read incrementally by byte offset into one `
     "abilities": [ { "…same row as totals, plus": "levels: [\"Dampen 8\"]" } ], "takenBy": [ { "name": "Fire Sheep", "ability": "Sheep Bomb", "hits": 5, "dmg": 364, "instakill": 0 } ],
     "indirectUnattributed": 1366, "shared": false, "others": [], "timeline": [[0, 882, 681], [1, 0, 0], [2, 499, 564]], "timelineStep": 1 } ] }
 ```
-Rules (verified on the 24 Oct log, `docs/DATA-SOURCES.md`): a fight opens on any attack line with a real `Dmg:` and closes after `gapSec` 15 s without one (`Dmg:  none`, evades, buff lines and indirect lines never open one; they count into an open one); duration is last − first + 1 s (an open fight runs to now). Damage = health + armor. **you** = the login-line character (no `#id`); **pets** = `#id` attackers that hit what you hit, or were hit by a known enemy, or are named in `KNOWN_PETS` / with a "(Pet)" ability, and never traded real damage with you; **enemies** = what you or a pet hit and what hit you or a pet. `unclassified` lists `#id` attackers that fit neither (their damage is in no figure). Ability names are grouped with the trailing level stripped (`levels` keeps the raw forms). A hit of 100,000 or more is a kill mechanic (`instakill`): a death, listed under `takenBy`, never summed. `deaths` counts one per FATALITY on you until you act again more than 1 s later (approximate; the Session death tracker is the precise one). `indirectUnattributed` sums "Suffered indirect dmg" on everything but you and your pets during the fight (the game names no source); `shared` is true when a `[Party]` line fell inside the fight or an unknown `#id` entity (`others`, likely another player) had a Recovered / indirect line in it. `minor` fights are under 5 s and 500 damage. `timeline` is dense from 0 to the fight's length, `[[second offset, you, pets]]` per bucket of `timelineStep` seconds (1 until a fight passes 240 s, then the smallest step that keeps it under 240 points); it sums to `dmg`. `now.recent` is you + pets' damage over the last `nowSec` 10 s ÷ 10. Scope: `day` from the day's first login line, `login` from the last. `best` needs 15 s and a closed fight. Settings are not here; `/api/health` `combat-logging` says when a `combatLog_*` key is below 2.
+Rules (verified on the 24 Oct log, `docs/DATA-SOURCES.md`): a fight opens on any attack line with a real `Dmg:` and closes after `gapSec` 15 s without one (`Dmg:  none`, evades, buff lines and indirect lines never open one; they count into an open one); duration is last − first + 1 s (an open fight runs to now). Damage = health + armor. **you** = the login-line character (no `#id`); **pets** = `#id` attackers that hit what you hit, or were hit by a known enemy, or are named in `KNOWN_PETS` / with a "(Pet)" ability, or are the target of one of your `PET_ABILITIES` (the 12 Animal Handling abilities aimed at your pet, abilities.json `Target` PermanentPet / Pet / DeadPet; such a line is never your damage: Unnatural Wrath's health cost on the pet is logged as a damage line), and never traded real damage with you; a name known as a pet is never an enemy; **enemies** = what you or a pet hit and what hit you or a pet. `unclassified` lists `#id` attackers that fit neither (their damage is in no figure). Ability names are grouped with the trailing level stripped (`levels` keeps the raw forms). A hit of 100,000 or more is a kill mechanic (`instakill`): a death, listed under `takenBy`, never summed. `deaths` counts one per FATALITY on you until you act again more than 1 s later (approximate; the Session death tracker is the precise one). `indirectUnattributed` sums "Suffered indirect dmg" on everything but you and your pets during the fight (the game names no source); `shared` is true when a `[Party]` line fell inside the fight or an unknown `#id` entity (`others`, likely another player) had a Recovered / indirect line in it. `minor` fights are under 5 s and 500 damage. `timeline` is dense from 0 to the fight's length, `[[second offset, you, pets]]` per bucket of `timelineStep` seconds (1 until a fight passes 240 s, then the smallest step that keeps it under 240 points); it sums to `dmg`. `now.recent` is you + pets' damage over the last `nowSec` 10 s ÷ 10. Scope: `day` from the day's first login line, `login` from the last. `best` needs 15 s and a closed fight. Settings are not here; `/api/health` `combat-logging` says when a `combatLog_*` key is below 2.
 
 ### `GET /api/party`, `POST /api/party` (new, 25 Oct; `docs/SHARING.md`)
 **Sessions (26 Oct 19:15).** The answer carries `sessions`, newest first: `{ id: "m:<start>" | "a:<start>", kind: "manual" | "auto", start, end | null, open, areas: [], fights, secs, total, kills, players: [], rows: [{ who, owner | null, mine, dmg, health | null, armor | null, kills, secs, dps, share, split }] }` (`party_sessions`, `session_rows`; manual sessions from `party.json`, automatic ones = merged fights in one area at most `SESSION_GAP_SEC` 15 min apart). `POST { "session": "start" | "stop" | "forget", "id"? }` opens the one running manual session, closes it, or drops one (`session_set`), and answers the party state. `POST /api/discord { "session": "<id>" }` posts a session (`session_card`), with `preview` / `image` as for a fight.
@@ -1227,7 +1228,7 @@ Timing words for the right moment: "After selling:", "After storing:", "Before y
 - Keyboard: every control reachable in order; visible focus ring by surface (Inputs → Focus); tabs with arrow keys; sortable headers are buttons inside `<th>` with `aria-sort`; area bars and goods chips are buttons with `aria-pressed`; `/` focuses search, Esc clears or closes; the JSON tree is a WAI-ARIA tree with one roving tab stop and the full arrow / Home / End / Enter / Space / `*` / type-ahead map (Components → JSON tree).
 - Live regions: system line `aria-live="polite"`; toasts polite; the chat log `role="log"` without live announcement; bad-severity changes announced once.
 - Touch targets 44 px on a phone (chips get a 28 px visual with a 44 px hit area).
-- 13 px minimum text; layouts survive 200% zoom and 400% reflow at 320 px.
+- 15 px minimum text (14 px for the rail group band and phone rail labels under 420 px); layouts survive 200% zoom and 400% reflow at 320 px.
 - `prefers-reduced-motion` honoured; `prefers-color-scheme` drives Auto.
 - Icons decorative when labelled; coin `aria-hidden`; status shapes have `role="img"` with an `aria-label` from `SHAPE_LABEL`: ok "OK", info "Note", warn **"To do"** (the pill's own word; it was "Stale" until 30 Oct), bad "Broken", the dashed ring "Not yet"; a site that knows better passes its own label ("Not set up" on the Setup rows and the "set up below" stamp, "Stale" only where an age is the point).
 - `lang="en"`; `<title>` reflects the view and the badge, one format: "(2) Vendors · Gorgon Notes" (Data health → Other channels).
@@ -1565,7 +1566,7 @@ Files view (24 Oct):
 - **Rail in two groups, Play and Reference; Files is a tool at the foot** beside About; phone bar four Play items + More.
 - **Two decks per view**: At a glance and the primary window open, the rest a folded lower deck, full width, no footer while folded, remembered in `pgdash.open['deck-<view>']`. **`.win` clips with `overflow: clip`** so filter bars can stick.
 - **Session with defaults measures 1,522 px at 1440** (target was 1,400). Accepted: XP by skill and What happened stay open by default because they are the day's answer; Here opens itself only while logged in, capped at five NPCs.
-- **Combat Logging is a warn on Combat** when any "Log when…" row is Off. **Provisional and unverified**: level 1 ("Chat Window (and log file if enabled)") is taken as writing the file, and `VIP_CombatLogging` is not read (most likely the section's collapsed flag). The `combat-lines` verdict catches the silent meter, hedged on VIP.
+- **Combat Logging is a warn on Combat** when any "Log when…" row is Off. Verified 30 Oct (user's screenshot of the section): the options are Off / Chat Window (and log file if enabled) / Log File Only (if enabled) = 0 / 1 / 2, and the game's label says 1 also writes the file, so any row above Off counts. `VIP_CombatLogging` is still not read (1 with the section open; most likely its collapsed flag). The `combat-lines` verdict catches the silent meter, hedged on VIP.
 - **Save Chat Logs path stays Settings → V.I.P.** (the user's 27 Oct correction outranks the 14 Apr 2026 patch note that says GUI → Chat Logs); the in-game look still closes ROADMAP's open check.
 - **Session's Combat window is "Deaths and kills".**
 - **Your party comes from the everyone feed with no code**, by the hunting-party roster the chat log names; the party code is a folded **"Private room"** under the Breakdown, for groups that want off the public page.

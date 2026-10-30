@@ -903,6 +903,12 @@ ABIL_LEVEL_RE = re.compile(r" \d+$")
 # Names the player's logs and PGCombatTracker's default list know as summons; a fallback only, the behaviour
 # heuristic (hit what you hit, never traded damage with you) places pets without it.
 KNOWN_PETS = {"Cardi Bee", "Doomstorm", "Tornado", "Unliving Ratkin Blaster", "Summoned Golem Minion", "Fire Wall"}
+# Abilities the game aims at your own pet (abilities.json Target PermanentPet / Pet / DeadPet, game data v490, all
+# Animal Handling). You using one on X means X is your pet. Unnatural Wrath "energize[s] your pet's next attack at the
+# cost of its health" and logs that cost as a damage line ("Robchew: Unnatural Wrath 6 on Cardi Bee #… Dmg: 226
+# health, 151 armor"), which made the pet an enemy and every mob it hit a "pet" (30 Oct).
+PET_ABILITIES = {"Clever Trick", "Feed Pet", "Get It Off Me", "Infectious Instincts", "Monstrous Rage", "Nimble Limbs",
+                 "Revive Pet", "Sic 'Em", "Storm Shield", "That'll Do", "Unnatural Wrath", "Wild Endurance"}
 
 
 def dmg_parts(text):
@@ -1092,6 +1098,9 @@ class DpsTracker:
         att, vic, aid, vid = g["att"], g["vic"], g["aid"], g["vid"]
         if "(Pet)" in (g["abil"] or "") and aid:
             self.pet_hint.add(att)
+        if (att == self.char or att in self.chars) and vid and abil_key(g["abil"]) in PET_ABILITIES:
+            self.pet_hint.add(vic)
+            return  # aimed at your own pet: a buff, or a health cost (Unnatural Wrath), never damage you dealt
         if g["dmg"] is None:
             return  # a buff or a pet command: no damage field
         dt = chat_dt(ts)
@@ -1180,8 +1189,9 @@ class DpsTracker:
     # ---- report ----
     def classify(self):
         """(pets, enemies) by name over the whole log. Pets: #id attackers that hit what you hit, or that a known
-        enemy hit, or named in KNOWN_PETS / with a (Pet) ability, and never traded real damage with you."""
-        enemies = set(self.my_targets) | set(self.hit_me)
+        enemy hit, or named in KNOWN_PETS / with a (Pet) ability / the target of one of your PET_ABILITIES, and never
+        traded real damage with you. A name known as a pet is never an enemy."""
+        enemies = (set(self.my_targets) | set(self.hit_me)) - self.pet_hint - KNOWN_PETS
         attackers = set()
         victims_of = defaultdict(set)  # attacker -> victims
         hit_by = defaultdict(set)      # victim -> attackers
@@ -3755,17 +3765,17 @@ def health(character=None):
             "alt-export", views=["character"], item_id=f"alt-missing:{who}", server_only=True, fix_args={"alt": who})
 
     # combat logging (Settings → V.I.P. → Combat Logging): a warn on Combat when any "Log when…" row is Off or
-    # Log non-damaging abilities is off (30 Oct). Provisional, UNVERIFIED (30 Oct): a combatLog_* row at 1
-    # ("Chat Window (and log file if enabled)") is taken as writing the file like 2 does; only 2 was ever seen
-    # writing damage numbers (24 Oct). VIP_CombatLogging is reported in evidenceData and never read for the
-    # verdict: most likely the section's collapsed flag, like its sibling GUI_* keys, not a switch. One in-game
-    # look at each closes both (ROADMAP → decisions waiting on the user).
+    # Log non-damaging abilities is off (30 Oct). Each row is a dropdown Off / "Chat Window (and log file if
+    # enabled)" / "Log File Only (if enabled)" = 0 / 1 / 2 (user's screenshot of the section, 30 Oct 15:55, with every
+    # row at Log File Only and the file at 2). The game's own label says 1 writes the file too, so any value > 0 is on;
+    # a level-1 row has not been seen writing a line yet. VIP_CombatLogging is reported in evidenceData and never read
+    # for the verdict: 1 with the section open in that screenshot, most likely its collapsed flag like the GUI_* keys.
     combat_logging_ok = False
     if settings.get("readable"):
         cl = settings.get("combatLog", {})
         lna = settings.get("LogNonAttacks")
         vip = settings.get("VIP_CombatLogging")
-        on = lambda v: isinstance(v, int) and v > 0     # provisional: 1 counts as writing the file (unverified, see above)
+        on = lambda v: isinstance(v, int) and v > 0     # 1 and 2 both write the file (the game's labels, see above)
         off = sorted(k for k in COMBAT_ROWS if not on(cl.get(k)))   # a missing key counts as Off
         combat_logging_ok = bool(cl) and not off and lna == 1
         if combat_logging_ok:
