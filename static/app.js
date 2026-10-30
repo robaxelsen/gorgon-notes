@@ -8,6 +8,7 @@ const APP_NAME = 'Gorgon Notes';
 const PAGE_BUILD = 'dev';   // windows/build.sh stamps the release tag in here, so the page can tell a server behind it is older
 const FAN_LINE = 'fan-made, not affiliated with Elder Game';
 const VIEWS = ['session', 'combat', 'vendors', 'storage', 'character', 'files', 'teleports', 'statehelm'];
+const MORE_VIEWS = ['character', 'teleports', 'statehelm', 'files']; // the views behind the phone bar's More cell
 const VIEW_TITLE = { session: 'Session', combat: 'Combat', vendors: 'Vendors', storage: 'Storage', character: 'Character', files: 'Files', teleports: 'Teleports', statehelm: 'Statehelm' };
 const FAVOR = ['Despised', 'Hated', 'Disliked', 'Tolerated', 'Neutral', 'Comfortable', 'Friends', 'CloseFriends', 'BestFriends', 'LikeFamily', 'SoulMates'];
 const FAVOR_LABEL = { CloseFriends: 'Close Friends', BestFriends: 'Best Friends', LikeFamily: 'Like Family', SoulMates: 'Soul Mates' };
@@ -25,7 +26,8 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const lastHTML = new WeakMap();
 const FOCUS_ATTRS = ['data-sort', 'data-zarea', 'data-zback', 'data-zmore', 'data-table', 'data-area', 'data-npc', 'data-vault', 'data-loc', 'data-type', 'data-sec', 'data-fold',
   'data-fix', 'data-chan', 'data-clear', 'data-sclear', 'data-newest', 'data-notnow', 'data-retry', 'data-w', 'data-m', 'data-s',
-  'data-path', 'data-file', 'data-fmore', 'data-crumb', 'data-copy', 'data-hit', 'data-fight', 'data-dminor', 'data-shpick', 'data-shinc', 'data-shdec', 'data-shfold', 'data-shlog', 'data-shunpick'];
+  'data-path', 'data-file', 'data-fmore', 'data-crumb', 'data-copy', 'data-hit', 'data-fight', 'data-dminor', 'data-shpick', 'data-shinc', 'data-shdec', 'data-shfold', 'data-shlog', 'data-shunpick',
+  'data-deck', 'data-deckall', 'data-pinvite', 'data-psplit', 'data-once', 'data-dall', 'data-pall', 'data-psolo', 'data-pev', 'data-psess-post', 'data-tpzone', 'data-step', 'data-more-view'];
 function focusKey(el, root) {
   if (el.id) return '#' + CSS.escape(el.id);
   const attrs = FOCUS_ATTRS.filter(a => el.hasAttribute(a)).map(a => `[${a}="${CSS.escape(el.getAttribute(a))}"]`);
@@ -63,7 +65,7 @@ const PREVIEW = (() => {
   }
   if (q.has('sim')) {
     const v = q.get('sim');
-    if (['stale', 'broken', 'nolog', 'noexport', 'loading', 'down'].includes(v)) out.sim = v; else out.notes.push(`unknown sim value '${v}', ignored`);
+    if (['stale', 'broken', 'nolog', 'noexport', 'loading', 'down', 'fresh', 'partiallog', 'party'].includes(v)) out.sim = v; else out.notes.push(`unknown sim value '${v}', ignored`);
   }
   if (q.has('theme')) {
     const v = q.get('theme');
@@ -143,13 +145,16 @@ function dur(ms) {
 }
 
 /* ---------- glyphs (inline SVG drawn for this app) ---------- */
-const SHAPE_LABEL = { ok: 'OK', info: 'Note', warn: 'Stale', bad: 'Broken' };
-function shape(sev, cls = '') {
-  const label = SHAPE_LABEL[sev] || sev;
+/* The spoken name of each glyph. Amber is "To do" (the pill's own word); a site that knows better passes its own label:
+   "Not set up" from the Setup rows and the "set up below" stamp, "Stale" where an age is the point. */
+const SHAPE_LABEL = { ok: 'OK', info: 'Note', warn: 'To do', bad: 'Broken', todo: 'Not yet' };
+function shape(sev, cls = '', label = SHAPE_LABEL[sev] || sev) {
   const c = `shape sev-${sev} ${cls}`;
   if (sev === 'warn') return `<svg class="${c}" viewBox="0 0 16 16" role="img" aria-label="${label}"><path d="M8 1.2 15.3 14H.7z" fill="currentColor"/><path d="M7.2 5.5h1.6l-.25 4.6h-1.1zM8 11.2a.95.95 0 1 1 0 1.9.95.95 0 0 1 0-1.9z" fill="var(--window, #1E1818)"/></svg>`;
   if (sev === 'bad') return `<svg class="${c}" viewBox="0 0 16 16" role="img" aria-label="${label}"><rect x="1.5" y="1.5" width="13" height="13" rx="2" fill="currentColor"/><path d="m5.2 5.2 5.6 5.6m0-5.6-5.6 5.6" stroke="var(--window, #1E1818)" stroke-width="1.8" stroke-linecap="round"/></svg>`;
   if (sev === 'info') return `<svg class="${c}" viewBox="0 0 16 16" role="img" aria-label="${label}"><circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 7v4.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="8" cy="4.8" r="1" fill="currentColor"/></svg>`;
+  // 'todo': the ok ring, dashed and empty; a step not taken yet (Setup rows). Never red, never amber.
+  if (sev === 'todo') return `<svg class="${c}" viewBox="0 0 16 16" role="img" aria-label="${label}"><circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2.2 2.2"/></svg>`;
   return `<svg class="${c}" viewBox="0 0 16 16" role="img" aria-label="${label}"><circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m5.2 8.2 1.9 1.9 3.8-4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 }
 const COIN = '<svg class="coin" viewBox="0 0 16 16" aria-hidden="true"><circle class="face" cx="8" cy="8" r="6.5"/><circle class="rim" cx="8" cy="8" r="6.5"/><circle cx="8" cy="8" r="3.6" fill="none" stroke="rgba(0,0,0,.28)" stroke-width="1"/></svg>';
@@ -189,6 +194,8 @@ const S = {
   down: false, downSince: null,
   firstRound: true,
   loading: true,
+  seen: store.json('pgdash.seen', {}),   // sources this browser has seen with data at least once (pgdash.seen); a fresh install has none
+  setupForced: null,                     // the view whose Setup window is forced open by #<view>?setup=1 (cleared on the next view change)
 };
 function cdnVersion() { const v = String(S.health?.cdnVersion || S.vendors?.cdnVersion || S.storage?.cdnVersion || ''); return /^\d{1,6}$/.test(v) ? v : CDN_FALLBACK; }
 function iconUrl(id) { return id == null ? null : `https://cdn.projectgorgon.com/v${cdnVersion()}/icons/icon_${id}.png`; }
@@ -210,12 +217,25 @@ async function api(path, opts) {
   if (PREVIEW.sim === 'loading') return never();
   // Icons and names are game metadata the first real round asked for; the preview keeps them so slots don't empty out.
   if (PREVIEW.sim === 'down' && roundsDone >= 1 && !/^\/api\/(icons|lookup)/.test(path)) throw new TypeError('preview: server not answering');
-  if (PREVIEW.sim === 'nolog') {
+  // 'fresh' = nolog + noexport in one load (every source never seen); 'party' serves /api/party from a fixture and refuses every write.
+  const simNoLog = PREVIEW.sim === 'nolog' || PREVIEW.sim === 'fresh';
+  const simNoExport = PREVIEW.sim === 'noexport' || PREVIEW.sim === 'fresh';
+  // A preview never writes to the server either: Post to Discord, Connect Discord, a mark, a setting would all
+  // reach real data (the party fixture even says Discord is connected), so every non-GET is refused here.
+  if (PREVIEW.active && opts && opts.method && opts.method !== 'GET') { const e = new Error('Preview: nothing is written while pretending.'); e.status = 400; e.body = { error: e.message }; throw e; }
+  if (PREVIEW.sim === 'party') {
+    if (path.startsWith('/api/party')) {
+      const r = await fetch('sim/party.json', { cache: 'no-store' });
+      if (!r.ok) throw new Error(`preview: sim/party.json ${r.status}`);   // no status: the window keeps "Checking the party link…"
+      return await r.json();
+    }
+  }
+  if (simNoLog) {
     if (path.startsWith('/api/session')) return {};
     if (path.startsWith('/api/combat')) return {};
     if (path.startsWith('/api/tail')) return { lines: [] };
   }
-  if (PREVIEW.sim === 'noexport') {
+  if (simNoExport) {
     if (path.startsWith('/api/vendors')) return { error: 'no character export' };
     if (path.startsWith('/api/storage')) return { error: 'no items export' };
     if (path.startsWith('/api/consolidation')) return { error: 'no items export' };
@@ -225,21 +245,44 @@ async function api(path, opts) {
   // mtimeNs (a 19-digit st_mtime_ns) is past 2^53, so it is kept as a string: the server compares it as text.
   try { body = JSON.parse((await r.text()).replace(/"mtimeNs":\s*(\d+)/g, '"mtimeNs": "$1"')); } catch { const e = new Error(`bad JSON from ${path}`); e.status = r.status; throw e; }
   if (!r.ok) { const e = new Error(body?.error || `HTTP ${r.status}`); e.status = r.status; e.body = body; throw e; }
-  if (PREVIEW.sim === 'noexport' && path.startsWith('/api/reports') && Array.isArray(body)) {
+  if (simNoExport && path.startsWith('/api/reports') && Array.isArray(body)) {
     // The first /api/reports call runs before pickCharacter(), so resolve the character the same way it will.
     const who = S.character || store.get('pgdash.character', null) || S.session?.character || S.health?.game?.character;
     return body.filter(x => x.character !== who && x.character !== '???');
   }
-  if (PREVIEW.sim === 'noexport' && path.startsWith('/api/files') && Array.isArray(body?.files)) {
+  if (simNoExport && path.startsWith('/api/files') && Array.isArray(body?.files)) {
     const who = S.character || store.get('pgdash.character', null) || S.session?.character || S.health?.game?.character;
     return { ...body, files: body.files.filter(x => x.group !== 'reports' || (x.character !== who && x.character !== '???')) };
   }
-  if (PREVIEW.sim === 'nolog' && path.startsWith('/api/files') && Array.isArray(body?.files)) return { ...body, files: body.files.filter(x => x.group !== 'logs') };
+  if (simNoLog && path.startsWith('/api/files') && Array.isArray(body?.files)) return { ...body, files: body.files.filter(x => x.group !== 'logs') };
   return body;
 }
 function isNetworkError(e) { return e instanceof TypeError || (e && e.status >= 500 && !e.body); }
 
 /* ---------- fix wording (one source of truth) ---------- */
+/* In-game labels allowed in copy (nothing else, until ROADMAP's in-game check closes): "Save Chat Logs", the "Chat Logs" section,
+   "Settings → V.I.P. → Save Chat Logs" (user, 27 Oct), "Settings → V.I.P. → Combat Logging", the seven "Log when…" rows,
+   "Log non-damaging abilities", "VIP menu → Export Character JSON / Export Storage JSON". */
+const NEEDS_NEWER = `Needs a newer ${APP_NAME}.`;
+/* Numbered steps for the Setup window rows (A-FINAL §1.4). Game labels sit in <em class="t">; {offNow} in combat-logging
+   step 2 is replaced by ' <span class="dim">Off now: …</span>' (the COMBAT_ROW_LABEL names joined by " · ") or ''. */
+const STEPS = {
+  'chat-logging': ['In the game, open <em class="t">Settings</em>.',
+                   'Open the <em class="t">V.I.P.</em> tab.',
+                   'Tick <em class="t">Save Chat Logs</em>.',
+                   'Log out and back in. The log file appears then.'],
+  'chat-logging-relog': ['Log out and back in. The game starts the log file at login.'],
+  'combat-logging': ['In the game, open <em class="t">Settings → V.I.P. → Combat Logging</em>.',
+                     'Set every <em class="t">Log when…</em> row to anything but Off.{offNow}',
+                     'Tick <em class="t">Log non-damaging abilities</em>.'],
+  'export-character': ['In the game, open the <em class="t">VIP menu</em>.', 'Press <em class="t">Export Character JSON</em> while fully logged in, not right before logging out.'],
+  'export-storage':   ['In the game, open the <em class="t">VIP menu</em>.', 'Press <em class="t">Export Storage JSON</em>.'],
+};
+/* The game's wording for the seven Combat Logging rows, typo included; keys are the server's evidenceData.off names. */
+const COMBAT_ROW_LABEL = { MeAttackEnemy: 'Log when I attack enemies', PetAttackEnemy: 'Log when my pets attack enemies',
+  EnemyAttackMe: 'Log when my enemies attack me', EnemyAttackPet: 'Log when my enemies attack my pets',
+  MeIndirectlyDamaged: 'Log when I am healed or take indirect damage', PetIndirectlyDamaged: 'Log when my pet is healed or takes indirect damage',
+  EnemyIndirectlyDamaged: 'Log when my others are healed or takes indirect damage' };
 function loggedIn() {
   const g = S.health?.game;
   if (g && typeof g.loggedIn === 'boolean') return g.loggedIn;
@@ -252,30 +295,47 @@ function fixText(key, args = {}, opts = {}) {
     'export-character': ['VIP menu → Export Character JSON', "Next time you're in game: VIP menu → Export Character JSON, while fully logged in"],
     'export-storage': ['VIP menu → Export Storage JSON', "Next time you're in game: VIP menu → Export Storage JSON"],
     'export-again': ['Export again while fully logged in, not right before logout: VIP menu → Export Character JSON', "Next time you're in game: VIP menu → Export Character JSON, while fully logged in"],
-    'chat-logging': ['Settings → V.I.P. → Save Chat Logs'],
+    'chat-logging': ['Settings → V.I.P. → Save Chat Logs, then log out and back in', "Next time you're in game: Settings → V.I.P. → Save Chat Logs, then log out and back in"],
     'chat-logging-ok': ['If it ever stops: Settings → V.I.P. → Save Chat Logs'],
     // No storage export: there is no Slots column to type into yet, so the fix names the export first.
     'vault-size': [`${storageMissing() ? 'After a storage export: check' : 'Check'} the size in game, then type it in the Slots column${S.view === 'storage' ? '' : ' on Storage'}`],
     'alt-export': [`Next time you play ${args.alt || 'that character'}: VIP menu → Export Character JSON and Export Storage JSON`],
     'auto-export': ['Nothing to do.'],
-    'combat-logging': [S.view === 'combat' ? 'Settings → V.I.P. → Combat Logging: every "Log when…" row on a Log File option, Log non-damaging abilities on, and Save Chat Logs on. The meter needs every category.' : 'Settings → V.I.P. → Combat Logging: every "Log when…" row on a Log File option, with Save Chat Logs on. Deaths still count; kills and killers need it.'],
+    // The numbered steps live in the Setup row; this is the one-line form for footers and the margin.
+    'combat-logging': [COMBAT_LOGGING_FIX(), `Next time you're in game: ${COMBAT_LOGGING_FIX()}`],
     'player-log': ['Nothing to do. Exports cover it.'],
-    'vip': ['Exports need VIP. Check your VIP status in game.'],
-    'server': ['Start it again: python3 server.py'],
-    'party-sharing': ['Nothing to do but wait: the app retries every 10 s. Copy for Discord on the Breakdown shares a fight by hand.'],
+    'vip': ['Exports and Combat Logging live on the V.I.P. tab. Check your VIP status in game.'],
+    'server': [`Start ${APP_NAME} again.`],
+    'party-sharing': ['Nothing to do but wait: the app retries every 10 s.'],
     'everyone-feed': ['Nothing to do but wait: the app retries every 10 s and sends what waits.'],
   }[key];
   if (!T) return '';
   return (!inGame && T[1]) ? T[1] : T[0];
 }
-/* Plaque copy for fixes that need a game action. */
-function plaqueFor(key) {
+const COMBAT_LOGGING_FIX = () => S.view === 'combat'
+  ? 'Settings → V.I.P. → Combat Logging: every "Log when…" row not Off, Log non-damaging abilities on.'
+  : 'Settings → V.I.P. → Combat Logging: every "Log when…" row not Off. Deaths still count; kills and killers need it.';
+/* Plaque copy for fixes that need a game action: [p1, p2]. `where` = 'margin' (default: the margin note's plaque, one
+   line of in-game directions) or 'setup' (the Setup window row: the steps are listed above the plaque, so p2 points at them). */
+function plaqueFor(key, where = 'margin') {
   const inGame = loggedIn();
+  if (where === 'setup') {
+    const setup = {
+      'chat-logging': ['Save Chat Logs', 'In the game, steps 1 to 4 · then press here to check'],
+      'chat-logging-relog': ['Log out and back in', 'Then press here to check'],
+      'combat-logging': ['Combat Logging', 'In the game, steps 1 to 3 · then press here to check'],
+      'export-character': ['Export Character JSON', 'In the game: VIP menu · then press here to check'],
+      'export-again': ['Export Character JSON again', 'In the game: VIP menu · then press here to check'],
+      'export-storage': ['Export Storage JSON', 'In the game: VIP menu · then press here to check'],
+    };
+    return setup[key] || null;
+  }
   const map = {
     'export-character': ['Export Character JSON', inGame ? 'In game: VIP menu, while fully logged in' : "Next time you're in game: VIP menu, while fully logged in"],
     'export-again': ['Export Character JSON again', inGame ? 'In game: VIP menu, while fully logged in, not right before logout' : "Next time you're in game: VIP menu, while fully logged in"],
     'export-storage': ['Export Storage JSON', inGame ? 'In game: VIP menu' : "Next time you're in game: VIP menu"],
-    'chat-logging': ['Save Chat Logs', 'In game: Settings → V.I.P. → Save Chat Logs'],
+    'chat-logging': ['Save Chat Logs', 'In game: Settings → V.I.P. → Save Chat Logs, then log out and back in'],
+    'combat-logging': ['Combat Logging', 'In game: Settings → V.I.P. → Combat Logging'],
     'vault-size': ['Type in the vault size', `${storageMissing() ? 'After a storage export: check' : 'Check'} it in game, then enter it in the Slots column${S.view === 'storage' ? '' : ' on Storage'}`],
   };
   return map[key] || null;
@@ -285,9 +345,10 @@ function plaqueFor(key) {
 /* Data health: one verdict list drives every surface (margin, footers, stamp, pill, rail, tab title, favicon). */
 
 const SEV_RANK = { ok: 0, info: 1, warn: 2, bad: 3 };
+const simUnseen = new Set();   // sources ?sim=fresh treats as never seen for this load (never persisted)
 const worstOf = list => list.reduce((w, v) => SEV_RANK[v.severity] > SEV_RANK[w] ? v.severity : w, 'ok');
 const DEFAULT_THRESH = { 'character-export': 86400, 'storage-export': 172800, 'chat-silence': 900, 'alt-stale': 604800 };
-const NEEDS_SERVER = 'Not checked here: activity since your exports, game settings, alts that never exported, VIP, game version. They need a newer server.py.';
+const NEEDS_SERVER = `Not checked here: activity since your exports, game settings, alts that never exported, VIP, game version. They need a newer ${APP_NAME}.`;
 
 async function loadHealth() {
   const who = S.character ? `?character=${encodeURIComponent(S.character)}` : '';
@@ -380,8 +441,20 @@ function computeVerdicts() {
     list = browserVerdicts();
     for (const v of list) if (v.at) v.ageSec = Math.max(0, Math.round((NOW() - parseIso(v.at)) / 1000));
   }
-  // Preview overrides (browser only).
+  // A fresh install is not broken: remember which sources this browser has ever seen with data, so a source that was there and
+  // is gone ("missing", red) reads differently from one never set up ("to set up", the dashed ring). Persisted; a preview never writes.
+  let seenChanged = false;
+  for (const v of list) if (v.ageSec != null && !S.seen[v.source]) { S.seen[v.source] = true; seenChanged = true; }
+  if (S.health?.game?.log && !S.seen['chat-log']) { S.seen['chat-log'] = true; seenChanged = true; }
+  if (seenChanged) store.set('pgdash.seen', S.seen);
+  simUnseen.clear();
+  // Health is scoped to the view: the chat log feeds Session, Combat, Statehelm and Files, never the export views (an older
+  // server lists vendors/storage/character on its bad chat-log verdict; the client drops them).
+  for (const v of list) if (v.source === 'chat-log' && v.severity === 'bad') v.views = (v.views || []).filter(x => x !== 'vendors' && x !== 'storage' && x !== 'character');
+  // Preview overrides (browser only). 'fresh' = nolog + noexport in one load, and every simmed source never seen.
   const ov = (src, f) => list.filter(v => v.source === src).forEach(f);
+  const simNoLog = PREVIEW.sim === 'nolog' || PREVIEW.sim === 'fresh';
+  const simNoExport = PREVIEW.sim === 'noexport' || PREVIEW.sim === 'fresh';
   if (PREVIEW.sim === 'stale') {
     ['character-export', 'storage-export'].forEach(src => ov(src, v => {
       if (v.severity === 'bad') return;
@@ -391,19 +464,35 @@ function computeVerdicts() {
     }));
   }
   if (PREVIEW.sim === 'broken') ov('partial-export', v => { v.severity = 'bad'; v.fixKey = 'export-again'; v.views = ['character', 'vendors', 'storage']; v.evidence = 'That export came out a bit… partial (name "???"). Export again while fully logged in.'; });
-  if (PREVIEW.sim === 'nolog') {
-    ov('chat-log', v => { v.severity = 'bad'; v.evidence = 'No chat log found. The game only writes one with Save Chat Logs on.'; v.fixKey = 'chat-logging'; v.views = ['session', 'combat', 'files']; v.at = null; v.ageSec = null; });
+  if (simNoLog) {
+    ov('chat-log', v => { v.severity = 'bad'; v.evidence = 'No chat log found. The game only writes one with Save Chat Logs on.'; v.fixKey = 'chat-logging'; v.views = ['session', 'combat', 'statehelm', 'files']; v.at = null; v.ageSec = null; v.evidenceData = { ...(v.evidenceData || {}), short: 'No chat log found. The game only writes one with Save Chat Logs on.' }; });
     ov('game', v => { v.severity = 'info'; v.evidence = 'Not known without a chat log.'; v.unknown = true; });
   }
-  if (PREVIEW.sim === 'noexport') {
+  if (simNoExport) {
     ['character-export', 'storage-export'].forEach(src => ov(src, v => {
       v.severity = 'bad'; v.at = null; v.ageSec = null; v.file = null;
       v.evidence = `No ${v.title.toLowerCase()} for ${S.character || 'this character'} yet.`;
-      v.views = src === 'character-export' ? ['vendors', 'character', 'storage'] : ['storage', 'vendors'];
+      v.views = src === 'character-export' ? ['vendors', 'character', 'storage', 'statehelm', 'files'] : ['storage', 'statehelm', 'vendors', 'files'];
     }));
     ov('partial-export', v => { v.severity = 'ok'; v.evidence = 'No partial exports.'; v.views = []; });
     // The server adds no vault-sizes item without vaults, so the preview drops the real one too.
     list = list.filter(v => v.source !== 'vault-sizes');
+  }
+  if (PREVIEW.sim === 'fresh') {
+    ['chat-log', 'character-export', 'storage-export', 'combat-lines'].forEach(src => simUnseen.add(src));
+    // Nothing is set up: the real settings file is not consulted for the chat-log row either ("waiting for the game").
+    ov('chat-log', v => { v.evidenceData = { ...(v.evidenceData || {}), readable: true, logChat: null, looked: null, exists: null }; });
+    ov('combat-lines', v => { if (v.severity !== 'warn') { v.severity = 'info'; v.at = null; v.ageSec = null; v.fixKey = null; v.evidence = 'No combat line yet today.'; v.views = ['combat']; } });
+  }
+  if (PREVIEW.sim === 'partiallog') {
+    const off = ['PetAttackEnemy', 'EnemyAttackPet'];
+    const ev = `${off.map(k => COMBAT_ROW_LABEL[k]).join(' and ')} are Off, so those hits never reach the log. The meter counts what the log holds.`;
+    const base = { source: 'combat-logging', id: 'combat-logging', topic: 'combat-logging', title: 'Combat logging', fixArgs: {}, serverOnly: true };
+    if (!list.some(v => v.source === 'combat-logging')) list.push({ ...base, severity: 'ok', evidence: '', views: [], evidenceData: {} });
+    ov('combat-logging', v => { v.severity = 'warn'; v.evidence = ev; v.fixKey = 'combat-logging'; v.views = ['combat']; v.evidenceData = { ...(v.evidenceData || {}), off: off.slice().sort(), logNonAttacks: 1 }; });
+    const lines = { source: 'combat-lines', id: 'combat-lines', topic: 'combat-lines', title: 'Combat lines', fixArgs: {}, serverOnly: true, fixKey: null, views: ['combat'], evidenceData: {} };
+    if (!list.some(v => v.source === 'combat-lines')) list.push({ ...lines, severity: 'info', evidence: '' });
+    ov('combat-lines', v => { v.severity = 'info'; v.at = null; v.ageSec = null; v.fixKey = null; v.evidence = 'No combat line yet today. The log holds 1,204 lines.'; v.views = ['combat']; });
   }
   // Browser-only items.
   list.push(S.down
@@ -423,33 +512,57 @@ const V = src => {
   return all.reduce((w, v) => SEV_RANK[v.severity] > SEV_RANK[w.severity] ? v : w, all[0]);
 };
 const sevOf = src => V(src)?.severity || 'ok';
+/* The four in-game steps the Setup windows ask for, counted for About ("N of 4 done"). One definition of done: notDone(),
+   the Setup windows' own (no combat-logging verdict = not done, as the Combat row says). `undone` keeps this order. */
+const SETUP_STEPS = [['chat-log', 'Save Chat Logs'], ['combat-logging', 'Combat Logging'],
+  ['character-export', 'Export Character JSON'], ['storage-export', 'Export Storage JSON']];
+function setupCounts() {
+  const undone = SETUP_STEPS.filter(([src]) => notDone(src)).map(([, title]) => title);
+  return { done: SETUP_STEPS.length - undone.length, total: SETUP_STEPS.length, undone };
+}
 
 /* ---------- per-view margin ---------- */
 const PHONE_MQ = window.matchMedia('(max-width: 767px)');
 const FOLD_NAME = { 'game': 'game state', 'chat-log': 'chat log', 'character-export': 'character export', 'storage-export': 'storage export', 'partial-export': 'partial exports',
   'auto-export': 'logout export setting', 'vault-sizes': 'vault sizes', 'alt-stale': 'alts', 'alt-missing': 'alts', 'combat-logging': 'combat logging', 'player-log': 'live game events',
-  'vip': 'VIP', 'server': 'server', 'cdn': 'game data', 'selected-export': 'picked export', 'party-sharing': 'party sharing' };
+  'vip': 'VIP', 'server': 'server', 'cdn': 'game data', 'selected-export': 'picked export', 'party-sharing': 'private room',
+  'combat-lines': 'combat lines', 'everyone-feed': "everyone's fights" };
 function foldLabel(v) {
   const n = FOLD_NAME[v.source] || v.source;
+  if (v.source === 'everyone-feed') {
+    // "everyone's fights (26 sent today, last 03:53)" from the server's evidence; off or not yet proven = "(not sending)".
+    const m = /^([\d,]+) fights? sent today(?:, last (\d\d:\d\d))?\.$/.exec(v.evidence || '');
+    if (v.severity !== 'ok') return `${n} (not sending)`;
+    return m ? `${n} (${m[1]} sent today${m[2] ? ', last ' + m[2] : ''})` : `${n} (on, none sent today yet)`;
+  }
+  if (v.source === 'combat-lines') return v.severity === 'ok' && v.evidenceData?.combatLines ? `${n} (${fmt(v.evidenceData.combatLines)} today)` : n;
   if (v.source === 'chat-log') return `${n} (${S.session?.live ? 'live' : v.ageSec != null ? ageWord(v.ageSec) : v.severity})`;
   if (v.ageSec != null && /export/.test(v.source)) return `${n} (${ageWord(v.ageSec)})`;
   if (v.source === 'cdn') return `${n} (v${cdnVersion()})`;
   if (v.source === 'game') return `${n} (${v.unknown ? 'not known' : loggedIn() ? 'logged in' : 'logged out'})`;
   return n;
 }
-function viewItems(view) {
-  const listed = [], folded = [];
-  for (const v of S.verdicts) {
-    if (v.severity === 'warn' || v.severity === 'bad' || (v.views || []).includes(view)) listed.push(v); else folded.push(v);
-  }
-  listed.sort((a, b) => SEV_RANK[b.severity] - SEV_RANK[a.severity] || (b.fixKey && plaqueFor(b.fixKey) ? 1 : 0) - (a.fixKey && plaqueFor(a.fixKey) ? 1 : 0));
-  return { listed, folded };
-}
+/* Health is scoped to the view (A-FINAL §4): a view lists only the sources that feed it (`views[]`), plus the server and VIP
+   when not ok. Other views' warn/bad items are one dim "Elsewhere" line (never the pill); the rest folds into "Also checked". */
+const STAMP_SRC = { session: 'chat-log', combat: 'chat-log', vendors: 'character-export', storage: 'storage-export', character: 'character-export', statehelm: 'storage-export', files: null, teleports: null };
 const isMissing = v => v.severity === 'bad' && v.ageSec == null && v.source !== 'server' && /export|chat-log/.test(v.source);
+const neverSeen = v => simUnseen.has(v.source) || !S.seen[v.source];
+const actionable = v => v.severity === 'warn' || v.severity === 'bad';
+function viewItems(view) {
+  // A never-seen export that is another view's business (the server cross-lists storage on Vendors and character on Storage)
+  // is "elsewhere" here, so the pill counts what this view's Setup window asks for. Files lists every file it reads, as before.
+  const own = v => ((v.source === 'server' || v.source === 'vip') && v.severity !== 'ok')
+    || ((v.views || []).includes(view) && !(view !== 'files' && isMissing(v) && neverSeen(v) && v.source !== STAMP_SRC[view] && !(NEEDS[view] || []).includes(v.source)));
+  const listed = S.verdicts.filter(own).sort((a, b) => SEV_RANK[b.severity] - SEV_RANK[a.severity] || (plaqueNow(b) ? 1 : 0) - (plaqueNow(a) ? 1 : 0));
+  const elsewhere = S.verdicts.filter(v => !own(v) && actionable(v));
+  const folded = S.verdicts.filter(v => !own(v) && !actionable(v));
+  return { listed, elsewhere, folded };
+}
 function headerLine(list) {
-  const c = { bad: 0, warn: 0, info: 0, missing: 0 };
-  list.forEach(v => { if (isMissing(v)) c.missing++; else if (c[v.severity] != null) c[v.severity]++; });
+  const c = { setup: 0, missing: 0, bad: 0, warn: 0, info: 0 };
+  for (const v of list) { if (isMissing(v)) (neverSeen(v) ? c.setup++ : c.missing++); else if (c[v.severity] != null) c[v.severity]++; }
   const parts = [];
+  if (c.setup) parts.push(`${c.setup} to set up`);
   if (c.missing) parts.push(`${c.missing} missing`);
   if (c.bad) parts.push(`${c.bad} broken`);
   if (c.warn) parts.push(`${c.warn} to do`);
@@ -457,38 +570,101 @@ function headerLine(list) {
   if (c.info) h += ` · ${plural(c.info, 'note')}`;
   return h;
 }
+/* The shape a list of verdicts earns: red only for a source that was there and is gone, or broken; a never-seen source is a note. */
+const worstShape = list => list.some(v => (isMissing(v) && !neverSeen(v)) || (v.severity === 'bad' && !isMissing(v))) ? 'bad'
+  : list.some(v => v.severity === 'warn') ? 'warn' : list.some(v => isMissing(v)) ? 'info' : worstOf(list);
 function ageSpan(v, cls = 'age') {
   if (v.source === 'server') return '';
+  if (isMissing(v)) return neverSeen(v) ? `<span class="${cls}">to set up</span>` : `<span class="${cls} bad">missing</span>`;
   if (v.severity === 'bad' && v.ageSec == null) return `<span class="${cls} bad">missing</span>`;
   if (v.ageSec == null) return '';
-  const s = v.severity === 'warn' || v.severity === 'bad' ? v.severity : '';
-  return `<span class="${cls} ${s}">${ago(NOW() - v.ageSec * 1000)}</span>`;
+  // Ages are plain text: the stamp and the pill carry the view's amber.
+  return `<span class="${cls}">${ago(NOW() - v.ageSec * 1000)}</span>`;
 }
 
 let plaqueInView = null; // fixKey of the plaque a primary window already shows on this view
+let setupShowing = null;  // the view whose Setup window is rendered right now (renderSetup sets it), else null
 
+/* A plaque only when the fix is possible now: logged in for an export, the game open for a setting. */
+const gameOn = () => S.health?.game?.running !== false;
+function plaqueNow(v) {
+  if (!actionable(v) || !v.fixKey || !plaqueFor(v.fixKey)) return false;
+  if (isSnoozed(v.topic) || (v.source === 'vault-sizes' && storageMissing())) return false;
+  if (/^export/.test(v.fixKey)) return loggedIn();
+  if (/logging$/.test(v.fixKey)) return gameOn();
+  return true;
+}
+let marginDrawn = false;   // the margin draws at most one plaque per render (reset by renderMargin)
+let marginPair = null;     // both exports listed with a text fix on this view: one line names both (renderMargin sets it)
+/* The listed notes that will print an export fix as text (mirrors noteHtml's branch order: Setup pointer, the one plaque, text). */
+function pairedExports(listed) {
+  let drawn = setupShowing === S.view; const out = [];
+  for (const v of listed) {
+    if (setupLists(v.source)) continue;
+    if (!drawn && plaqueNow(v) && plaqueInView !== v.fixKey) { drawn = true; continue; }
+    if (actionable(v) && /^export-(character|storage)$/.test(v.fixKey)) out.push(v);
+  }
+  return out.length === 2 && out[0].fixKey !== out[1].fixKey ? out : null;
+}
 function noteHtml(v) {
-  const act = (v.severity === 'warn' || v.severity === 'bad') && v.fixKey && !(v.source === 'vault-sizes' && storageMissing()) && plaqueFor(v.fixKey);
-  const snoozed = act && isSnoozed(v.topic);
-  const fix = v.fixKey && !(v.source === 'vault-sizes' && storageMissing()) ? fixText(v.fixKey, v.fixArgs) : '';
+  const missingNew = isMissing(v) && neverSeen(v);
+  const inSetup = setupLists(v.source);
+  const snoozed = actionable(v) && v.fixKey && isSnoozed(v.topic);
   let fx = '';
-  if (act && !snoozed && plaqueInView !== v.fixKey) {
+  if (inSetup) {
+    fx = `<div class="fx">Set up: the steps are in the window ${PHONE_MQ.matches ? 'below' : 'to the left'}.</div>`;
+  } else if (plaqueNow(v) && plaqueInView !== v.fixKey && !marginDrawn) {
+    marginDrawn = true;
     const [p1, p2] = plaqueFor(v.fixKey);
     fx = `<button type="button" class="plaque" data-fix="${esc(v.fixKey)}" aria-label="${esc(`${p1}. ${p2}. Then check again.`)}"><span class="p1">${esc(p1)}</span><span class="p2">${esc(p2)}</span></button>
       <div class="notnow"><button type="button" class="linkbtn" data-notnow="${esc(v.topic)}">Not now</button></div>`;
-  } else if (fix) {
-    const quiet = (v.severity === 'ok' || v.severity === 'info') && /^export|^chat-logging$/.test(v.fixKey);
-    const shown = quiet ? 'To refresh: ' + fixText(v.fixKey, v.fixArgs, { short: true }) : fix;
-    fx = `<div class="fx ${v.severity === 'warn' ? 'txt-warn' : v.severity === 'bad' ? 'txt-bad' : ''}">${esc(shown)}${snoozed ? ' · <span class="dim">snoozed</span>' : ''}</div>`;
+  } else if (actionable(v) && v.fixKey && !(v.source === 'vault-sizes' && storageMissing())) {
+    let t = fixText(v.fixKey, v.fixArgs);
+    // Both exports to do: the first note carries one line for both, the second only its age (fix strings stay at 2 a page).
+    if (marginPair && marginPair.includes(v)) t = v === marginPair[0] ? `${loggedIn() ? '' : "Next time you're in game: "}VIP menu → Export Character JSON and Export Storage JSON` : '';
+    if (t) fx = `<div class="fx${v.severity === 'bad' && !missingNew ? ' txt-bad' : ''}">${esc(t)}${snoozed ? ' · <span class="dim">snoozed</span>' : ''}</div>`;
+  } else if (v.fixKey && /^export|^chat-logging-ok$/.test(v.fixKey) && v.source === STAMP_SRC[S.view]) {
+    // The view's stamp source when fine: the refresh line lives here and nowhere else. Other ok sources say nothing.
+    fx = `<div class="fx">${esc(v.fixKey === 'chat-logging-ok' ? fixText(v.fixKey) : 'To refresh: ' + fixText(v.fixKey, v.fixArgs, { short: true }))}</div>`;
   }
-  return `<div class="note" data-src="${esc(v.source)}">${shape(v.severity)}<div class="nt">${esc(v.title)}${ageSpan(v) ? ' · ' + ageSpan(v) : ''}</div>
-    <div class="ev">${esc(v.evidence)}</div>${fx ? `<div class="fx-wrap" style="grid-column:2">${fx}</div>` : ''}</div>`;
+  // A never-seen source: the dashed ring, "to set up", and the evidence without its "Looked in" sentence (the folder is in the Setup footer).
+  let ev = missingNew ? (v.evidenceData?.short || String(v.evidence || '').replace(/ Looked in .*$/, '')) : v.evidence;
+  // Beside the Setup window the Off rows are named once, in its row 2 step 2 (A-FINAL §0): the note only counts them.
+  if (v.source === 'combat-logging' && setupLists('combat-logging')) {
+    const off = Array.isArray(v.evidenceData?.off) ? v.evidenceData.off : [];
+    ev = [off.length ? `${off.length} of 7 rows Off` : '', v.evidenceData?.logNonAttacks === 0 || !off.length ? 'Log non-damaging abilities off' : ''].filter(Boolean).join(' · ') || ev;
+  }
+  return `<div class="note" data-src="${esc(v.source)}">${shape(missingNew ? 'todo' : v.severity)}<div class="nt">${esc(v.title)}${ageSpan(v) ? ' · ' + ageSpan(v) : ''}</div>
+    <div class="ev">${esc(ev)}</div>${fx ? `<div class="fx-wrap" style="grid-column:2">${fx}</div>` : ''}</div>`;
 }
 
+/* "Elsewhere: 2 to do on Vendors and Storage (both exports 3 d old)." Other views' problems, one dim line with links. */
+function elsewhereLine(elsewhere) {
+  const PLAY = ['session', 'combat', 'vendors', 'storage'];
+  const views = [];
+  for (const v of elsewhere) {
+    let vs = (v.views || []).filter(x => PLAY.includes(x) && x !== S.view);
+    if (!vs.length) vs = (v.views || []).filter(x => x !== S.view && x !== 'files' && VIEWS.includes(x));
+    vs.forEach(x => { if (!views.includes(x)) views.push(x); });
+  }
+  views.sort((a, b) => VIEWS.indexOf(a) - VIEWS.indexOf(b));
+  const links = views.map(x => `<a href="#${x}">${esc(VIEW_TITLE[x])}</a>`);
+  const where = links.length <= 1 ? (links[0] || '') : links.slice(0, -1).join(', ') + ' and ' + links[links.length - 1];
+  const phrase = v => `${FOLD_NAME[v.source] || v.source} ${isMissing(v) ? (neverSeen(v) ? 'to set up' : 'missing') : v.ageSec != null ? ageWord(v.ageSec) + ' old' : v.severity === 'bad' ? 'broken' : 'to do'}`;
+  const exps = elsewhere.filter(v => /export$/.test(v.source) && v.ageSec != null);
+  const hint = exps.length === elsewhere.length && elsewhere.length > 1 && new Set(exps.map(v => ageWord(v.ageSec))).size === 1
+    ? `${elsewhere.length === 2 ? 'both' : 'all'} exports ${ageWord(exps[0].ageSec)} old` : elsewhere.map(phrase).join(', ');
+  if (elsewhere.every(v => isMissing(v) && neverSeen(v))) return `Elsewhere: ${elsewhere.length} to set up${where ? ' on ' + where : ''}.`;
+  return `Elsewhere: ${elsewhere.length} to do${where ? ' on ' + where : ''}${hint ? ` (${esc(hint)})` : ''}.`;
+}
 function renderMargin() {
   const view = S.view;
-  const { listed, folded } = viewItems(view);
+  const { listed, elsewhere, folded } = viewItems(view);
+  marginDrawn = setupShowing === view;   // one plaque per view: the Setup window's while it shows, else the first actionable note's
+  marginPair = pairedExports(listed);
   const notes = listed.map(noteHtml);
+  const me = $('#melse');
+  if (me) { me.hidden = !elsewhere.length || setupShowing === view; me.html = elsewhere.length ? elsewhereLine(elsewhere) : ''; }
   // Positive note: vendor resets since the export.
   if ((view === 'vendors') && S.vendors?.resetSummary?.count > 0) {
     const r = S.vendors.resetSummary;
@@ -497,22 +673,25 @@ function renderMargin() {
   if (view === 'teleports') notes.push(teleportNote()); // the wiki source: client-side only, never a health verdict
   if (S.healthMode === 'browser') notes.push(`<div class="note">${shape('info')}<div class="nt">Some checks skipped</div><div class="ev">${esc(NEEDS_SERVER)}</div></div>`);
   $('#mnotes').html = notes.join('');
-  const worst = worstOf(listed);
-  const anyAct = listed.some(v => v.severity === 'warn' || v.severity === 'bad');
+  const worst = worstShape(listed);
+  const ownFix = listed.some(plaqueNow);
   const m = $('#margin');
   const phone = PHONE_MQ.matches;
   if (phone) {
-    if (m.dataset.userOpen == null) m.classList.toggle('collapsed', !anyAct);
+    // The strip opens itself only when the margin holds a fix to press now (a plaque); with a Setup window on the page, or on
+    // Files (which lists every view's notes), it stays one line. Other views' problems never open it: the header counts them.
+    if (m.dataset.userOpen == null) m.classList.toggle('collapsed', !ownFix || setupShowing === view || view === 'files');
   } else m.classList.remove('collapsed');
   const open = !m.classList.contains('collapsed');
   const checking = S.loading && !S.healthAt;
-  const hl = checking ? 'Checking your sources…' : headerLine(listed);
+  let hl = checking ? 'Checking your sources…' : headerLine(listed);
+  if (phone && !open && !checking && elsewhere.length && setupShowing !== view) hl += ` · elsewhere: ${elsewhere.length}`;
   const hs = checking ? '' : shape(worst);
   // On a phone the whole summary row is the toggle (the only way into the fixes there).
   $('#mhead').html = phone
     ? `<button type="button" class="mtoggle" id="mtogg" aria-expanded="${open}" aria-controls="mnotes">${hs}<span>${esc(hl)}</span><span class="togg" aria-hidden="true">${open ? 'Hide' : 'Show'}</span></button>`
     : `${hs}<span>${esc(hl)}</span>`;
-  const alsoNames = [...new Set(folded.filter(v => v.source !== 'server' || S.down).map(foldLabel))];
+  const alsoNames = [...new Set(folded.map(foldLabel))];
   $('#malso').hidden = !alsoNames.length;
   $('#malso').textContent = alsoNames.length ? `Also checked: ${alsoNames.join(', ')}` : '';
   const when = S.healthAt ? hhmm(S.healthAt) : '…';
@@ -520,38 +699,295 @@ function renderMargin() {
   if (S.down) $('#mfoot').html = `${shape('bad', 's13')} <span class="txt-bad">as of ${hhmm(S.downSince)} · server not answering</span>`;
 }
 
+/* ---------- the Setup window (A-FINAL §1, SPEC §2.1) ----------
+   One window per view in place of the placeholder windows while a needed source was never seen: rows that prove themselves
+   (todo ring · warn triangle · ok ring-check · bad square), numbered in-game steps on the one open row, the view's only
+   plaque. renderSetup(view) returns 'replace' (the window is the page; every other window hidden, the renderer returns),
+   'above' (Combat with fights, or #<view>?setup=1 on a healthy page: the window sits first, the renderer continues) or null. */
+const NEEDS = { session: ['chat-log'], combat: ['chat-log', 'combat-logging', 'combat-lines'], vendors: ['character-export'], storage: ['storage-export'], character: ['character-export'] };
+const SETUP_KEY = { session: 's', combat: 'd', vendors: 'v', storage: 't', character: 'c' };
+function notDone(src) {
+  const v = V(src);
+  if (!v) return src !== 'combat-lines';                                              // old server: no verdict = not done (except the optional row)
+  if (src === 'combat-logging') return v.severity === 'warn' || v.severity === 'bad';   // partial counts as not done on Combat
+  if (src === 'combat-lines') return v.severity === 'warn' || (v.severity === 'info' && neverSeen(v));   // SPEC §2.8.2: a meter that has worked before never reopens Setup
+  return isMissing(v);                                                                // bad with no age: never seen, or seen then gone
+}
+function setupNeeded(view) {
+  if (S.loading && !S.healthAt) return false;   // loading before missing: a cold open never flashes the Setup window
+  return (NEEDS[view] || []).some(notDone);
+}
+/* True when the Setup window on screen lists this source: the margin then points at it and draws no second plaque. */
+function setupLists(src) { return setupShowing != null && setupShowing === S.view && (NEEDS[setupShowing] || []).includes(src) && notDone(src); }
+const setupWas = {};   // view → the src of the row that was open while its Setup window was needed: when it goes, the system line says what landed
+
+const SETUP_LATER = {
+  session: "Nothing else is needed for this page. Vendors, Storage and Character each need one export from the game's VIP menu; they ask when you open them. This window folds away when the log appears; find it again under About.",
+  combat: 'Nothing else is needed for the meter. This window folds away with your first hit; find it again under About.',
+  combatLogging: 'Nothing else is needed for the meter. This window folds away when every Combat Logging row is on; find it again under About.',
+  fold: 'This window folds away when the export lands; find it again under About.',
+};
+function setupLater(view) {
+  // Combat's closing line names what folds it: the first hit, or (that already landed or not the open row) every Combat Logging row on.
+  if (view === 'combat') return notDone('combat-logging') && !notDone('chat-log') ? SETUP_LATER.combatLogging : SETUP_LATER.combat;
+  if (view === 'session') return SETUP_LATER[view];
+  const miss = src => { const v = V(src); return !!v && isMissing(v); };
+  if (view === 'vendors') return (miss('storage-export') ? 'Sell also needs Export Storage JSON; Storage asks for it. ' : '') + SETUP_LATER.fold;
+  if (view === 'storage') return (miss('character-export') ? 'Vault sizes and favor come from Export Character JSON; Vendors asks for it. ' : '') + SETUP_LATER.fold;
+  return SETUP_LATER.fold;
+}
+/* Rows. Each returns { src, title, done, shape, when, whenCls, un, steps, plaque, vip, extra, waitWhen }. */
+function setupRowChat() {
+  const v = V('chat-log'); const ed = v?.evidenceData || {}; const st = S.health?.settings || {};
+  const readable = ed.readable != null ? !!ed.readable : !!st.readable;
+  const logChat = ed.logChat !== undefined ? ed.logChat : st.LogChat;
+  const r = { src: 'chat-log', title: 'Save Chat Logs', shape: 'todo', whenCls: '', waitWhen: 'waiting for the game',
+    un: 'Unlocks Session and Combat. The game writes your chat to a text file as you play; Gorgon Notes reads that file and nothing else.' };
+  r.done = !notDone('chat-log');
+  if (r.done) {
+    const s = S.session || {};
+    const last = parseIso(s.lastLineAt) || (v?.ageSec != null ? NOW() - v.ageSec * 1000 : null);
+    if (v?.severity === 'warn') r.when = `on · silent since ${last ? hhmm(last) : '?'}`;
+    else if (v?.severity === 'bad') { r.when = `off now · last line ${last ? hhmm(last) : '?'}`; r.doneShape = 'bad'; }
+    else r.when = s.live && loggedIn() ? 'on · being written' : last ? `on · last line ${isToday(last) ? hhmm(last) : dateTime(last)}` : 'on';
+    return r;
+  }
+  let stepsN = '1 to 4';
+  if (v && !neverSeen(v)) { r.shape = 'bad'; r.when = 'missing'; r.whenCls = 'bad'; r.steps = STEPS['chat-logging']; r.plaque = 'chat-logging'; }
+  else if (readable && logChat === 1) { r.when = 'on in the settings · no log file yet'; r.steps = STEPS['chat-logging-relog']; r.plaque = 'chat-logging-relog'; stepsN = null; }
+  else if (readable && logChat === 0) { r.when = "the game's settings say it's off"; r.steps = STEPS['chat-logging']; r.plaque = 'chat-logging'; }
+  else { r.when = 'waiting for the game'; r.steps = STEPS['chat-logging']; r.plaque = 'chat-logging'; }
+  if (!gameOn()) { r.plaque = null; r.vip = stepsN ? `Next time you're in game: steps ${stepsN}. This page notices by itself.` : "Next time you're in game: the log file appears at your login. This page notices by itself."; }
+  return r;
+}
+function setupRowExport(src) {
+  const v = V(src); const char = src === 'character-export';
+  const label = char ? 'Export Character JSON' : 'Export Storage JSON';
+  const r = { src, title: label, shape: 'todo', whenCls: '', waitWhen: 'none yet',
+    un: char ? 'Unlocks Vendors and Character, and the vault sizes on Storage. An export is a snapshot the game writes from its VIP menu; it goes stale as you play, and the page says when.'
+             : 'Unlocks Storage and the Sell plan on Vendors. A snapshot of every vault, from the VIP menu.' };
+  r.done = !notDone(src);
+  if (r.done) { const at = v?.ageSec != null ? NOW() - v.ageSec * 1000 : null; r.when = at ? `seen ${isToday(at) ? hhmm(at) : dateTime(at)}` : 'seen'; return r; }
+  const partial = char && V('partial-export')?.severity === 'bad';
+  r.steps = STEPS[char ? 'export-character' : 'export-storage'].slice();
+  if (partial) { r.shape = 'bad'; r.when = 'the last one came out partial'; r.whenCls = 'bad'; r.steps[1] = 'Export again while fully logged in, not right before logging out.'; }
+  else if (v && !neverSeen(v)) { r.shape = 'bad'; r.when = 'missing'; r.whenCls = 'bad'; }
+  else r.when = 'none yet';
+  if (loggedIn() && gameOn()) r.plaque = char ? (partial ? 'export-again' : 'export-character') : 'export-storage';
+  else {
+    if (r.when === 'none yet') r.when = "none yet · next time you're in game";
+    r.vip = `Next time you're in game: VIP menu → ${label}. This page notices by itself.`;
+  }
+  return r;
+}
+function setupRowCombatLogging() {
+  const v = V('combat-logging'); const ed = v?.evidenceData || {}; const st = S.health?.settings || {};
+  const r = { src: 'combat-logging', title: 'Combat Logging', shape: 'todo', whenCls: '', waitWhen: 'after Save Chat Logs',
+    un: 'Unlocks the meter: damage, per second, kills, what hit you. Each row is one kind of hit the game writes to the log.' };
+  // Never ticked above an open Save Chat Logs row (A-FINAL §1.4 state G): it waits "after Save Chat Logs" and isn't counted.
+  r.done = !notDone('combat-logging') && !notDone('chat-log');
+  if (r.done) { r.when = 'every row on'; return r; }
+  const steps = STEPS['combat-logging'].slice();
+  const off = Array.isArray(ed.off) ? ed.off : [];
+  const lna = ed.logNonAttacks !== undefined ? ed.logNonAttacks : st.LogNonAttacks;
+  if (!v || st.readable === false) { r.when = "settings file couldn't be read"; steps[1] = steps[1].replace('{offNow}', ''); }
+  else {
+    r.shape = 'warn'; r.whenCls = 'warn';
+    const parts = [];
+    if (off.length) parts.push(`${off.length} of 7 rows Off`);
+    if (lna === 0 || !off.length) parts.push('Log non-damaging abilities off');
+    r.when = parts.join(' · ');
+    steps[1] = steps[1].replace('{offNow}', off.length ? ` <span class="dim">Off now: ${off.map(k => esc(COMBAT_ROW_LABEL[k] || k)).join(' · ')}.</span>` : '');
+  }
+  r.steps = steps; r.plaque = 'combat-logging';
+  r.vip = 'This section is on the V.I.P. tab, so it most likely needs VIP. No log-out needed: the game reads these rows as you fight.';
+  if (!gameOn()) { r.plaque = null; r.vip += " Next time you're in game: steps 1 to 3."; }
+  return r;
+}
+function setupRowCombatLines() {
+  const v = V('combat-lines');
+  const r = { src: 'combat-lines', title: 'Hit something', shape: 'todo', whenCls: '', waitWhen: 'waiting for the first combat line',
+    un: "The meter starts with your first hit and fills in by itself from then on. Your fights then go to everyone's fights by themselves, no code needed." };
+  // Done only with a combat line today (the ok ring and its time); "no line yet today" stays a todo row and is not counted,
+  // even when the meter has worked before (notDone() then stays false, so this row alone never reopens the window).
+  r.done = !notDone('combat-lines') && (!v || v.severity === 'ok');
+  if (r.done) {
+    r.when = !v ? '' : v.at ? `first combat line ${hhmm(parseIso(v.at))}` : 'the meter is running';
+    return r;
+  }
+  if (v?.severity === 'warn') { r.shape = 'warn'; r.whenCls = 'warn'; r.when = 'no combat line in 20 min of play'; }
+  else r.when = v && !neverSeen(v) ? 'no combat line yet today' : 'the log is growing, no combat line yet';
+  if (v.evidence) r.extra = `<p class="vip">${esc(v.evidence)}</p>`;
+  return r;
+}
+function setupRowHtml(r, mode) {
+  const sh = mode === 'done' ? (r.doneShape || 'ok') : mode === 'wait' ? 'todo' : r.shape;
+  const when = mode === 'wait' ? r.waitWhen : r.when;
+  const whenCls = mode === 'open' && r.whenCls ? ' ' + r.whenCls : '';
+  let body = '';
+  if (mode === 'open') {
+    const p = r.plaque && plaqueFor(r.plaque, 'setup');
+    body = `<div class="un">${r.un}</div>${r.steps ? `<ol>${r.steps.map(s => `<li>${s}</li>`).join('')}</ol>` : ''}`
+      + (p ? `<button type="button" class="plaque" data-fix="${esc(r.plaque)}" aria-label="${esc(`${p[0]}. ${p[1].replace(/ · then /, '. Then ')}.`)}"><span class="p1">${esc(p[0])}</span><span class="p2">${esc(p[1])}</span></button>` : '')
+      + (r.vip ? `<p class="vip">${esc(r.vip)}</p>` : '') + (r.extra || '');
+  } else if (mode === 'wait') body = `<div class="un">${r.un}</div>`;
+  return `<div class="setup-row${mode === 'done' ? ' done' : mode === 'wait' ? ' wait' : ''}" data-step="${esc(r.src)}">${shape(sh, '', sh === 'warn' ? 'Not set up' : undefined)}<div class="st"><b>${esc(r.title)}</b>${when ? `<span class="when${whenCls}">${esc(when)}</span>` : ''}</div>${body}</div>`;
+}
+/* Footer: where the app looked (the folder, shortened to its last part on a phone) and how it notices a change. */
+function setupFoot(view, rows, openIdx) {
+  const phone = PHONE_MQ.matches;
+  const folder = p => !p ? '' : phone ? '…/' + String(p).replace(/[\\/]+$/, '').split(/[\\/]/).pop() : p;
+  const open = rows[openIdx];
+  let left;
+  if (view === 'session' || view === 'combat') {
+    const v = V('chat-log'); const ed = v?.evidenceData || {};
+    if (!rows[0].done) {
+      const m = /Looked in (.+?)(, which doesn't exist)?\.(?: |$)/.exec(v?.evidence || '');
+      const looked = ed.looked || (m ? m[1] : '');
+      const gone = ed.exists === false || (!!m && !!m[2]);
+      left = `Chat log · ${rows[0].shape === 'bad' ? 'missing' : 'none yet'} · looked in ${looked ? esc(folder(looked)) + (gone ? ", which doesn't exist" : '') : "the game's ChatLogs folder"}`;
+    } else left = chatLive() + (ed.settingsSavedAt ? ` · settings file saved ${esc(ed.settingsSavedAt)}` : '');
+    const readable = ed.readable != null ? !!ed.readable : !!S.health?.settings?.readable;
+    return [left, readable ? "Reads the game's settings file, so a change shows within 30 s" : "Can't read the game's settings file, so only the files themselves are checked"];
+  }
+  const src = view === 'storage' ? 'storage-export' : 'character-export';
+  const label = view === 'storage' ? 'Storage export' : 'Character export';
+  const v = V(src); const ed = v?.evidenceData || {};
+  left = open && !open.done ? `${label} · ${open.shape === 'bad' ? 'missing' : 'none yet'} · looked in ${ed.looked ? esc(folder(ed.looked)) + (ed.exists === false ? ", which doesn't exist" : '') : "the game's Reports folder"}` : srcAge(src, label);
+  return [left, 'Checks by itself every 30 s'];
+}
+/* The title row while the Setup window replaces the page (A-FINAL §1.4 table). */
+function setupTitle(view, rows) {
+  $('#h1').textContent = VIEW_TITLE[view];
+  $('#title-extra').hidden = true;
+  const who = esc(S.character || 'this character');
+  const row = rows[0];
+  if (view === 'session' || view === 'combat') {
+    const gone = row.shape === 'bad' && !row.done, relog = !row.done && /^on in the settings/.test(row.when);
+    const tail = view === 'session' ? 'this fills in as you play' : 'the meter starts with your first hit';
+    if (!row.done) {
+      if (gone) { $('#finding').html = `The chat log is gone. Turn on <em class="t">Save Chat Logs</em> in the game again and ${tail}.`; setStamp('No chat log found', 'missing', 'bad'); }
+      else if (relog) { $('#finding').html = `Nearly there: the game says chat logging is on, but no log file has appeared. Log out and back in.`; setStamp('No chat log yet', 'set up below', 'warn', 'Not set up'); }
+      else { $('#finding').html = `${view === 'session' ? 'Nothing to show yet' : 'Nothing to measure yet'}. Turn on <em class="t">Save Chat Logs</em> in the game and ${tail}.`; setStamp('No chat log yet', 'set up below', 'warn', 'Not set up'); }
+      return;
+    }
+    // Combat, rows 2 and 3: the chat stamp; the amber lives in the pill.
+    const r2 = rows[1], r3 = rows[2];
+    if (r2 && !r2.done && r2.shape === 'warn') {
+      const ed = V('combat-logging')?.evidenceData || {}; const off = Array.isArray(ed.off) ? ed.off : [];
+      $('#finding').html = off.length
+        ? `Almost there: ${off.length} of the 7 <em class="t">Combat Logging</em> rows ${off.length === 1 ? 'is' : 'are'} Off in the game, so those hits never reach the log. Turn ${off.length === 1 ? 'it' : 'them'} on, then hit something.`
+        : `Almost there: <em class="t">Log non-damaging abilities</em> is off in the game, so buffs and heals won't be in the log. Turn it on, then hit something.`;
+    } else if (r2 && !r2.done) $('#finding').html = `Almost there: the game's settings file couldn't be read, so the <em class="t">Combat Logging</em> rows are unchecked. Set them in the game, then hit something.`;
+    else if (r3 && !r3.done && r3.shape === 'warn') $('#finding').html = 'The chat log is growing but has no combat line yet. If you have been fighting, see the note below.';
+    else $('#finding').html = 'The chat log is on. The meter starts with your first hit.';
+    if (S.session) chatStamp(S.session); else setStamp("Today's chat log", '…', 'ok');
+    return;
+  }
+  const kind = view === 'storage' ? 'storage' : 'character';
+  const finding = view === 'vendors' ? `No character export for ${who} yet, so there are no vendor caps to show. Export once and this fills in.`
+    : view === 'storage' ? `No storage export for ${who} yet, so there's nothing to count. Export once and this fills in.`
+    : `No character export for ${who} yet, so there are no skills, currencies or favor to show. Export once and this fills in.`;
+  $('#finding').html = row.done ? finding : finding;
+  if (!row.done && row.shape === 'bad') setStamp(`No ${kind} export found`, row.whenCls === 'bad' && row.when !== 'missing' ? 'export again' : 'missing', 'bad');
+  else setStamp(`No ${kind} export yet`, 'set up below', 'warn', 'Not set up');
+}
+/* The system line when a Setup window goes: worded by the row that was open (src), not always the chat log. */
+function setupLanded(view, src) {
+  if (view === 'combat' && src === 'combat-logging') sysLine('status', 'Combat Logging rows are on. The meter fills in as you fight.');
+  else if (view === 'combat' && src === 'combat-lines') { const at = parseIso(V('combat-lines')?.at); sysLine('status', `First combat line${at ? ' ' + hhmm(at) : ''}. The meter is running.`); }
+  else if (view === 'session' || view === 'combat') sysLine('status', `Chat log found: today's log. ${view === 'session' ? 'Session fills in as you play.' : 'The meter fills in as you fight.'}`);
+  else {
+    const src = view === 'storage' ? 'storage-export' : 'character-export'; const v = V(src);
+    const at = v?.ageSec != null ? hhmm(NOW() - v.ageSec * 1000) : null;
+    sysLine('status', `${view === 'storage' ? 'Storage' : 'Character'} export${at ? ' of ' + at : ''} loaded.`);
+  }
+  flashView();
+}
+function renderSetup(view) {
+  const k = SETUP_KEY[view]; const win = k ? $(`#w-${k}-setup`) : null;
+  if (!win) return null;
+  const vwin = $(`#v-${view}`);
+  const unhide = () => $$('[data-setup-hid]', vwin).forEach(el => { el.hidden = false; delete el.dataset.setupHid; });
+  // Keyboard focus was in this window (a plaque press): it lands on the next plaque, else the window's title, else the page
+  // title once the window goes; never on <body>.
+  const had = win.contains(document.activeElement);
+  const refocus = el => { if (!el) return; if (!el.hasAttribute('tabindex') && el.tabIndex < 0) el.tabIndex = -1; el.focus({ preventScroll: true }); };
+  // Forced by #<view>?setup=1: showView sets S.setupForced; a direct load (boot never routes through showView) reads the hash.
+  const hr = route(location.hash.slice(1));
+  const forced = S.setupForced === view || (hr.view === view && hr.params.get('setup') === '1');
+  const needed = setupNeeded(view);
+  if (!needed && !forced) {
+    win.hidden = true;
+    if (setupShowing === view) setupShowing = null;
+    unhide();
+    if (setupWas[view]) { const src = setupWas[view]; delete setupWas[view]; setupLanded(view, src); }
+    if (had) refocus($('#h1'));
+    return null;
+  }
+  const rows = (NEEDS[view] || []).map(src => src === 'chat-log' ? setupRowChat() : src === 'combat-logging' ? setupRowCombatLogging() : src === 'combat-lines' ? setupRowCombatLines() : setupRowExport(src));
+  const openIdx = rows.findIndex(r => !r.done);
+  const done = rows.filter(r => r.done).length;
+  const fights = view === 'combat' && (S.combat?.totals?.fights > 0);
+  // Only rows that can't block the meter left open (Hit something; Combat Logging when the settings file can't be read,
+  // so nothing is known): the window sits above the page instead of replacing it. An upgraded copy has no pgdash.seen
+  // for combat-lines, so before the day's first hit it would otherwise lose Your party, the room and Discord (SPEC §2.8.2).
+  const optional = r => r.done || r.src === 'combat-lines' || (r.src === 'combat-logging' && !V('combat-logging') && !!S.health && !notDone('chat-log'));
+  const mode = !needed ? 'above' : fights ? 'above' : view === 'combat' && rows.every(optional) ? 'above' : 'replace';
+  if (mode === 'replace') {
+    // The generic hide rule: everything in the view's main column but this window (and the follow note) is hidden; remembered so it comes back.
+    for (const el of $$(`#v-${view} > .main-col > *`)) {
+      if (el === win || el.classList.contains('note-line')) continue;
+      if (!el.hidden) { el.hidden = true; el.dataset.setupHid = '1'; }
+    }
+  } else unhide();
+  setupShowing = view;
+  const open = openIdx >= 0 ? rows[openIdx] : null;
+  if (needed) setupWas[view] = open?.src || true;
+  if (open && open.plaque && plaqueFor(open.plaque, 'setup')) plaqueInView = open.plaque;
+  win.hidden = false;
+  $(`#t-${k}-setup`).html = `Setup <span class="count" id="${k}-setup-count">${done} of ${rows.length} done</span>`;
+  $(`#${k}-setup`).html = rows.map((r, i) => setupRowHtml(r, r.done ? 'done' : i === openIdx ? 'open' : 'wait')).join('') + `<p class="setup-later">${esc(setupLater(view))}</p>`;
+  const [fl, fr] = setupFoot(view, rows, openIdx);
+  setFoot(`w-${k}-setup`, fl, fr);
+  if (had && !win.contains(document.activeElement)) refocus(win.querySelector('.plaque') || $(`#t-${k}-setup`));
+  if (S.view === view && mode === 'replace') setupTitle(view, rows);
+  return mode;
+}
+
 /* ---------- footers ---------- */
+/* The fix sentence appears once per view, on the primary window's footer: srcFix wraps it in .fx-foot and setFoot strips
+   that span from every other window, so the 40+ call sites stay as they are. */
+const PRIMARY_WIN = new Set(['w-s-glance', 'w-d-fights', 'w-v-pane', 'w-t-pane', 'w-c-skills', 'w-f-list', 'w-tp-find', 'w-sh-glance']);
 function setFoot(winId, left, right) {
   const f = document.querySelector(`#${winId} .win-foot`);
   if (!f) return;
   if (S.down && S.downSince) left = `${shape('bad', 's13')}<span class="txt-bad">as of ${hhmm(S.downSince)} · server not answering</span>`;
+  if (right && !PRIMARY_WIN.has(winId)) right = String(right).replace(/<span class="fx-foot">[\s\S]*?<\/span><\/span>/g, '').replace(/<span class="fx-foot">[^<]*<\/span>/g, '');
   f.querySelector('.fl').html = left || '';
   f.querySelector('.fr').html = right || '';
 }
-/* "Character export · 8 h ago" with severity treatment. */
+/* "Character export · 8 h ago": the age is plain text (the stamp and pill carry the amber); red "missing" only for a source
+   that was there and is gone; "none yet" for one never seen. */
 function srcAge(src, label) {
   const v = V(src);
   if (!v) return esc(label);
+  if (isMissing(v)) return neverSeen(v) ? `${esc(label)} · none yet` : `${esc(label)} · ${shape('bad', 's13')}<span class="age bad">missing</span>`;
   if (v.severity === 'bad' && v.ageSec == null) return `${esc(label)} · ${shape('bad', 's13')}<span class="age bad">missing</span>`;
   const a = v.ageSec != null ? ago(NOW() - v.ageSec * 1000) : '';
-  if (v.severity === 'warn' || v.severity === 'bad') return `${esc(label)} · ${shape(v.severity, 's13')}<span class="age ${v.severity}">${a}</span>`;
   return `${esc(label)}${a ? ' · ' + a : ''}`;
 }
 function srcFix(src, when) {
   const v = V(src);
-  if (!v || !v.fixKey) return '';
-  if (v.severity === 'ok' || v.severity === 'info') {
-    if (!/^export/.test(v.fixKey)) return '';
-    return `<span>${esc('To refresh: ' + fixText(v.fixKey, v.fixArgs, { short: true }))}</span>`;
-  }
+  if (!v || !v.fixKey || setupLists(src)) return '';
+  if (v.severity !== 'warn' && v.severity !== 'bad') return '';   // the ok "To refresh" line lives in the margin only
   const t = fixText(v.fixKey, v.fixArgs);
-  const cls = v.severity === 'warn' ? 'txt-warn' : 'txt-bad';
-  return `<span class="${cls}">${esc((loggedIn() && when ? when + ' ' : '') + t)}</span>`;
+  return `<span class="fx-foot"><span class="${v.severity === 'bad' ? 'txt-bad' : ''}">${esc((loggedIn() && when ? when + ' ' : '') + t)}</span></span>`;
 }
 function chatLive() {
   const s = S.session, v = V('chat-log');
   if (S.loading && !s) return 'Chat log · reading…';
-  if (!s || !s.log || v?.severity === 'bad') return `Chat log · ${shape('bad', 's13')}<span class="age bad">missing</span>`;
+  if (!s || !s.log || v?.severity === 'bad') return v && isMissing(v) && neverSeen(v) ? 'Chat log · none yet' : `Chat log · ${shape('bad', 's13')}<span class="age bad">missing</span>`;
   const last = parseIso(s.lastLineAt) || (s.xpTimeline?.length ? parseChatTs(s.xpTimeline.at(-1)[0]) : null);
   const li = loggedIn();
   if (li && s.live) return `Chat log · live${last ? ' · last line ' + hhmm(last) : ''}`;
@@ -560,15 +996,18 @@ function chatLive() {
 }
 
 /* ---------- stamp ---------- */
-function setStamp(l1, l2, sev) {
+function setStamp(l1, l2, sev, label) {
   const st = $('#stamp');
   st.className = 'stamp' + (sev === 'warn' || sev === 'bad' ? ' ' + sev : '');
-  st.html = `<div class="l1">${l1}</div><div class="l2">${sev === 'warn' || sev === 'bad' ? shape(sev, 's13') : ''}<span>${l2}</span></div>`;
+  st.html = `<div class="l1">${l1}</div><div class="l2">${sev === 'warn' || sev === 'bad' ? shape(sev, 's13', label) : ''}<span>${l2}</span></div>`;
 }
 function exportStamp(src, kind) {
   const v = V(src);
   if (S.down && S.downSince) return setStamp(`Copied from the ${kind} export`, `as of ${hhmm(S.downSince)}`, 'bad');
   if (!v && S.loading && !S.healthAt) return setStamp(`Copied from the ${kind} export`, '…', 'ok');  // health not answered yet: no false "missing"
+  // A never-seen export is "set up below" in amber (or "to set up" on a view with no Setup window, Statehelm: the margin
+  // carries the fix there); red "missing" only for one that was there and is gone.
+  if (v && isMissing(v) && neverSeen(v)) return setStamp(`No ${kind} export yet`, SETUP_KEY[S.view] ? 'set up below' : 'to set up', 'warn', 'Not set up');
   if (!v || (v.severity === 'bad' && v.ageSec == null)) return setStamp(`No ${kind} export found`, 'missing', 'bad');
   const at = NOW() - v.ageSec * 1000;
   setStamp(`Copied from the ${kind} export of ${dayMon(at)}, ${hhmm(at)}`, ago(at), v.severity === 'warn' || v.severity === 'bad' ? v.severity : 'ok');
@@ -580,21 +1019,49 @@ const FAVICONS = (() => {
   return { ok: mk('#99806C'), info: mk('#99806C'), warn: mk('#FFB300'), bad: mk('#FF5A5A') };
 })();
 let lastFavicon = null;
+/* The reason a rail mark gives: " · 1 to do: character export 3 h old" / " · needs the chat log" / " · 2 to do". */
+function markReason(items) {
+  if (!items.length) return '';
+  if (items.length > 1) return ` · ${items.length} to do`;
+  const v = items[0];
+  if (isMissing(v)) return ` · needs ${v.source === 'chat-log' ? 'the chat log' : 'a ' + (FOLD_NAME[v.source] || v.source)}`;
+  if (v.severity === 'bad') return ` · ${FOLD_NAME[v.source] || v.source} broken`;
+  return ` · 1 to do: ${FOLD_NAME[v.source] || v.source}${v.ageSec != null ? ' ' + ageWord(v.ageSec) + ' old' : ''}`;
+}
+/* Marks: own sources only (views[]), never the current view (its stamp and pill already say it), never a source never seen. */
+function markItems(view) {
+  return viewItems(view).listed.filter(v => actionable(v) && !(isMissing(v) && neverSeen(v)));
+}
 function renderShellHealth() {
-  const all = S.verdicts;
-  const worst = worstOf(all);
   const { listed } = viewItems(S.view);
+  const worst = worstShape(listed);
   // Until the first round answers, say so: an empty list is not "All sources recent".
   const checking = S.loading && !S.healthAt;
-  $('#pill-shape').html = checking ? '' : shape(worstOf(listed), 's13');
+  $('#pill-shape').html = checking ? '' : shape(worst, 's13');
   $('#pill-text').textContent = checking ? 'Checking…' : headerLine(listed);
+  const markOf = w => w === 'warn' || w === 'bad' ? shape(w, 'mark-shape').replace('class="shape', 'style="width:10px;height:10px;display:block" class="shape') : '';
+  const setMark = (el, items) => {
+    if (!el) return;
+    const w = worstShape(items);
+    el.html = markOf(w);
+    const host = el.closest('a, button');
+    if (!host) return;
+    if (host.dataset.title0 == null) host.dataset.title0 = host.title || '';
+    const t = host.dataset.title0 + markReason(items);
+    if (host.title !== t) host.title = t;
+    if (host.getAttribute('aria-label') !== t) { if (t) host.setAttribute('aria-label', t); else host.removeAttribute('aria-label'); }
+  };
+  const byView = {};
   for (const view of VIEWS) {
-    const w = worstOf(all.filter(v => (v.severity === 'warn' || v.severity === 'bad') && (v.views || []).includes(view)));
-    const el = document.querySelector(`[data-mark="${view}"]`);
-    if (el) el.html = w === 'warn' || w === 'bad' ? shape(w, 'mark-shape').replace('class="shape', 'style="width:10px;height:10px;display:block" class="shape') : '';
+    byView[view] = view === S.view ? [] : markItems(view);
+    setMark(document.querySelector(`[data-mark="${view}"]`), byView[view]);
   }
-  const warns = all.filter(v => v.severity === 'warn').length;
-  const badge = worst === 'bad' ? '(!) ' : warns ? `(${warns}) ` : '';
+  // The phone's More button carries the worst of the views it holds (P3 adds the element; absent is fine).
+  const more = document.querySelector('[data-mark="more"]');
+  if (more) setMark(more, [...new Set([...byView.character, ...byView.teleports, ...byView.statehelm])]);
+  // Tab title and favicon follow the current view's listed worst: "(!)" and red only for a broken or vanished source; "(N)" and amber for warn.
+  const warns = listed.filter(v => v.severity === 'warn').length;
+  const badge = worst === 'bad' ? '(!) ' : worst === 'warn' && warns ? `(${warns}) ` : '';
   document.title = `${badge}${VIEW_TITLE[S.view]} · ${APP_NAME}`;
   const fav = worst === 'bad' ? 'bad' : worst === 'warn' ? 'warn' : 'ok';
   if (fav !== lastFavicon) { $('#favicon').href = FAVICONS[fav]; lastFavicon = fav; }
@@ -616,6 +1083,7 @@ const sessUI = {
   saved: (() => { const a = store.json('pgdash.chans', null); return Array.isArray(a) ? new Set(a) : null; })(),
   feed: [], tailLog: null, tailOffset: null, unseen: 0, chart: null,
   coinAll: false,  // Councils list: "Show all" toggled (not persisted)
+  skillAll: false, // XP by skill: "Show all" toggled (not persisted); the deck window lists the top SKILL_TOP otherwise
   seq: 0,        // lines pushed into feed[] for the current log (monotonic)
   chanVer: 0,    // bumps when the channel filter changes
   shown: null,   // what #feed currently holds: { log, seq, chanVer } or 'empty'
@@ -633,8 +1101,27 @@ async function loadSession() {
   if (!zUI.area || S.zoneArea !== zoneTarget()) await loadZone();
 }
 
+/* ---------- lower-deck summaries (P5; the fold state and markup are the deck helpers near saveOpen) ---------- */
+/* The one-line summary in a deck window's title bar (the `.sum` span after the fold button). HTML; the caller escapes. */
+function deckSum(view, id, html) { const s = document.querySelector(`#${id} .win-bar .sum`); if (s) s.innerHTML = html || ''; }
+/* A folded window whose own source is bad keeps its footer: a missing source is never hidden (app.css .keepfoot). */
+function deckKeepFoot(ids, bad) { ids.forEach(id => $('#' + id)?.classList.toggle('keepfoot', !!bad)); }
+/* A search typed into a deck window holds it open while the query is non-empty; nothing is stored. Call after applyDeck. */
+function deckHold(id, hold) {
+  if (!hold) return;
+  const w = $('#' + id); if (!w) return;
+  w.classList.remove('folded');
+  const b = w.querySelector('[data-deck]');
+  if (b) { b.setAttribute('aria-expanded', 'true'); const tri = b.querySelector('.tri'); if (tri) tri.innerHTML = CARET('down'); }
+}
+/* Plain-text age for a summary whose exports are older than the view's stamp source: " · from exports 3 h old". No shape, no colour. */
+function exportsAgeSum(...keys) {
+  const worst = keys.map(k => V(k)).filter(v => v && v.severity === 'warn' && v.ageSec != null).sort((a, b) => b.ageSec - a.ageSec)[0];
+  return worst ? ` · from ${keys.length > 1 ? 'exports' : 'an export'} ${ageWord(worst.ageSec)} old` : '';
+}
+
 /* Current zone panel: NPCs where you are, with favor, councils left, storage and services. */
-const zUI = { area: null, more: false }; // a next-door area picked to look at; null = where you are
+const zUI = { area: null, more: false, deckArea: store.get('pgdash.hereArea', null) }; // a next-door area picked to look at; null = where you are; deckArea: the zone Here last opened itself for
 const zoneTarget = () => zUI.area || S.session?.currentArea || null;
 async function loadZone(force = false) {
   const area = zoneTarget();
@@ -654,7 +1141,8 @@ function renderZone() {
   const noLog = !sessionHasLog() && !(S.loading && !S.session);
   // Hidden only when the log is read but names no area (never logged in today); no chat log shows the needs line like the other windows.
   $('#w-s-zone').hidden = !here && !S.loading && !noLog;
-  $('#t-s-zone').textContent = peek ? `Next door: ${zUI.area}` : here ? (loggedIn() ? `Here: ${here}` : `Last zone: ${here}`) : 'Here';
+  ($('#t-s-zone .t') || $('#t-s-zone')).textContent = peek ? `Next door: ${zUI.area}` : here ? `Here: ${here}` : 'Here';
+  const sum = h => deckSum('session', 'w-s-zone', h);
   $('#s-zone-tools').html = peek && here ? `<button type="button" class="linkbtn" data-zback="1" style="text-decoration:underline">Back to ${esc(here)}</button>` : '';
   const foot = () => {
     // The missing export wins; otherwise whichever is stale, storage first (it goes stale faster).
@@ -663,13 +1151,13 @@ function renderZone() {
     const missing = vendorsMissing() || (sevOf(src) === 'bad' && V(src)?.ageSec == null);
     setFoot('w-s-zone', `${srcAge('character-export', 'Character export')} · ${srcAge('storage-export', 'Storage export')}`, srcFix(src, missing ? '' : src === 'storage-export' ? 'After storing:' : 'After selling:'));
   };
-  if (noLog) { box.html = '<p class="needs">Needs the chat log.</p>'; setFoot('w-s-zone', chatLive(), ['warn', 'bad'].includes(sevOf('chat-log')) ? srcFix('chat-log') : ''); return; }
+  if (noLog) { box.html = '<p class="needs">Needs the chat log.</p>'; sum('needs the chat log'); setFoot('w-s-zone', chatLive(), ['warn', 'bad'].includes(sevOf('chat-log')) ? srcFix('chat-log') : ''); return; }
   const current = S.zoneArea === zoneTarget();
   // A failed read is an error block like the other windows (red square + Retry); the repr stays in the console, never in copy.
-  if (current && (S.errors.zone || z?.error)) { box.html = blockError('this zone', S.lastGood.zone); foot(); return; }
-  if (!z || !current) { box.html = S.loading || here ? `<p class="needs">${peek ? `Reading ${esc(zUI.area)}…` : 'Reading where you are…'}</p>` : ''; foot(); return; }
-  if (vendorsMissing()) { box.html = '<p class="needs">Needs the character export: favor and vendor councils come from it.</p>'; foot(); return; }
-  if (z.matched === false) { box.html = `<p class="empty">Don't know <em class="t">${esc(z.area)}</em> yet: it isn't in game data v${esc(cdnVersion())}.</p>`; foot(); return; }
+  if (current && (S.errors.zone || z?.error)) { box.html = blockError('this zone', S.lastGood.zone); sum("couldn't read this zone"); foot(); return; }
+  if (!z || !current) { box.html = S.loading || here ? `<p class="needs">${peek ? `Reading ${esc(zUI.area)}…` : 'Reading where you are…'}</p>` : ''; sum(here ? 'reading…' : ''); foot(); return; }
+  if (vendorsMissing()) { box.html = '<p class="needs">Needs the character export: favor and vendor councils come from it.</p>'; sum('needs a character export'); foot(); return; }
+  if (z.matched === false) { box.html = `<p class="empty">Don't know <em class="t">${esc(z.area)}</em> yet: it isn't in game data v${esc(cdnVersion())}.</p>`; sum('not in game data yet'); foot(); return; }
   const sm = z.summary || {};
   const where = peek || !loggedIn() ? 'there' : 'here';
   const resets = z.npcs.map(r => r.vendor?.resetsAt ? { name: r.name, t: parseUtc(r.vendor.resetsAt), back: r.vendor.spent } : null).filter(x => x && x.t > NOW()).sort((a, b) => a.t - b.t);
@@ -693,9 +1181,10 @@ function renderZone() {
     return `<tr class="row"><td class="m1"><div class="nm">${esc(r.name)}</div>${what ? `<div class="small">${esc(what)}</div>` : ''}${loves ? `<div class="small dim">${esc(loves)}</div>` : ''}${r.notes ? `<div class="small dim">Note: ${esc(r.notes)}</div>` : ''}</td>
       <td>${esc(favorLabel(r.favor))}</td><td class="num${v ? ' m2' : ''}">${vend}</td><td class="num${v ? '' : ' m2'}">${slots}</td><td class="m-line2">${esc(line2)}</td></tr>`;
   };
-  // Vendors and storage lead; trainers, barter and the rest fold away. On a phone a big zone (Serbule: 17 vendors) folds past the top 8 too.
+  // Vendors and storage lead; trainers, barter and the rest fold away. The open window shows the top 5 (a big zone,
+  // Serbule with 17 vendors, folds the rest behind the link) so the deck stays short.
   const key = z.npcs.filter(r => r.vendor || r.vault), other = z.npcs.filter(r => !r.vendor && !r.vault);
-  const cap = matchMedia('(max-width: 639px)').matches ? 8 : key.length;
+  const cap = 5;
   const lead = key.slice(0, cap), folded = key.slice(cap).concat(other);
   const rows = lead.map(row).join('') + (zUI.more ? folded.map(row).join('') : '');
   const moreLabel = zUI.more ? (key.length > cap ? 'Show fewer' : 'Show only vendors and storage') : `Show ${plural(folded.length, 'more NPC')}${key.length > cap ? '' : ' (trainers, barter and others)'}`;
@@ -711,6 +1200,15 @@ function renderZone() {
   // Each neighbour (separator, link, figures) is one no-wrap unit so a phone never splits "Rahu" from its "75,458 · 68 slots".
   const next = adj.length ? `<p style="margin-top:12px"><span class="dim">Next door:</span> ${adj.map((a, i) => `<span class="zadj">${i ? '<span class="dim">· </span>' : ''}<button type="button" class="linkbtn" data-zarea="${esc(a.name)}" style="text-decoration:underline">${esc(a.name)}</button> <span class="small">${[a.councils ? `${COIN}${fmt(a.councils)}` : '', a.free ? `${fmt(a.free)} slots` : ''].filter(Boolean).join(' · ')}</span></span>`).join(' ')}</p>` : '';
   box.html = glance + guess + table + moreBtn + unmet + next;
+  // Folded summary: the vendors you sell to and the vaults of yours here, with the exports' age when stale.
+  const nVend = z.npcs.filter(r => r.vendor?.cap).length, nVault = z.npcs.filter(r => r.vault).length;
+  sum((nVend || nVault ? [nVend ? plural(nVend, 'vendor you know', 'vendors you know') : '', nVault ? plural(nVault, 'vault') : ''].filter(Boolean).join(' · ') : "nobody you've met, none of your storage") + exportsAgeSum('character-export', 'storage-export'));
+  // Here opens itself once per zone change while you are logged in and the zone holds a vendor you sell to or a vault of
+  // yours, and folds when it holds neither. Logged out, the last zone stays folded: the page is for reading, not standing there.
+  if (!peek && here && zUI.deckArea !== here) {
+    zUI.deckArea = here; store.set('pgdash.hereArea', here);
+    deckSet('session', 'w-s-zone', nVend + nVault > 0 && loggedIn());
+  }
   foot();
 }
 function initZone() {
@@ -747,6 +1245,7 @@ function renderSession() {
     follow.hidden = false; follow.className = 'sysline';
     follow.html = `${shape('info')}<span>The chat log follows <em class="t">${esc(s.character)}</em>, who is ${loggedIn() ? 'logged in' : 'the last to log in'}. Other views show <em class="t">${esc(S.character)}</em>.</span>`;
   } else follow.hidden = true;
+  if (renderSetup('session') === 'replace') { $('#title-extra').hidden = true; return; }
 
   if (S.view === 'session') {
     $('#h1').textContent = 'Session';
@@ -793,19 +1292,23 @@ function renderSession() {
       <button type="button" class="plaque plaque-wide" data-fix="chat-logging" aria-label="${esc(pl[0] + '. ' + pl[1] + '. Then check again.')}"><span class="p1">${pl[0]}</span><span class="p2">${pl[1]}</span></button>`;
   } else if (S.loading && !S.session) xpBox.html = '<div class="zeroline" style="height:200px;border:0;background:var(--well);border-radius:4px"></div>';
   else drawXp(s);
-  setFoot('w-s-xp', live, noLog ? '' : 'Logging: Settings → V.I.P. → Save Chat Logs');
+  setFoot('w-s-xp', live, ''); // right side empty (Window footers): the chat-log fix lives on At a glance when it is needed
 
   // XP by skill
   const sk = $('#s-skill');
   if (noLog) sk.html = needLog;
   else {
     const max = s.xp?.[0]?.xp || 1;
-    sk.html = (s.xp || []).length ? `<div class="barlist">${s.xp.map(r => `<div class="barrow" title="${esc(r.skill)}: ${fmt(r.xp)} XP"><span class="nm">${esc(r.skill)}</span><div class="bar"><i style="width:${Math.max(1, r.xp / max * 100)}%"></i></div><span class="v">${fmt(r.xp)} <span class="dim">${fmt(r.perHour)}/hr</span></span></div>`).join('')}</div>`
+    // The deck window keeps the page short: the top skills, the rest behind "Show all".
+    const xpRows = sessUI.skillAll ? (s.xp || []) : (s.xp || []).slice(0, SKILL_TOP);
+    const xpMore = (s.xp || []).length > SKILL_TOP ? `<p style="margin-top:8px"><button type="button" class="linkbtn" id="skillall-s" style="text-decoration:underline">${sessUI.skillAll ? `Show the top ${SKILL_TOP}` : `Show all ${fmt(s.xp.length)} skills`}</button></p>` : '';
+    sk.html = (s.xp || []).length ? `<div class="barlist">${xpRows.map(r => `<div class="barrow" title="${esc(r.skill)}: ${fmt(r.xp)} XP"><span class="nm">${esc(r.skill)}</span><div class="bar"><i style="width:${Math.max(1, r.xp / max * 100)}%"></i></div><span class="v">${fmt(r.xp)} <span class="dim">${fmt(r.perHour)}/hr</span></span></div>`).join('')}</div>${xpMore}`
       : '<p class="empty">No XP yet.</p>';
   }
   setFoot('w-s-skill', noLog ? live : `${live} · ${scopeWord}`, fixR);
   // Zero day: an empty window keeps its title and one sentence; the provenance is in At a glance and the margin.
   $('#w-s-skill').classList.toggle('quiet', !noLog && !(s.xp || []).length && !reading);
+  deckSum('session', 'w-s-skill', reading ? 'reading…' : noLog ? 'needs the chat log' : (s.xp || []).length ? `${plural(s.xp.length, 'skill')} · ${esc(s.xp[0].skill)} ${fmt(s.xp[0].xp)}` : 'no XP yet');
 
   // Level-ups
   const lv = $('#s-lvl');
@@ -814,6 +1317,7 @@ function renderSession() {
     : `<p class="empty">No level-ups yet ${S.scope === 'login' ? 'this login' : 'today'}. Trainers don't keep office hours, so neither does this list.</p>`;
   setFoot('w-s-lvl', noLog ? live : `${live} · ${scopeWord}`, fixR);
   $('#w-s-lvl').classList.toggle('quiet', !noLog && !(s.levels || []).length && !reading);
+  deckSum('session', 'w-s-lvl', reading ? 'reading…' : noLog ? 'needs the chat log' : (s.levels || []).length ? `${fmt(s.levels.length)} · latest ${esc(s.levels.at(-1).skill)} ${s.levels.at(-1).level}` : 'none yet');
 
   renderZone();
   renderCouncils(s);
@@ -821,6 +1325,8 @@ function renderSession() {
   renderLoot();
   setFoot('w-s-loot', noLog ? live : `${live} · ${plural((s.loot || []).length, 'distinct item')}`, fixR);
   $('#w-s-loot').classList.toggle('quiet', !noLog && !(s.loot || []).length && !reading);
+  const lootTop = (s.loot || []).slice().sort((a, b) => b.count - a.count)[0];
+  deckSum('session', 'w-s-loot', reading ? 'reading…' : noLog ? 'needs the chat log' : lootTop ? `${plural((s.loot || []).reduce((a, r) => a + r.count, 0), 'item')} · mostly ${esc(lootTop.item)}` : 'nothing yet');
 
   // What happened
   const wh = $('#s-what');
@@ -830,6 +1336,11 @@ function renderSession() {
     const old = !Array.isArray(evs);
     if (old) evs = [...(s.areas || []).map(a => ({ ts: a.ts, kind: 'area', area: a.area })), ...(s.levels || []).map(l => ({ ts: l.ts, kind: 'level', skill: l.skill, level: l.level }))].sort((a, b) => a.ts < b.ts ? -1 : 1);
     evs = mergeExportEvents(evs);
+    // Folded summary: areas, deaths and the last thing that happened.
+    const lastEv = evs.at(-1);
+    const lastTxt = !lastEv ? '' : lastEv.kind === 'area' ? `entered ${esc(lastEv.area)}` : lastEv.kind === 'login' ? 'logged in' : lastEv.kind === 'logout' ? 'logged out'
+      : lastEv.kind === 'level' ? `${esc(lastEv.skill)} ${lastEv.level}` : lastEv.kind === 'death' ? (lastEv.killer ? `killed by ${esc(lastEv.killer)}` : 'died') : lastEv.kind === 'export' ? `${esc(lastEv.report)} export` : '';
+    deckSum('session', 'w-s-what', evs.length ? `${plural(evs.filter(e => e.kind === 'area').length, 'area')} · ${plural(evs.filter(e => e.kind === 'death').length, 'death')}${lastTxt ? ` · last: ${lastTxt} ${lastEv.ts.slice(9, 14)}` : ''}` : 'nothing yet');
     const row = e => {
       let what = '';
       if (e.kind === 'login') what = `Logged in as <em class="t">${esc(e.character)}</em>`;
@@ -855,18 +1366,29 @@ function renderSession() {
     const shown = evs.slice(-60), scroll = shown.length > WHAT_FULL;
     const wsc0 = $('#what-scroll');
     const atEnd = !wsc0 || wsc0.scrollHeight - wsc0.scrollTop - wsc0.clientHeight < 40;
-    const wrote = setHTML(wh, evs.length ? `${scroll ? '<div class="scrollbox fade-top" style="max-height:360px" id="what-scroll">' : ''}<ul class="list feed-what">${shown.map(row).join('')}</ul>${scroll ? '</div>' : ''}${evs.length > 60 ? `<p class="small dim">Showing the last 60 of ${fmt(evs.length)}.</p>` : ''}` : '<p class="empty">Nothing happened yet today. Log in and it starts here.</p>');
+    const wrote = setHTML(wh, evs.length ? `${scroll ? '<div class="scrollbox fade-top" style="max-height:200px" id="what-scroll">' : ''}<ul class="list feed-what">${shown.map(row).join('')}</ul>${scroll ? '</div>' : ''}${evs.length > 60 ? `<p class="small dim">Showing the last 60 of ${fmt(evs.length)}.</p>` : ''}` : '<p class="empty">Nothing happened yet today. Log in and it starts here.</p>');
     const wsc = $('#what-scroll');
-    if (wsc && wrote && atEnd) snapToEnd(wsc, 'li');
+    // A folded window has no height, so the snap waits (data-snap) until the window is opened and drawn again.
+    if (wsc && ((wrote && atEnd) || wsc.dataset.snap)) { if (wsc.clientHeight) { snapToEnd(wsc, 'li'); delete wsc.dataset.snap; } else wsc.dataset.snap = '1'; }
     if (wsc) wsc.classList.toggle('at-top', wsc.scrollTop < 2);
-    setFoot('w-s-what', `${live} · today`, old ? 'Logins, logouts, exports and deaths need a newer server.py' : fixR);
+    setFoot('w-s-what', `${live} · today`, old ? `Logins, logouts, exports and deaths need a newer ${APP_NAME}` : fixR);
   }
-  if (noLog) setFoot('w-s-what', live, '');
+  if (noLog) { setFoot('w-s-what', live, ''); deckSum('session', 'w-s-what', reading ? 'reading…' : 'needs the chat log'); }
   renderChips();
   renderFeed(false);
+  // Chat log summary: channels shown of those seen today, and the day's line count.
+  const chans = Object.keys(s.channels || {});
+  const lines = chans.reduce((a, c) => a + (s.channels[c] || 0), 0);
+  deckSum('session', 'w-s-chat', noLog ? (reading ? 'reading…' : 'needs the chat log') : chans.length ? `${chans.filter(chanEnabled).length} of ${plural(chans.length, 'channel')} · ${plural(lines, 'line')}` : 'nothing yet');
+  // The lower deck: fold state from pgdash.open['deck-session'] (defaults: XP by skill and What happened open); a bad
+  // chat log keeps every footer visible; a Loot search holds its window open.
+  deckKeepFoot(['w-s-skill', 'w-s-what', 'w-s-zone', 'w-s-combat', 'w-s-lvl', 'w-s-coin', 'w-s-loot', 'w-s-chat'], sevOf('chat-log') === 'bad');
+  applyDeck('session');
+  deckHold('w-s-loot', !!$('#lootq').value.trim());
 }
 
-const WHAT_FULL = 15;
+const WHAT_FULL = 7;   // a day with more events scrolls inside the deck window (200 px), parked on its last rows
+const SKILL_TOP = 5;   // XP by skill rows shown before "Show all"
 /* Scroll a list to its end, then back up to the nearest whole row, so the top row is never cut in half. */
 function snapToEnd(box, rowSel) {
   box.scrollTop = box.scrollHeight;
@@ -976,15 +1498,18 @@ function renderCouncils(s) {
   const live = chatLive();
   const scopeWord = S.scope === 'login' ? 'this login' : 'today';
   const fixR = ['warn', 'bad'].includes(sevOf('chat-log')) ? srcFix('chat-log') : '';
-  let quiet = false;
+  let quiet = false, sum = '';
   if (!sessionHasLog()) {
     box.html = S.loading && !S.session ? '<p class="needs">Reading the chat log…</p>' : '<p class="needs">Needs the chat log.</p>';
+    sum = S.loading && !S.session ? 'reading…' : 'needs the chat log';
     setFoot('w-s-coin', live, fixR);
   } else if (!s.councils || typeof s.councils !== 'object') {
-    box.html = '<p class="needs">Needs a newer server.py.</p>';
-    setFoot('w-s-coin', `${live} · ${scopeWord}`, 'Councils need a newer server.py');
+    box.html = `<p class="needs">${esc(NEEDS_NEWER)}</p>`;
+    sum = NEEDS_NEWER.replace(/\.$/, '').toLowerCase();
+    setFoot('w-s-coin', `${live} · ${scopeWord}`, `Councils need a newer ${APP_NAME}`);
   } else {
     const c = s.councils, evs = Array.isArray(c.events) ? c.events : [];
+    sum = evs.length ? `${fmt(c.received || 0)} in · ${fmt(c.stolen || 0)} stolen · net ${fmt(c.net || 0)}` : `none ${scopeWord}`;
     if (!evs.length) {
       quiet = true;
       box.html = `<p class="empty">No councils in or out ${scopeWord}. What comes in is written to the chat log; what you spend never is.</p>`;
@@ -1047,24 +1572,29 @@ function renderCouncils(s) {
     setFoot('w-s-coin', `${live} · ${scopeWord}`, fixR);
   }
   $('#w-s-coin').classList.toggle('quiet', quiet);
+  deckSum('session', 'w-s-coin', sum);
 }
 
-/* Combat window: deaths and kills in scope from the chat log (`combat`), with the 31-day totals (`combat31d`). */
+/* "Deaths and kills" window (`#w-s-combat`; the rail's Combat is the damage meter): deaths and kills in scope from the
+   chat log (`combat`), with the 31-day totals (`combat31d`). Lives in Session's lower deck, folded by default. */
 function renderCombat(s) {
   const box = $('#s-combat');
   const live = chatLive();
   const scopeWord = S.scope === 'login' ? 'this login' : 'today';
   const fixR = ['warn', 'bad'].includes(sevOf('chat-log')) ? srcFix('chat-log') : '';
-  let quiet = false;
+  let quiet = false, sum = '';
   if (!sessionHasLog()) {
     box.html = S.loading && !S.session ? '<p class="needs">Reading the chat log…</p>' : '<p class="needs">Needs the chat log.</p>';
+    sum = S.loading && !S.session ? 'reading…' : 'needs the chat log';
     setFoot('w-s-combat', live, fixR);
   } else if (!s.combat || typeof s.combat !== 'object') {
-    box.html = '<p class="needs">Needs a newer server.py.</p>';
-    setFoot('w-s-combat', `${live} · ${scopeWord}`, 'Combat needs a newer server.py');
+    box.html = `<p class="needs">${esc(NEEDS_NEWER)}</p>`;
+    sum = NEEDS_NEWER.replace(/\.$/, '').toLowerCase();
+    setFoot('w-s-combat', `${live} · ${scopeWord}`, `Deaths and kills need a newer ${APP_NAME}`);
   } else {
     const c = s.combat, d = s.combat31d;
     const has31 = !!(d && d.days > 0);
+    sum = (c.deaths || c.kills || c.petKills) ? `${plural(c.deaths || 0, 'death')} · ${plural(c.kills || 0, 'kill')}${c.petKills ? ` · ${fmt(c.petKills)} by your pets` : ''}` : c.closeCalls ? `${plural(c.closeCalls, 'close call')}, no deaths` : `none ${scopeWord}`;
     if (!(c.deaths || c.kills || c.petKills || c.closeCalls)) {
       quiet = true;
       box.html = `<p class="empty">No deaths or kills ${scopeWord}.${has31 ? ` Last 31 days: ${plural(d.deaths, 'death')} · ${plural(d.kills, 'kill')}.` : ''}</p>`;
@@ -1078,13 +1608,16 @@ function renderCombat(s) {
       box.html = `<div class="glance">${figs.map((f, i) => `<div class="fig${i ? '' : ' lead'}"><div class="lb">${f.lb}</div><div class="val">${f.val}</div><div class="sub">${esc(f.sub)}</div></div>`).join('')}</div>`
         + `<p class="small dim" id="s-combat-31" style="margin:10px 0 0"${has31 ? '' : ' hidden'}>${esc(last31)}</p>`;
     }
-    // Footer: the chat-log fix wins; else the window names its own gap when combat logging is partly off,
-    // following the server's listing (`views` has session): the LogNonAttacks-only case is folded, no fix.
+    // Footer: the chat-log fix wins; else the window names the "Log when…" rows that are Off among the three this
+    // window needs (deaths: enemies attack me; kills: I attack enemies; pet kills: my pets attack enemies), by the game's labels.
     const cl = V('combat-logging');
-    const clFix = cl?.severity === 'info' && (cl.views || []).includes('session') ? `<span>${esc(fixText('combat-logging'))}</span>` : '';
+    const NEEDS_ROW = { EnemyAttackMe: 'deaths', MeAttackEnemy: 'kills', PetAttackEnemy: 'pet kills' };
+    const offRows = (cl?.evidenceData?.off || []).filter(k => NEEDS_ROW[k]);
+    const clFix = offRows.length ? `<span>Off in Settings → V.I.P. → Combat Logging: ${esc(offRows.map(k => `${COMBAT_ROW_LABEL[k]} (${NEEDS_ROW[k]})`).join(', '))}.</span>` : '';
     setFoot('w-s-combat', `${live} · ${scopeWord}`, fixR || clFix);
   }
   $('#w-s-combat').classList.toggle('quiet', quiet);
+  deckSum('session', 'w-s-combat', sum);
 }
 
 /* ---------- XP chart ---------- */
@@ -1171,6 +1704,7 @@ function renderLoot() {
   box.html = rows.length ? `<table class="tbl resp-plain"><thead><tr>${th('item', 'Item')}${th('count', 'Count', true)}</tr></thead><tbody>${shown.map(r =>
     `<tr class="row"><td class="m1"><span class="cell-name">${iconImg(S.icons.byName[r.item], 24)}<span>${esc(r.item)}</span></span></td><td class="num m2">${fmt(r.count)}</td></tr>`).join('')}</tbody></table>${more}`
     : `<p class="empty">No loot matches "${esc(q)}".</p>`;
+  deckHold('w-s-loot', !!q);
 }
 
 /* ---------- chat log feed ---------- */
@@ -1190,7 +1724,9 @@ function renderChips() {
   updateChipMore();
   const shown = order.filter(chanEnabled).length;
   const fname = S.session?.log || sessUI.tailLog || '';
-  setFoot('w-s-chat', sessionHasLog() ? `${esc(fname)} · ${chatLive().replace(/^Chat log · /, '')}` : chatLive(), order.length ? `Showing ${shown} of ${plural(order.length, 'channel')}` : '');
+  const fday = /^Chat-\d\d-\d\d-\d\d\.log$/.test(fname) ? new Date(fname.replace(/^Chat-(\d\d)-(\d\d)-(\d\d)\.log$/, '20$1-$2-$3') + 'T12:00') : null;
+  const fword = !fday ? 'The chat log' : fday.toDateString() === new Date(NOW()).toDateString() ? "Today's chat log" : `The chat log of ${dayMon(fday)}`;   // file names live in Files only
+  setFoot('w-s-chat', sessionHasLog() ? `${fword} · ${chatLive().replace(/^Chat log · /, '')}` : chatLive(), order.length ? `Showing ${shown} of ${plural(order.length, 'channel')}` : '');
 }
 /* A clipped chip strip says how many channels sit past its edge, as a chip that scrolls to them. */
 function updateChipMore() {
@@ -1235,6 +1771,10 @@ function renderFeed(scrollDown) {
     return;
   }
   feed.classList.remove('is-empty');
+  // The Chat log window starts folded (no height, so any snap is a no-op): the first draw after it opens snaps to the newest line.
+  const wasHidden = sessUI.feedHidden;
+  sessUI.feedHidden = !feed.clientHeight;
+  if (wasHidden && !sessUI.feedHidden) scrollDown = true;
   const atBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 40;
   const was = sessUI.shown && typeof sessUI.shown === 'object' ? sessUI.shown : null;
   const same = was && was.log === sessUI.tailLog && was.chanVer === sessUI.chanVer;
@@ -1290,6 +1830,9 @@ function initSession() {
   $('#s-coin').addEventListener('click', e => {
     if (e.target.id === 'coinall') { sessUI.coinAll = !sessUI.coinAll; renderCouncils(S.session || {}); $('#coinall')?.focus(); }
   });
+  $('#s-skill').addEventListener('click', e => {
+    if (e.target.id === 'skillall-s') { sessUI.skillAll = !sessUI.skillAll; renderSession(); $('#skillall-s')?.focus(); }
+  });
   $('#s-loot').addEventListener('click', e => {
     if (e.target.id === 'lootall') { sessUI.lootAll = !sessUI.lootAll; renderLoot(); $('#lootall')?.focus(); return; }
     const b = e.target.closest('[data-sort]'); if (!b) return;
@@ -1332,6 +1875,8 @@ const dUI = {
   minor: false,                   // skirmishes (under 5 s and 500 damage) unfolded
   hasFight: false,                // the Breakdown shows a fight (Copy and Post enabled)
   enemiesAll: false,              // By enemy: every enemy shown, not just the top ENEMY_SHOW
+  all: false,                     // Fights: every row shown, not just the newest FIGHTS_SHOW (not persisted)
+  how: false,                     // Breakdown: "How this is counted" unfolded (not persisted)
   sort: (store.json('pgdash.sort', {}).fights) || { key: 'start', dir: 'desc' },
 };
 const D_COLS = [
@@ -1364,19 +1909,23 @@ async function loadCombat() {
 let partyRound = 0;
 async function combatRound() {
   try { await loadCombat(); markUp(); } catch (e) { onFetchError(e); }
-  if (partyRound++ % 5 === 0) await loadParty();  // the party link every 10 s: ntfy.sh is polled at that pace
+  if (partyRound++ % 5 === 0) await loadParty();  // Your party every 10 s: the feed and the room are polled at that pace
   if (S.view === 'combat') { renderCombatView(); renderMargin(); renderShellHealth(); }
 }
 
-/* ===================== party sharing (Combat → Party window) ===================== */
-/* docs/SHARING.md: each copy posts its closed fights to an ntfy.sh topic named by a party code and reads the
-   others'. The server does the posting, polling and merging; this window shows the code, the link's health
-   and the merged fights, newest first. Feedback for the window's own controls goes to its state line
-   (#d-pstate, beside the buttons), never only to the system line at the top of the page. */
-const pUI = { all: false, solo: false, lastCode: null, undoTimer: null, note: null, dnote: null, paste: false, posting: false, area: '', session: null };
+/* ===================== Your party, Private room, Discord (Combat) ===================== */
+/* Your party (B-FINAL §2): the hunting party the chat log names, matched against everyone's fights (the page every
+   copy posts to) with no code; a joined Private room merges its rows in. The server does the posting, polling and
+   merging (`/api/party`, read every 10 s while the view is open); this window shows who shares, the run table and
+   the shared fights. Feedback for a window's own controls goes to that window's state line (#d-ystate, #d-pstate,
+   #d-dstate), never only to the system line at the top of the page. */
+const pUI = { all: false, solo: false, split: false, lastCode: null, undoTimer: null, note: null, dnote: null, ynote: null, yundo: null, yundoTimer: null, posting: false, session: null, seen: false, roomBadAt: null };
 const PARTY_CODE_RE = /^gn-[a-z0-9]{12}$/;
 const PARTY_CODE_IN_TEXT = /gn-[a-z0-9]{12}/i;
 const PARTY_SHOW = 10;  // shared fights listed before "Show all"
+const INVITE_REPO = 'robaxelsen/gorgon-notes';   // the releases page the invite line points at (the self-updater's repo)
+const NEEDS_NEWER_PARTY = `Needs a newer ${APP_NAME}: this page knows Your party, the copy it talks to does not.`;
+const OLD_SERVER_WHY = `This window is newer than the part of ${APP_NAME} that reads the files: close every ${APP_NAME} window, wait a few seconds, and start it again.`;
 async function loadParty() {
   try {
     const p = await api('/api/party');
@@ -1385,9 +1934,9 @@ async function loadParty() {
     if (e && e.status === 404) { S.partyOld = true; S.party = null; }
   }
 }
-/* The window's state line: kind 'status' prints the game's [Status] tag, 'error' its [Error] tag (and marks the
-   field invalid), 'plain' neither. An optional text button (label + run) follows, for Undo. */
-function partyState(kind, text, btn = null, row = 'p') {
+/* The Private room's and Discord's state lines: kind 'status' prints the game's [Status] tag, 'error' its [Error] tag
+   (and marks the code field invalid), 'plain' neither. An optional text button (label + run) follows, for Undo. */
+function lineState(kind, text, btn = null, row = 'p') {
   const el = $(row === 'd' ? '#d-dstate' : '#d-pstate'), inp = row === 'd' ? null : $('#pcode');
   pUI[row === 'd' ? 'dnote' : 'note'] = kind === 'plain' ? null : { kind, text, btn };
   const tag = kind === 'status' ? '<span class="tagw status">[Status]</span> ' : kind === 'error' ? '<span class="tagw error">[Error]</span> ' : '';
@@ -1397,7 +1946,27 @@ function partyState(kind, text, btn = null, row = 'p') {
   if (kind === 'error') { inp.setAttribute('aria-invalid', 'true'); inp.setAttribute('aria-describedby', el.id); }
   else { inp.removeAttribute('aria-invalid'); inp.removeAttribute('aria-describedby'); }
 }
-const discordState = (kind, text) => partyState(kind, text, null, 'd');
+const roomState = (kind, text, btn = null) => lineState(kind, text, btn, 'p');
+const discordState = (kind, text) => lineState(kind, text, null, 'd');
+/* Your party's own state line (#d-ystate, under the state sentence): static markup, written in place and never by
+   renderParty, so the live region exists before it fills (a region inserted already populated is read by nobody) and
+   the 10 s poll never wipes it. `undo` = { label, run } for 30 s; `extra` = text shown in a read-only box (the
+   clipboard fallback). An empty `text` clears the line. */
+function ystate(kind, text, undo = null, extra = null) {
+  pUI.ynote = text ? { kind, text, undo, extra } : null;
+  pUI.yundo = undo?.run || null;
+  clearTimeout(pUI.yundoTimer);
+  if (text && !(kind === 'error' && extra)) pUI.yundoTimer = setTimeout(() => { if (pUI.ynote?.text === text) ystate(null, ''); }, 30000);
+  drawYstate();
+}
+function drawYstate() {
+  const n = pUI.ynote, el = $('#d-ystate');
+  if (!el) return;
+  const tag = !n ? '' : n.kind === 'status' ? '<span class="tagw status">[Status]</span> ' : n.kind === 'error' ? '<span class="tagw error">[Error]</span> ' : '';
+  const undo = n?.undo ? ` <button type="button" class="linkbtn" data-yundo>${esc(n.undo.label)}</button>` : '';
+  const extra = n?.extra ? `<textarea class="invite-text" readonly rows="4" aria-label="The invite line">${esc(n.extra)}</textarea>` : '';
+  el.html = n ? `${tag}${esc(n.text)}${undo}${extra}` : '';
+}
 /* The Discord card as a PNG data URL: the same table the embed carries, drawn with the app's dark palette so it
    reads at a glance in the channel (Discord has no tables; the embed's code block is the searchable copy). */
 const CARD = { bg: '#161111', panel: '#211B1B', line: '#3A302C', text: '#E8E2DA', dim: '#A88E78', title: '#DFC9A0', gold: '#B8934F',
@@ -1423,7 +1992,7 @@ function fightCardPng(card) {
   x.strokeStyle = CARD.line; x.lineWidth = 1; x.beginPath(); x.moveTo(P, y + 0.5); x.lineTo(W - P, y + 0.5); x.stroke();
   const max = Math.max(1, ...rows.map(r => r.dmg || 0));
   for (const r of rows) {
-    // a faint share bar behind the row, like the Party window's bars
+    // a faint share bar behind the row, like Your party's bars
     x.fillStyle = 'rgba(184,147,79,0.13)'; x.fillRect(P, y + 6, (W - 2 * P) * Math.max(0.01, (r.dmg || 0) / max), ROW - 12);
     const base = y + ROW / 2 + 5;
     x.textAlign = 'left'; x.fillStyle = CARD.text; x.font = `600 16px ${CARD.font}`; x.fillText(r.who, P + 10, base);
@@ -1449,12 +2018,14 @@ function wrapText(x, text, width) {
   if (line) out.push(line);
   return out;
 }
-/* Post a fight (by its id) or a merged party fight to the Discord webhook; the server builds the embed. */
-async function postDiscord(body, what) {
+/* Post a fight (by its id) or a run to the Discord channel; the server builds the embed. Nothing connected: the Discord
+   window unfolds, Connect gets focus and that window's state line says what to do (`label` = the button that was pressed). */
+async function postDiscord(body, what, label = 'Post this run to Discord') {
   if (!S.party?.discord?.webhook) {
-    const w = $('#w-d-party'); w.scrollIntoView({ block: 'start', behavior: 'smooth' });
-    discordState('status', 'Connect Discord here first, then press Post to Discord again.');
-    $('#d-dconnect').focus();
+    deckSet('combat', 'w-d-discord', true); applyDeck('combat');
+    $('#w-d-discord').scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    discordState('status', `Connect Discord here first, then press ${label} again.`);
+    $('#d-dconnect').focus({ preventScroll: true });
     return null;
   }
   if (pUI.posting) return null;
@@ -1477,7 +2048,7 @@ function renderPostButtons() {
   const post = $('#d-post');
   post.disabled = pUI.posting || !dUI.hasFight;
   post.hidden = !!S.partyOld;
-  $$('#d-party [data-pdisc], #d-party [data-psess-post]').forEach(b => { b.disabled = pUI.posting; });
+  $$('#d-party [data-psess-post]').forEach(b => { b.disabled = pUI.posting; });
 }
 async function postParty(body) {
   try {
@@ -1485,56 +2056,67 @@ async function postParty(body) {
     S.party = p; S.partyOld = false;
     return p;
   } catch (e) {
-    partyState('error', e?.status === 400 ? e.message : "The server didn't answer; try again.");
+    roomState('error', e?.status === 400 ? e.message : "The server didn't answer; try again.");
     return null;
   }
 }
 async function partyCopy(code, text) {
-  try { await navigator.clipboard.writeText(code); partyState('status', text); }
-  catch { partyState('error', `Couldn't reach the clipboard. The code is ${code}.`); }
+  try { await navigator.clipboard.writeText(code); roomState('status', text); }
+  catch { roomState('error', `Couldn't reach the clipboard. The code is ${code}.`); }
 }
 /* Join from typed or pasted text: the code is pulled out of whatever was pasted ("[Party] Robchew: gn-…"). */
 async function partyJoinFrom(text) {
   const m = String(text || '').match(PARTY_CODE_IN_TEXT);
-  if (!m) { partyState('error', 'A code looks like gn- and 12 letters or digits.'); return; }
+  if (!m) { roomState('error', 'A code looks like gn- and 12 letters or digits.'); return; }
   const code = m[0].toLowerCase();
   $('#pcode').value = code;
   const p = await postParty({ code });
-  if (p?.code) { partyState('status', `Joined ${code}. Your last ${PARTY_SHOW > 3 ? 'three' : 'few'} fights and every new one are shared.`); renderParty(); }
+  if (p?.code) { roomState('status', `Joined ${code}. Your last three fights and every new one are shared with the room.`); renderParty(); }
 }
 function partyTip(m) {
-  const pets = Object.entries(m.pets || {}).map(([n, d]) => `${n} ${fmt(d)}`).join(', ');
+  const pets = Object.entries(m.pets && typeof m.pets === 'object' ? m.pets : {}).map(([n, d]) => `${n} ${fmt(d)}`).join(', ');
   const parts = [`own hits ${fmt(m.me)}`];
   if (pets) parts.push(`pets ${pets}`);
   if (m.kills) parts.push(plural(m.kills, 'kill'));
   if (m.deaths) parts.push(plural(m.deaths, 'death'));
   if (m.taken) parts.push(`took ${fmt(m.taken)}`);
-  if (m.top?.length) parts.push(`top: ${m.top.map(([n, d]) => `${pretty(n)} ${fmt(d)}`).join(', ')}`);
+  const top = Array.isArray(m.top) ? m.top.filter(x => Array.isArray(x) && x.length === 2 && typeof x[0] === 'string') : [];   // another player's row: never trust its shape
+  if (top.length) parts.push(`top: ${top.map(([n, d]) => `${pretty(n)} ${fmt(d)}`).join(', ')}`);
   return `${m.who}: ${parts.join(' · ')}`;
 }
+/* One shared fight: the head line with its chips (how the logs were matched) and a bar per player. */
 function partyFightHtml(f) {
   const t = parseIso(f.start);
   const solo = f.members.length === 1 ? (f.members[0].mine ? '<span class="tag">only you so far</span>' : '<span class="tag">without you</span>') : '';
   const ids = f.byIds ? '<span class="tag" title="The same enemy ids appear in more than one player\'s log">same enemies</span>' : '';
   const roster = f.byRoster ? '<span class="tag" title="A player\'s chat log names the other as a party member">same party</span>' : '';
+  const nearby = f.nearby ? '<span class="tag" title="Matched by area and time alone: nobody\'s chat log names the other as a party member">same cave, party not confirmed</span>' : '';
   const pasted = f.pasted ? '<span class="tag" title="Added from a pasted Discord post">pasted</span>' : '';
-  const post = S.party?.discord?.webhook && f.members.length > 1 ? `<button type="button" class="linkbtn" data-pdisc="${esc(f.id)}">Post fight to Discord</button>` : '';
-  const head = `<div class="ph"><span class="t">${hhmm(t)}</span><span class="dim">${secs(f.dur)}</span>${f.area ? `<span class="dim">${esc(f.area)}</span>` : ''}<span><b>${fmt(f.total)}</b> damage · ${plural(f.members.length, 'player')}</span>${solo}${ids}${roster}${pasted}${post}</div>`;
+  const head = `<div class="ph"><span class="t">${hhmm(t)}</span><span class="dim">${secs(f.dur)}</span>${f.area ? `<span class="dim">${esc(f.area)}</span>` : ''}<span><b>${fmt(f.total)}</b> damage · ${plural(f.members.length, 'player')}</span>${solo}${ids}${roster}${nearby}${pasted}</div>`;
   const max = f.members[0]?.dmg || 1;
   const rows = f.members.map(m => { const tip = partyTip(m); return `<div class="barrow" role="group" aria-label="${esc(tip)}" title="${esc(tip)}"><span class="nm">${esc(m.who)}${m.mine ? ' <span class="tag">you</span>' : ''}</span><div class="bar"><i style="width:${Math.max(1, m.dmg / max * 100)}%"></i></div><span class="v">${fmt(m.dmg)} <span class="dim">${fmt(m.dps)}/s · ${Math.round((m.share || 0) * 100)}%</span></span></div>`; }).join('');
   return `<div class="party-fight">${head}<div class="barlist">${rows}</div></div>`;
 }
-/* Live party DPS from the room's ticks: who is fighting right now and at what rate. */
-function liveLine(p) {
-  const live = (p.live || []).filter(t => t.inFight);
-  if (!live.length) return '';
+/* Live party rates from the ticks the server kept (your party's, never a stranger's): who is fighting right now. The
+   area is said only when it is not the picked run's. #d-live is static markup with aria-live: the line is rewritten
+   only when the names or the area change (one announcement per change), the rates under it are aria-live="off" and
+   updated in place, so a screen reader never hears the same "Fighting now" again every poll. */
+function liveLine(p, runArea = '') {
+  const live = ((p && p.live) || []).filter(t => t.inFight);
   const area = live.find(t => t.area)?.area;
-  return `<p class="small party-live" aria-live="polite">Fighting now${area ? ` in ${esc(area)}` : ''}: ${live.map(t => `<b>${esc(t.who)}</b> ${fmt(t.dps)}/s`).join(' · ')}</p>`;
+  const where = area && area !== runArea ? area : '';
+  const key = live.length ? `${live.map(t => t.who).sort().join('|')}@${where}` : '';
+  const html = key ? `<span class="livedot" aria-hidden="true"></span> Fighting now${where ? ` in ${esc(where)}` : ''}: ${live.map(t => `<b>${esc(t.who)}</b> <span class="dps" aria-live="off" data-who="${esc(t.who)}">${fmt(t.dps)}/s</span>`).join(' · ')}` : '';
+  return { key, html, live };
 }
-/* The session table: every player and pet over the shared fights, summed, the way a group meter shows it.
-   Rows come from each summary's `by` (own hits, each pet: damage split into health and armor, kills); older
-   summaries without it give one row per player from their totals. Pets are keyed by owner too, so two
-   players' bees stay apart. */
+function drawLive(p, runArea = '') {
+  const el = $('#d-live'), l = liveLine(p, runArea);
+  if (l.key !== pUI.liveKey) { pUI.liveKey = l.key; el.html = l.html; el.hidden = !l.key; return; }
+  for (const t of l.live) { const sp = el.querySelector(`.dps[data-who="${CSS.escape(t.who)}"]`), v = `${fmt(t.dps)}/s`; if (sp && sp.textContent !== v) sp.textContent = v; }
+}
+/* Rows for "All today": every player and pet over the shared fights, summed, the way a group meter shows it. Rows come
+   from each summary's `by` (own hits, each pet: damage split into health and armor, kills); older summaries without it
+   give one row per player from their totals. Pets are keyed by owner too, so two players' bees stay apart. */
 function sessionRows(fights, area) {
   const rows = new Map(), fightsIn = new Set();
   let total = 0, secs = 0, kills = 0;
@@ -1555,7 +2137,7 @@ function sessionRows(fights, area) {
   }
   return { rows: [...rows.values()].sort((a, b) => b.dmg - a.dmg), total, secs, kills, fights: fightsIn.size };
 }
-/* Which session the table shows: the one picked, else the running manual one, else the newest automatic one. */
+/* Which run the table shows: the one picked, else the running manual one, else the newest automatic one. */
 const autoSessions = p => (p.sessions || []).filter(x => x.kind === 'auto');   // manual Start/Stop is dormant (ROADMAP: needs the room design)
 function pickedSession(p) {
   const ss = autoSessions(p);
@@ -1566,69 +2148,196 @@ function pickedSession(p) {
 function sessionLabel(x) {
   const a = hhmm(parseIso(x.start)), b = x.end ? hhmm(parseIso(x.end)) : 'now';
   const span = a === b ? `${a} (${secs(Math.max(1, Math.round((parseIso(x.end || new Date().toISOString()) - parseIso(x.start)) / 1000)))})` : `${a} to ${b}`;
-  if (x.kind === 'manual') return `Session ${span}${x.open ? ' (running)' : ''}${x.areas.length ? ` · ${x.areas.join(', ')}` : ''}`;
+  if (x.kind === 'manual') return `Run ${span}${x.open ? ' (running)' : ''}${x.areas.length ? ` · ${x.areas.join(', ')}` : ''}`;
   return `${x.areas[0] || 'Unknown area'} ${span}`;
 }
-/* The session table: every player and pet over a session's fights, summed, the way a group meter shows it. The
-   session comes from the server (manual Start/Stop, or an automatic run in one area); "All today" sums everything. */
-function sessionTable(p, all) {
+/* Owner-first order: players by damage, each player's pets right under it, pets by damage. */
+function runRowsSorted(rows) {
+  const ownerDmg = new Map();
+  for (const r of rows) if (!r.owner) ownerDmg.set(r.who, r.dmg);
+  return rows.slice().sort((a, b) => {
+    const oa = a.owner ? (ownerDmg.get(a.owner) ?? -1) : a.dmg, ob = b.owner ? (ownerDmg.get(b.owner) ?? -1) : b.dmg;
+    if (ob !== oa) return ob - oa;
+    const na = a.owner || a.who, nb = b.owner || b.who;
+    if (na !== nb) return na.localeCompare(nb);
+    if (!!a.owner !== !!b.owner) return a.owner ? 1 : -1;
+    return b.dmg - a.dmg;
+  });
+}
+/* The run table: every player and pet over a run's fights, summed, the way a group meter shows it. A run comes from the
+   server (fights in one area with no gap over 15 minutes); "All today" sums everything. Health and Armor sit behind
+   "Show health and armor" (`pUI.split`, not persisted): desktop columns, a dim line under the name on a phone. */
+function runTable(p, all) {
   const ss = autoSessions(p);
   const cur = pickedSession(p);
   const s = cur ? { rows: cur.rows, total: cur.total, secs: cur.secs, kills: cur.kills, fights: cur.fights } : sessionRows(all, '');
-  const sel = `<label class="small dim" for="d-psess">Session</label> <select id="d-psess" aria-label="Session" title="A session is a run of fights in one area with no gap over 15 minutes">${ss.map(x => `<option value="${esc(x.id)}"${cur && x.id === cur.id ? ' selected' : ''}>${esc(sessionLabel(x))}</option>`).join('')}<option value=""${cur ? '' : ' selected'}>All today</option></select>`;
-  const post = cur && S.party?.discord?.webhook && s.rows.length ? `<button type="button" class="btn primary" data-psess-post="${esc(cur.id)}">Post session to Discord</button>` : '';
+  const sel = `<label class="small dim" for="d-prun">Run</label> <select id="d-prun" aria-label="Run" title="A run is fights in one area with no gap over 15 minutes">${ss.map(x => `<option value="${esc(x.id)}"${cur && x.id === cur.id ? ' selected' : ''}>${esc(sessionLabel(x))}</option>`).join('')}<option value=""${cur ? '' : ' selected'}>All today</option></select>`;
+  const post = cur && s.rows.length ? `<button type="button" class="btn" data-psess-post="${esc(cur.id)}">Post this run to Discord</button>` : '';
   const tools = `<span class="party-sess-tools">${sel}${post}</span>`;
   if (!s.rows.length) return `<div class="party-sess"><div class="party-sess-head"><span class="small dim">No fights yet.</span>${tools}</div></div>`;
-  const split = s.rows.some(r => r.split);
-  const head = `<div class="party-sess-head"><span class="small dim">${plural(s.fights, 'fight')} · ${secs(s.secs)} fighting · <b>${fmt(s.total)}</b> damage${s.kills ? ` · ${plural(s.kills, 'kill')}` : ''}</span>${tools}</div>`;
+  const canSplit = s.rows.some(r => r.split), split = canSplit && pUI.split;
+  const head = `<div class="party-sess-head"><span class="small dim">${cur ? 'This run' : 'All today'} · ${plural(s.fights, 'fight')} · ${secs(s.secs)} fighting · <b>${fmt(s.total)}</b> damage${s.kills ? ` · ${plural(s.kills, 'kill')}` : ''}</span>${tools}</div>`;
   const th = `<tr><th>Player</th>${split ? '<th class="num d-only">Health</th><th class="num d-only">Armor</th>' : ''}<th class="num">Damage</th><th class="num">Per second</th><th class="num">Share</th><th class="num">Kills</th></tr>`;
-  const tr = s.rows.map(r => `<tr${r.mine ? ' class="mine"' : ''}><td>${esc(r.who)}${r.owner ? ` <span class="dim small">· ${esc(r.owner)}'s pet</span>` : r.mine ? ' <span class="tag">you</span>' : ''}</td>${split ? `<td class="num d-only">${r.split ? fmt(r.health) : '<span class="dim">·</span>'}</td><td class="num d-only">${r.split ? fmt(r.armor) : '<span class="dim">·</span>'}</td>` : ''}<td class="num"><b>${fmt(r.dmg)}</b></td><td class="num">${fmt(r.secs ? r.dmg / r.secs : 0)}</td><td class="num">${pctOf(r.dmg, s.total)}</td><td class="num">${r.kills ? fmt(r.kills) : '<span class="dim">0</span>'}</td></tr>`).join('');
-  return `<div class="party-sess">${head}<table class="tbl"><thead>${th}</thead><tbody>${tr}</tbody></table></div>`;
+  const cell = v => v ? fmt(v) : '<span class="dim">·</span>';
+  const tr = runRowsSorted(s.rows).map(r => {
+    const name = r.owner ? `<span class="dim small">${esc(r.who)} · ${esc(r.owner)}'s pet</span>` : `${esc(r.who)}${r.mine ? ' <span class="tag">you</span>' : ''}`;
+    const mline = split && r.split ? `<span class="m-only small dim"> · health ${fmt(r.health)} · armor ${fmt(r.armor)}</span>` : '';
+    const cls = [r.owner ? 'pet' : '', r.mine && !r.owner ? 'mine' : ''].filter(Boolean).join(' ');
+    return `<tr${cls ? ` class="${cls}"` : ''}><td>${name}${mline}</td>${split ? `<td class="num d-only">${r.split ? cell(r.health) : '<span class="dim">·</span>'}</td><td class="num d-only">${r.split ? cell(r.armor) : '<span class="dim">·</span>'}</td>` : ''}<td class="num"><b>${fmt(r.dmg)}</b></td><td class="num">${fmt(r.secs ? r.dmg / r.secs : 0)}</td><td class="num">${pctOf(r.dmg, s.total)}</td><td class="num">${r.kills ? fmt(r.kills) : '<span class="dim">0</span>'}</td></tr>`;
+  }).join('');
+  const under = canSplit ? `<div class="pane-under party-under"><button type="button" class="linkbtn" data-psplit="1" aria-expanded="${split}">${split ? 'Hide' : 'Show'} health and armor</button></div>` : '';
+  return `<div class="party-sess">${head}<table class="tbl"><thead>${th}</thead><tbody>${tr}</tbody></table>${under}</div>`;
 }
-/* The everyone feed (29 Oct): every closed fight goes to the room's everyone page, code or not, unless turned off here. */
-function everyoneLine(p) {
-  const ev = p?.everyone; if (!ev || !ev.available) return '';
-  const page = `<a href="${esc(ev.url)}" target="_blank" rel="noopener">everyone's fights page</a>`;
-  if (!ev.on) return `<p class="small dim party-everyone">Your fights are not sent to the ${page}. <button type="button" class="linkbtn" data-pev="1">Start sending</button></p>`;
-  const sent = ev.posted ? ` · ${plural(ev.posted, 'fight')} sent today` : ' · nothing sent yet today';
+/* The one-time disclosure of what goes to everyone's fights (B-FINAL §2.6): shown until OK or Stop sending, never in a
+   preview's storage, never while loading or while the Setup window shows on this page. In a preview OK still folds it
+   for the visit (pUI.seen). */
+const everyoneSeen = () => pUI.seen || !!store.get('pgdash.everyoneSeen');
+function markEveryoneSeen() { pUI.seen = true; store.set('pgdash.everyoneSeen', '1'); }
+function discloseHtml(p) {
+  const ev = p.everyone || {};
+  // Hidden only while Setup lists Save Chat Logs as not done (B-FINAL §2.6): with a Combat Logging row Off, fights still go out.
+  if (everyoneSeen() || !ev.available || !ev.on || S.loading || (setupShowing === 'combat' && notDone('chat-log'))) return '';
+  return `<div class="note-line disclose">${shape('info')}<div><div>Your fights go to <a href="${esc(ev.url)}" target="_blank" rel="noopener" title="Opens in a new tab">everyone's fights</a>, a page every copy of ${APP_NAME} sends to, so your party sees them with nothing to set up. What goes: your character name, the area, the numbers, the party names in your log. Anyone with the link can read it; it keeps 30 days.</div><div class="acts"><button type="button" class="linkbtn" data-once="ok">OK</button><button type="button" class="linkbtn dim" data-pev="0">Stop sending</button></div></div></div>`;
+}
+/* Your party's footer, right side: what left this computer today and the one switch. */
+function partyFootRight(p) {
+  const ev = p.everyone || {};
+  if (!ev.available) return '';
+  if (ev.down && ev.lastErrorAt) return `${shape('bad', 's13')}<span class="txt-bad">Everyone's fights not answering since ${hhmm(parseIso(ev.lastErrorAt))}${ev.pending ? ` · ${plural(ev.pending, 'fight')} waiting` : ''}</span>`;
+  // A failed read is "not answering" too, even with nothing waiting to post (B-FINAL §2.2 Feed unreachable: footer right red).
+  const fe = p.feed || {};
+  if (ev.on && fe.error && fe.errorAt && (!fe.readAt || parseIso(fe.errorAt) > parseIso(fe.readAt))) return `${shape('bad', 's13')}<span class="txt-bad">Everyone's fights not answering since ${hhmm(parseIso(fe.errorAt))}</span>`;
+  if (!ev.on) return 'Not sending your fights · <button type="button" class="linkbtn" data-pev="1">Start sending</button>';
+  const sent = ev.posted ? `${plural(ev.posted, 'fight')} sent today` : 'Nothing sent yet today';
   const wait = ev.pending ? ` · ${fmt(ev.pending)} waiting` : '';
-  const bad = ev.down ? ` · <span class="txt-bad">${shape('bad', 's13')}not answering since ${hhmm(parseIso(ev.lastErrorAt))}</span>` : '';
-  return `<p class="small dim party-everyone">Every fight also goes to the ${page}, where anyone can see runs without a code${sent}${wait}${bad}. <button type="button" class="linkbtn" data-pev="0">Stop sending</button></p>`;
+  return `${sent}${wait}${everyoneSeen() ? ' · <button type="button" class="linkbtn" data-pev="0">Stop sending</button>' : ''}`;
 }
-/* The party per the chat log (hunting-party lines and party chat), and who in it is not sharing yet. */
-function rosterLine(p) {
-  const r = p?.roster; if (!r?.inParty) return '';
-  const names = (r.members || []).filter(m => m !== p.character);
-  const quiet = (r.notSharing || []).filter(m => m !== p.character);
-  if (!names.length) return 'Your chat log says you are in a party but names nobody yet (members already in it when you joined only show up when they speak or leave).';
-  const fix = quiet.length ? (p.code ? ` Not sharing yet: ${esc(joinNames(quiet))}. Send them the code.` : '') : (p.code ? ' All of them are sharing.' : '');
-  return `In your party per the chat log: ${esc(joinNames(names))}.${fix}`;
+/* The server's answer, with `old` set when an older copy answered (no `source`, no `roster.status`: the part that
+   reads the files predates Your party). Such an answer reads no feed without a code, so who is sharing cannot be told
+   from it and nothing is guessed (B-FINAL §2.3): the window names the party and says the copy is too old. */
+const appWord = s => (/v\d+\.\d+\.\d+/.exec(String(s || '')) || [''])[0];
+function partyNorm(p) {
+  if (!p) return p;
+  const r = p.roster || (p.roster = { inParty: false, name: null, members: [], leader: null, log: null, notSharing: [] });
+  r.members = r.members || [];
+  if (p.source) return p;
+  p.old = true;
+  p.feed = p.feed || { readAt: null, error: null, errorAt: null, rows: 0, members: [] };
+  p.invite = p.invite || { repo: S.health?.app?.repo || INVITE_REPO };
+  if (p.area == null) p.area = (p.fights || []).at(-1)?.area || null;
+  return p;
 }
-// Posts stopped carrying the json block on 26 Oct (the room shares fights); the paste box stays for older posts, behind the room's absence.
-const pasteLink = () => pUI.paste || S.party?.transport?.kind === 'room' ? '' : '<button type="button" class="linkbtn" data-ppaste>Paste a fight from Discord</button>';
-/* The Discord row has three looks: nothing yet (Connect Discord), waiting for the browser (Cancel), connected
-   (Change channel + Remove). A webhook pasted in an older version counts as connected until it is removed. */
+/* The state machine (B-FINAL §2.2): one sentence, at most one button. `shared` = fights with two or more players. */
+const emNames = list => joinNames(list.map(n => `<em class="t">${esc(n)}</em>`));
+function partyStateOf(p, shared) {
+  const r = p.roster, me = p.character, ev = p.everyone || {}, fe = p.feed || {};
+  const others = r.members.filter(n => n !== me);
+  const st = n => r.status?.[n] || 'not-running';
+  let out;
+  if (p.old) out = { sentence: esc(`${NEEDS_NEWER} ${OLD_SERVER_WHY}`), rows: !!r.inParty };
+  else if (ev.available === false && !p.code) out = { sentence: "This copy has no sharing address, so it can't read anyone's fights. Your own are in Fights below.", empty: true };
+  else if (!r.inParty) out = { sentence: `Not in a party. Join one in the game and it shows up here by itself, with everyone in it who runs ${APP_NAME}.`, empty: true };
+  else if (!others.length) out = { sentence: "You're in a party, but the chat log hasn't named anyone yet. Members show up here when they speak in party chat, join or leave.", button: true, rows: true, table: shared > 0 };
+  else {
+    const on = others.filter(n => st(n) === 'sharing'), off = others.filter(n => st(n) !== 'sharing');
+    if (!on.length) out = { sentence: 'Nobody else in your party is sharing yet. Send them the invite line; the table fills in by itself when they open the app.', button: true, rows: true };
+    else if (!off.length) out = { sentence: 'Everyone in your party is sharing. Nothing to do.', rows: true, table: true };
+    else out = { sentence: `${emNames(on)} ${on.length === 1 ? 'is' : 'are'} sharing. ${emNames(off)} ${off.length === 1 ? "isn't" : "aren't"} yet: send them the invite line and they show up here on their own.`, button: true, rows: true, table: true };
+  }
+  if (fe.error && fe.errorAt && (!fe.readAt || parseIso(fe.errorAt) > parseIso(fe.readAt))) out.feed = `Can't reach everyone's fights since ${hhmm(parseIso(fe.errorAt))}, so your party's numbers are from before that. The app tries again every 10 s.`;
+  return out;
+}
+/* Member rows: you first, then sharing members by damage today, then the rest alphabetically. Shapes are the ok ring
+   and the info ring only; nothing amber, nothing red. An old copy's answer (p.old) lists the names alone: no status word. */
+function memberRows(p) {
+  const r = p.roster, me = p.character, ev = p.everyone || {};
+  const st = n => n === me ? 'you' : (r.status?.[n] || 'not-running');
+  const dmg = {};
+  for (const f of p.fights || []) for (const m of f.members || []) dmg[m.who] = (dmg[m.who] || 0) + (m.dmg || 0);
+  const live = new Set((p.live || []).filter(t => t.inFight).map(t => t.who));
+  const others = r.members.filter(n => n !== me);
+  const sharing = others.filter(n => st(n) === 'sharing').sort((a, b) => (dmg[b] || 0) - (dmg[a] || 0));
+  const rest = others.filter(n => st(n) !== 'sharing').sort((a, b) => a.localeCompare(b));
+  const row = n => {
+    const s = st(n), today = dmg[n] ? `<span class="n">${fmt(dmg[n])} today</span>` : '';
+    const who = `<span class="who">${esc(n)}${s === 'you' ? ' <span class="tag">you</span>' : ''}</span>`;
+    if (p.old) return `<li>${who}</li>`;
+    if (s === 'you') return ev.on === false ? `<li>${who}<span class="st">${shape('info', 's13')}not sending</span>${today}</li>` : `<li>${who}<span class="st on">${shape('ok', 's13')}sharing</span>${today}</li>`;
+    if (s === 'sharing') return dmg[n] ? `<li>${who}<span class="st on">${shape('ok', 's13')}sharing${live.has(n) ? ' · fighting now' : ''}</span>${today}</li>` : `<li>${who}<span class="st on">${shape('ok', 's13')}sharing, nothing from them today yet</span></li>`;
+    if (s === 'too-old') return `<li>${who}<span class="st">${shape('info', 's13')}${esc(APP_NAME)} ${esc(appWord(r.apps?.[n]) || 'before v0.11.0')} · too old to share · starting it again updates it</span></li>`;
+    return `<li>${who}<span class="st">not running ${esc(APP_NAME)}</span></li>`;
+  };
+  return `<ul class="list party-members">${[me, ...sharing, ...rest].filter(Boolean).map(row).join('')}</ul>`;
+}
+/* The invite line (B-FINAL §2.4): what to install, the two in-game settings, no code. Each line under 200 characters. */
+function inviteText(p) {
+  const who = p?.character || S.character, repo = p?.invite?.repo || S.health?.app?.repo || INVITE_REPO;
+  return [
+    `${who ? `${who}'s` : 'Our'} party damage meter: ${APP_NAME} (fan-made, free). Three steps:`,
+    `1. Get it: https://github.com/${repo}/releases/latest (Mac or Windows). Start it and leave it running. Already have it? Start it again; on Windows it updates itself.`,
+    '2. In the game: Settings → V.I.P. → Save Chat Logs on. Then Settings → V.I.P. → Combat Logging: every "Log when…" row not Off, Log non-damaging abilities on. Log out and back in once.',
+    `3. Open Combat in ${APP_NAME}. Our fights line up by themselves. No code.`,
+  ].join('\n');
+}
+async function copyInvite() {
+  const text = inviteText(S.party);
+  try { await navigator.clipboard.writeText(text); ystate('status', 'Copied the invite line. Paste it in party chat or Discord.'); }
+  catch { ystate('error', "Couldn't reach the clipboard. The line is:", null, text); }
+  renderParty();
+}
+/* The Private room window (B-FINAL §3.1): the code form is static markup, so typed codes survive the 10 s poll; this
+   sets the title count, the state line and the footer. A room that stops answering unfolds the window once. */
+function renderRoom(p, old) {
+  const code = p?.code || null, inp = $('#pcode'), cnt = $('#d-room-count'), win = $('#w-d-room');
+  $('#d-pnew').hidden = !!code || old;
+  $('#d-pjoin').hidden = !!code || old;
+  $('#d-pcopy').hidden = !code;
+  $('#d-pleave').hidden = !code;
+  inp.disabled = old || !p; inp.readOnly = !!code;
+  if (code && document.activeElement !== inp) inp.value = code;
+  if (old) { cnt.textContent = ''; roomState('plain', ''); win.classList.remove('keepfoot'); setFoot('w-d-room', 'Private room', `Private room needs a newer ${APP_NAME}`); return; }
+  if (!p) { cnt.textContent = ''; win.classList.remove('keepfoot'); setFoot('w-d-room', 'Private room · checking…', ''); return; }
+  const n = p.ntfy || {}, tr = p.transport || {}, relay = tr.kind === 'room' ? 'the room' : 'the fallback relay';
+  const inIt = (p.roomMembers?.length ? p.roomMembers : p.members || []).length;
+  cnt.textContent = code
+    ? `${code} · ${inIt ? `${fmt(inIt)} in it` : 'nobody in it yet'} · ${n.lastMessageAt ? `last message ${hhmm(parseIso(n.lastMessageAt))}` : 'nothing received yet'}`
+    : 'not joined · a table only people with a code can read';
+  if (!pUI.note) roomState('plain', code ? `joined ${hhmm(parseIso(p.since))}` : '');
+  const left = code ? `Private room · ${esc(code)}${n.posted ? ` · ${plural(n.posted, 'fight')} sent` : ''}` : 'Private room · not joined';
+  const bad = !!(code && !n.reachable && n.lastErrorAt);
+  let right;
+  if (bad) right = `${shape('bad', 's13')}<span class="txt-bad">${relay === 'the room' ? 'The room' : 'The fallback relay'} hasn't answered since ${hhmm(parseIso(n.lastErrorAt))}; ${n.pending ? `${plural(n.pending, 'fight')} waiting, sent` : 'fights are sent'} when it answers again</span>`;
+  else if (code && tr.fallback) right = `${shape('warn', 's13')}<span>The room hasn't answered since ${hhmm(parseIso(tr.roomErrorAt))}; sharing over the fallback relay meanwhile, so only others on it see you</span>`;
+  else if (n.pending) right = esc(`${plural(n.pending, 'fight')} waiting to be sent`);
+  else right = `Fight numbers and character names go to ${relay}; anyone with the code can read them`;
+  win.classList.toggle('keepfoot', bad);
+  if (bad && pUI.roomBadAt !== n.lastErrorAt) { pUI.roomBadAt = n.lastErrorAt; if (!deckIs('combat', 'w-d-room')) { deckSet('combat', 'w-d-room', true); applyDeck('combat'); } }
+  setFoot('w-d-room', left, right);
+}
+/* The Discord window (B-FINAL §3.2): nothing yet (Connect Discord), waiting for the browser (Cancel), connected
+   (Change channel + Disconnect Discord). An address pasted in an older version counts as connected until it is removed. */
 function renderDiscordForm(p, old) {
-  const d = p?.discord || {};
+  const d = p?.discord || {}, cnt = $('#d-discord-count');
   $('#d-dform').hidden = old || !p;
-  if (old || !p) return;
+  if (old || !p) { cnt.textContent = ''; setFoot('w-d-discord', 'Discord', old ? `Discord needs a newer ${APP_NAME}` : ''); return; }
   const pending = !!d.pending, have = !!d.webhook;
   $('#d-dremove').hidden = pending || !have;
   const con = $('#d-dconnect');
   con.hidden = pending || d.canConnect === false;
   con.textContent = have ? 'Change channel' : 'Connect Discord';
-  con.classList.toggle('primary', !have);
   $('#d-dcancel').hidden = !pending;
+  const last = d.lastPostAt ? ` · last post ${hhmm(parseIso(d.lastPostAt))}` : '';
+  cnt.textContent = pending ? 'waiting' : have ? `connected${d.connected?.name ? ` · ${d.connected.name}` : ''}` : 'not connected';
+  setFoot('w-d-discord', `Discord · ${have ? `connected${last}` : 'not connected'}`, 'Posts carry the table as text and a picture of it');
   discordPoll(pending);
   if (pUI.dnote) return;
-  const last = d.lastPostAt ? ` · last post ${hhmm(parseIso(d.lastPostAt))}` : '';
   if (pending) discordState('plain', `Waiting for Discord: pick a server and a channel in your browser (until ${hhmm(parseIso(d.pending.until))})`);
-  else if (d.lastError && !have) discordState('error', d.lastError);
-  else if (have) discordState('status', `Connected: fights post to ${d.connected ? 'the channel you picked' : 'the webhook you pasted earlier'}${d.connected?.name ? ` (webhook "${d.connected.name}")` : ''}${last}`);
-  else discordState('plain', d.canConnect === false ? 'This copy is not on the party room (PG_ROOM is empty), so Discord can\'t be connected here'
-    : 'Opens Discord in your browser to pick a server and a channel; Post to Discord then goes there');
+  else if (d.lastError && !have) discordState('error', d.lastError);   // the server's 404 line is the one place the word webhook survives
+  else if (have) discordState('status', `Connected: posts go to ${d.connected ? 'the channel you picked' : 'the address you pasted earlier'}${d.connected?.name ? ` (${d.connected.name})` : ''}${last}`);
+  else discordState('plain', d.canConnect === false ? "This copy has no sharing address, so Discord can't be connected here"
+    : 'Opens Discord in your browser to pick a server and a channel; you need Manage Webhooks there. Post this run to Discord and Post fight to Discord then go there.');
 }
-/* While a connection is pending, ask the server every 2 s whether the webhook arrived (the party poll is slower). */
+/* While a connection is pending, ask the server every 2 s whether it arrived (the party poll is slower). */
 function discordPoll(on) {
   if (on && !pUI.dpoll) pUI.dpoll = setInterval(async () => {
     try {
@@ -1636,63 +2345,52 @@ function discordPoll(on) {
       if (!S.party) return;
       const was = S.party.discord?.pending;
       S.party.discord = r.discord;
-      if (was && !r.discord.pending) { pUI.dnote = null; sysLine(r.discord.webhook ? 'status' : 'error', r.discord.webhook ? 'Discord connected. Post to Discord goes to the channel you picked.' : (r.discord.lastError || 'Nothing came back from Discord.')); }
+      if (was && !r.discord.pending) { pUI.dnote = null; sysLine(r.discord.webhook ? 'status' : 'error', r.discord.webhook ? 'Discord connected. Post this run to Discord and Post fight to Discord go to the channel you picked.' : (r.discord.lastError || 'Nothing came back from Discord.')); }
       renderDiscordForm(S.party, S.partyOld);
     } catch { }
   }, 2000);
   if (!on && pUI.dpoll) { clearInterval(pUI.dpoll); pUI.dpoll = null; }
 }
+/* Your party, drawn last in every Combat render: the state machine over the normalised answer. The body is four
+   static parts (#d-party-head, #d-live, #d-party-state, #d-ystate, #d-party-rest) so the two live regions are never
+   re-created; the title tool and its phone twin (.party-tools-m, the first row of the body under 640) share one href. */
 function renderParty() {
-  const p = S.party, old = S.partyOld, box = $('#d-party'), inp = $('#pcode'), cnt = $('#d-party-count');
-  const code = p?.code || null;
-  $('#d-pnew').hidden = !!code || old;
-  $('#d-pjoin').hidden = !!code || old;
-  $('#d-pcopy').hidden = !code;
-  $('#d-pleave').hidden = !code;
-  inp.disabled = old; inp.readOnly = !!code;
-  if (code && document.activeElement !== inp) inp.value = code;
-  renderDiscordForm(p, old);
-  $('#d-pastebox').hidden = !pUI.paste || old || !p;
-  if (old) { cnt.textContent = ''; partyState('plain', ''); box.html = '<p class="needs">Needs a newer Gorgon Notes: this page knows the Party window, the server it talks to does not.</p>'; setFoot('w-d-party', 'Party sharing', 'Sharing fights needs a newer Gorgon Notes'); renderPostButtons(); return; }
-  if (!p) { cnt.textContent = ''; box.html = '<p class="needs">Checking the party link…</p>'; setFoot('w-d-party', 'ntfy.sh', ''); return; }
-  const n = p.ntfy || {}, tr = p.transport || {};
-  const link = tr.kind === 'room' ? 'Party room' : 'ntfy.sh';
+  const p0 = S.party, old = S.partyOld, cnt = $('#d-party-count');
+  const head = $('#d-party-head'), state = $('#d-party-state'), rest = $('#d-party-rest');
+  const link = (on, url) => { $('#d-everyone-open').hidden = $('#d-party-tools').hidden = !on; if (url) { $('#d-everyone-open').href = url; $('#d-everyone-open-m').href = url; } };
+  renderRoom(p0, old); renderDiscordForm(p0, old);
+  if (old) { cnt.textContent = ''; link(false); head.html = ''; drawLive(null); state.html = `<p class="needs">${esc(NEEDS_NEWER_PARTY)}</p>`; rest.html = ''; setFoot('w-d-party', 'Your party', `Your party needs a newer ${APP_NAME}`); renderPostButtons(); return; }
+  if (!p0) { cnt.textContent = ''; link(false); head.html = ''; drawLive(null); state.html = '<p class="dim party-reading">Reading your party…</p><span class="loading-bar"></span>'; rest.html = ''; setFoot('w-d-party', "Everyone's fights · checking…", ''); renderPostButtons(); return; }
+  const p = partyNorm(p0);
+  const ev = p.everyone || {}, r = p.roster, me = p.character;
+  link(!!(ev.available && ev.url), ev.url);
   const all = (p.fights || []).slice().reverse();
-  const roster = rosterLine(p);
-  const rosterHtml = `${liveLine(p)}${everyoneLine(p)}${roster ? `<p class="small dim party-roster">${roster}</p>` : ''}`;
-  if (!code && !all.length) {
-    cnt.textContent = '';
-    if (!pUI.note) partyState('plain', '');
-    box.html = `<p class="empty">Share fights with your party. One of you presses New code and pastes it into party chat; the others paste the code here (the whole chat line is fine) and press Join. Your last three fights and every one that closes from then on are shared, and everyone's shows up here side by side.</p>${rosterHtml}<div class="pane-under party-under">${pasteLink()}</div>`;
-    setFoot('w-d-party', `${link} · not joined`, `Press New code, or paste a code from party chat. Fight numbers and character names go to ${tr.kind === 'room' ? 'the party room' : 'ntfy.sh'}; anyone with the code can read them`);
-    renderPostButtons();
-    return;
-  }
-  const since = parseIso(p.since);
-  if (!pUI.note) partyState('plain', code ? `joined ${hhmm(since)}` : '');
-  const shared = all.filter(f => f.members.length > 1), solo = all.filter(f => f.members.length === 1);
-  const lead = shared.length ? shared : solo;            // nothing shared yet: the solo fights are the list
-  const rest = shared.length ? solo : [];
-  const shown = pUI.all ? lead : lead.slice(0, PARTY_SHOW);
-  cnt.textContent = lead.length ? (shared.length && solo.length ? `${fmt(shared.length)} of ${fmt(all.length)}` : fmt(lead.length)) : '';
-  if (!all.length) {
-    const who = (p.members || []).filter(m => m !== p.character);
-    box.html = `<p class="empty">Joined at ${hhmm(parseIso(p.since))}. Fights that close from now on are sent; the others' arrive within 10 s.${who.length ? ` Here so far: ${esc(joinNames(who))}.` : ''}</p>${rosterHtml}<div class="pane-under party-under">${pasteLink()}</div>`;
-  } else {
-    const more = lead.length > PARTY_SHOW ? `<button type="button" class="linkbtn" data-pall aria-expanded="${pUI.all}">${pUI.all ? `Show the last ${PARTY_SHOW}` : `Show all ${fmt(lead.length)} fights`}</button>` : '';
-    const fold = rest.length ? `<button type="button" class="linkbtn" data-psolo aria-expanded="${pUI.solo}">${pUI.solo ? 'Hide' : 'Show'} ${plural(rest.length, 'fight')} nobody else was in</button>` : '';
-    box.html = `${rosterHtml}${sessionTable(p, all)}<h3 class="small dim party-h3">Fights</h3>${shown.map(partyFightHtml).join('')}<div class="pane-under party-under">${more}${fold}${pasteLink()}</div>${pUI.solo && rest.length ? rest.map(partyFightHtml).join('') : ''}`;
-  }
-  const left = code
-    ? `${link} · ${esc(code)}${n.lastMessageAt ? ` · last message ${hhmm(parseIso(n.lastMessageAt))}` : ' · nothing received yet'}${n.posted ? ` · ${plural(n.posted, 'fight')} sent` : ''}${n.pasted ? ` · ${fmt(n.pasted)} pasted` : ''}`
-    : `${link} · not joined · ${plural(n.pasted || 0, 'pasted fight')}`;
-  let right;
-  if (code && !n.reachable && n.lastErrorAt) right = `${shape('bad', 's13')}<span class="txt-bad">${tr.kind === 'room' ? 'The party room' : 'ntfy.sh'} not answering since ${hhmm(parseIso(n.lastErrorAt))}; ${n.pending ? `${plural(n.pending, 'fight')} waiting, sent` : 'fights are sent'} when it answers again</span>`;
-  else if (code && tr.fallback) right = `${shape('warn', 's13')}<span>The party room hasn't answered since ${hhmm(parseIso(tr.roomErrorAt))}; sharing over ntfy.sh meanwhile, so only others on ntfy.sh see you</span>`;
-  else if (n.pending) right = esc(`${plural(n.pending, 'fight')} waiting to be sent`);
-  else if (!code) right = 'Press New code, or paste a code from party chat, to share fights without the pasting';
-  else right = `Fight numbers and character names go to ${tr.kind === 'room' ? 'the party room' : 'ntfy.sh'}; anyone with the code can read them`;
-  setFoot('w-d-party', left, right);
+  // "nobody else was in" = your own solo fights; someone else's lone fight that matched nearby stays in the blocks with its chip
+  const isSolo = f => f.members.length === 1 && !!f.members[0].mine;
+  const shared = all.filter(f => !isSolo(f)), solo = all.filter(isSolo);
+  const st = partyStateOf(p, shared.length);
+  const names = new Set(r.members); if (me) names.add(me);
+  // the count: names the log saw · how many share; an old copy cannot tell who shares, so the number alone
+  cnt.textContent = r.inParty && names.size ? (p.old ? `${names.size}` : `${names.size} · ${(r.sharing || []).length} sharing`) : '';
+  const button = st.button ? `<button type="button" class="btn${setupShowing === 'combat' ? '' : ' primary'}" data-pinvite="1">Copy an invite line</button>` : '';
+  const stateRow = `<div class="party-state"><p${st.empty ? ' class="empty"' : ''}>${st.sentence}</p>${button}</div>`;
+  const feedLine = st.feed ? `<p class="small dim party-feed">${esc(st.feed)}</p>` : '';
+  const hint = st.button ? '<p class="small dim party-hint">Paste it in party chat or Discord. It says what to install and which two settings to turn on.</p>' : '';
+  const rows = st.rows ? memberRows(p) : '';
+  const showTable = shared.length > 0 || !!st.table;
+  const shown = pUI.all ? shared : shared.slice(0, PARTY_SHOW);
+  const more = shared.length > PARTY_SHOW ? `<button type="button" class="linkbtn" data-pall="1" aria-expanded="${pUI.all}">${pUI.all ? `Show the last ${PARTY_SHOW}` : `Show all ${fmt(shared.length)} fights`}</button>` : '';
+  const fold = showTable && solo.length ? `<button type="button" class="linkbtn" data-psolo="1" aria-expanded="${pUI.solo}">${pUI.solo ? 'Hide' : 'Show'} ${plural(solo.length, 'fight')} nobody else was in</button>` : '';
+  const cur = pickedSession(p);
+  const blocks = showTable
+    ? `${runTable(p, all)}${shared.length ? `<h3 class="small dim party-h3">Fights</h3>${shown.map(partyFightHtml).join('')}` : ''}${more || fold ? `<div class="pane-under party-under">${more}${fold}</div>` : ''}${pUI.solo && fold ? solo.map(partyFightHtml).join('') : ''}`
+    : '';
+  head.html = discloseHtml(p);
+  drawLive(p, cur?.areas?.[0] || '');
+  state.html = `${stateRow}${feedLine}`;
+  rest.html = `${hint}${rows}${blocks}`;
+  const readAt = parseIso(p.feed?.readAt) || parseIso(p.transport?.roomOkAt) || parseIso(p.ntfy?.lastOkAt);
+  setFoot('w-d-party', `Party from your chat log · numbers from each player's own copy${readAt ? ` · read ${hhmm(readAt)}` : ''}`, partyFootRight(p));
   renderPostButtons();
 }
 function initParty() {
@@ -1707,21 +2405,22 @@ function initParty() {
     const text = e.clipboardData?.getData('text') || '';
     if (PARTY_CODE_IN_TEXT.test(text)) { e.preventDefault(); partyJoinFrom(text); }  // a pasted code joins at once
   });
-  inp.addEventListener('input', () => { if (pUI.note?.kind === 'error') partyState('plain', ''); });
+  inp.addEventListener('input', () => { if (pUI.note?.kind === 'error') roomState('plain', ''); });
   $('#d-pcopy').addEventListener('click', () => { const c = S.party?.code; if (c) partyCopy(c, 'Copied. Paste it into party chat.'); });
   $('#d-pleave').addEventListener('click', async () => {
     const was = S.party?.code; if (!was) return;
     const p = await postParty({ code: null });
     if (!p) return;
     pUI.lastCode = was; inp.value = ''; pUI.all = false; pUI.solo = false;
-    partyState('status', `Left ${was}.`, { label: 'Undo', run: async () => { const q = await postParty({ code: was }); if (q?.code) { partyState('status', `Back in ${was}.`); renderParty(); } } });
+    const msg = `Left the room ${was}.`;
+    roomState('status', msg, { label: 'Undo', run: async () => { const q = await postParty({ code: was }); if (q?.code) { roomState('status', `Back in ${was}.`); renderParty(); } } });
     clearTimeout(pUI.undoTimer);
-    pUI.undoTimer = setTimeout(() => { if (pUI.note?.text === `Left ${was}.`) { partyState('plain', ''); renderParty(); } }, 30000);
+    pUI.undoTimer = setTimeout(() => { if (pUI.note?.text === msg) { roomState('plain', ''); renderParty(); } }, 30000);
     renderParty();
   });
   $('#d-pstate').addEventListener('click', e => { if (e.target.closest('[data-pundo]') && $('#d-pstate')._run) $('#d-pstate')._run(); });
-  // Connect Discord: the server makes the state and the room's start URL; the browser (the system one, from the
-  // Mac and Windows apps) shows Discord's own server + channel picker; the server claims the webhook from the room.
+  // Connect Discord: the server makes the state and the start URL; the browser (the system one, from the Mac and
+  // Windows apps) shows Discord's own server + channel picker; the server claims the channel's address from it.
   $('#d-dconnect').addEventListener('click', async () => {
     pUI.dnote = null;
     try {
@@ -1744,41 +2443,31 @@ function initParty() {
     try {
       const r = await api('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ discordWebhook: null }) });
       if (S.party) S.party.discord = r.discord;
-      discordState('status', 'Discord disconnected. Post to Discord asks to connect again.'); renderParty();
+      discordState('status', 'Discord disconnected. Post this run to Discord and Post fight to Discord ask to connect again.'); renderParty();
     } catch (err) { discordState('error', "The server didn't answer; try again."); }
   });
-  // Paste box: a fight from a Gorgon Notes post on Discord lands in the table like one received over ntfy.sh.
-  $('#d-pasteadd').addEventListener('click', async () => {
-    const text = $('#d-pastetext').value, st = $('#d-pastestate');
-    if (!text.trim()) { st.html = '<span class="tagw error">[Error]</span> Nothing pasted yet.'; return; }
-    try {
-      const p = await api('/api/party', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paste: text }) });
-      S.party = p; S.partyOld = false;
-      const r = p.paste || {};
-      if (!r.found) st.html = '<span class="tagw error">[Error]</span> No fight in that text. Paste the whole Discord post, including its json block.';
-      else if (!r.added) st.html = `<span class="tagw status">[Status]</span> Already here: ${r.found === 1 ? 'that fight was' : 'those fights were'} added before.`;
-      else { st.html = `<span class="tagw status">[Status]</span> Added ${plural(r.added, 'fight')} from the paste.`; $('#d-pastetext').value = ''; }
+  // Stop / Start sending to everyone's fights; a preview's api() refuses the write and the window says so.
+  const setEveryone = on => api('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ shareEveryone: on }) })
+    .then(r => {
+      if (S.party && r.everyone) S.party.everyone = r.everyone;
+      const rs = S.party?.roster, me = S.party?.character;   // the title count follows at once, not at the next poll
+      if (rs?.sharing && me) rs.sharing = rs.sharing.filter(n => n !== me).concat(on ? [me] : []).sort();
+      if (on) ystate('status', "Your fights go to everyone's fights again; the ones waiting are sent now.");
+      else { markEveryoneSeen(); ystate('status', "Your fights stay on this computer; your party can't see them.", { label: 'Undo', run: () => setEveryone(true) }); }
       renderParty();
-    } catch (err) { st.html = `<span class="tagw error">[Error]</span> ${esc(err?.status === 400 ? err.message : "The server didn't answer; try again.")}`; }
-  });
-  $('#d-pastecancel').addEventListener('click', () => { pUI.paste = false; $('#d-pastestate').html = ''; renderParty(); $('#d-party [data-ppaste]')?.focus(); });
-  $('#d-party').addEventListener('change', e => { if (e.target.id === 'd-psess') { pUI.session = e.target.value; renderParty(); $('#d-psess')?.focus(); } });
-  $('#d-party').addEventListener('click', e => {
-    const disc = e.target.closest('[data-pdisc]');
-    if (disc) { postDiscord({ party: disc.dataset.pdisc }, 'the party fight'); return; }
-    const sp = e.target.closest('[data-psess-post]');
-    if (sp) { postDiscord({ session: sp.dataset.psessPost }, 'the session'); return; }
+    })
+    .catch(e => { ystate('error', PREVIEW.active && e?.status === 400 ? 'A preview never changes settings.' : e?.status === 400 ? e.message : "The server didn't answer; try again."); renderParty(); });
+  $('#d-party').addEventListener('change', e => { if (e.target.id === 'd-prun') { pUI.session = e.target.value; renderParty(); $('#d-prun')?.focus(); } });
+  $('#w-d-party').addEventListener('click', e => {
+    if (e.target.closest('[data-pinvite]')) { copyInvite(); return; }
+    if (e.target.closest('[data-once]')) { markEveryoneSeen(); renderParty(); return; }
     const ev = e.target.closest('[data-pev]');
-    if (ev) {
-      const on = ev.dataset.pev === '1';
-      api('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ shareEveryone: on }) })
-        .then(r => { if (S.party && r.everyone) S.party.everyone = r.everyone; renderParty(); sysLine('status', on ? "Your fights go to everyone's fights page again; the ones waiting are sent now." : "Your fights stay off everyone's fights page until you press Start sending."); })
-        .catch(() => sysLine('error', "The server didn't answer; try again."));
-      return;
-    }
-
-    if (e.target.closest('[data-ppaste]')) { pUI.paste = true; renderParty(); $('#d-pastetext').focus(); return; }
-    if (e.target.closest('[data-pall]')) { pUI.all = !pUI.all; renderParty(); $('#d-party [data-pall]')?.focus(); }
+    if (ev) { setEveryone(ev.dataset.pev === '1'); return; }
+    if (e.target.closest('[data-yundo]')) { const run = pUI.yundo; ystate(null, ''); if (run) run(); return; }
+    const sp = e.target.closest('[data-psess-post]');
+    if (sp) { postDiscord({ session: sp.dataset.psessPost }, 'this run', 'Post this run to Discord'); return; }
+    if (e.target.closest('[data-psplit]')) { pUI.split = !pUI.split; renderParty(); $('#d-party [data-psplit]')?.focus(); }
+    else if (e.target.closest('[data-pall]')) { pUI.all = !pUI.all; renderParty(); $('#d-party [data-pall]')?.focus(); }
     else if (e.target.closest('[data-psolo]')) { pUI.solo = !pUI.solo; renderParty(); $('#d-party [data-psolo]')?.focus(); }
   });
 }
@@ -1793,11 +2482,23 @@ function pickedFight(c) {
   return f;
 }
 
+const COMBAT_WINS = ['w-d-glance', 'w-d-party', 'w-d-fights', 'w-d-break', 'w-d-room', 'w-d-discord'];
+/* The follow note: the chat log follows whoever is logged in; say so when that is not the selected character (as on Session). */
+function renderCombatFollow(c) {
+  const follow = $('#d-follow');
+  if (c?.character && S.character && c.character !== S.character) {
+    follow.hidden = false; follow.className = 'sysline';
+    follow.html = `${shape('info')}<span>The chat log follows <em class="t">${esc(c.character)}</em>, who is ${loggedIn() ? 'logged in' : 'the last to log in'}. This meter is ${esc(c.character)}'s.</span>`;
+  } else follow.hidden = true;
+}
+/* Combat, top to bottom (SPEC §2.5): title row → Setup (P2's renderSetup, only while a row is undone) → At a glance →
+   Your party → Fights (primary, 10 rows) → Breakdown (caveats folded) → Private room (folded) → Discord (folded).
+   `reading` is decided before `noLog`, so a loading page never says "missing". */
 function renderCombatView() {
   const c = S.combat, s = S.session || {};
-  const noLog = !sessionHasLog() || (!!c && !c.log && !S.loading);
   const old = !!S.combatOld;
-  const reading = !old && !noLog && (!c || (S.loading && !S.session));
+  const reading = !old && (!c || (S.loading && !S.session));
+  const noLog = !reading && (!sessionHasLog() || (!!c && !c.log));
   const live = chatLive();
   const scopeWord = S.scope === 'login' ? 'this login' : 'today';
   const fixR = ['warn', 'bad'].includes(sevOf('chat-log')) ? srcFix('chat-log') : '';
@@ -1805,62 +2506,71 @@ function renderCombatView() {
   const clFix = cl?.severity === 'info' && (cl.views || []).includes('combat') ? `<span>${esc(fixText('combat-logging'))}</span>` : '';
   const fix = fixR || clFix;
   const logOffKnown = S.health?.settings?.readable && S.health.settings.LogChat === 0;
+  // The Setup window owns the title row and hides every other window while it replaces the page ('replace');
+  // 'above' keeps it first with the page under it; null hides it.
+  const setup = typeof renderSetup === 'function' ? renderSetup('combat') : null;
+  renderCombatFollow(c);
+  // The room and Discord controls stay reachable even while Setup replaces the page: joining a friend's room or connecting
+  // a channel never waits for the first hit.
+  if (setup === 'replace') {
+    COMBAT_WINS.forEach(id => { $('#' + id).hidden = id !== 'w-d-room' && id !== 'w-d-discord'; });
+    renderRoom(S.party, S.partyOld); renderDiscordForm(S.party, S.partyOld); applyDeck('combat');
+    return;
+  }
+  COMBAT_WINS.forEach(id => { $('#' + id).hidden = false; });
 
   if (S.view === 'combat') {
     $('#h1').textContent = 'Combat';
     if (reading) { $('#finding').html = '<span class="dim">Reading today\'s chat log…</span>'; setStamp("Today's chat log", '…', 'ok'); }
     else if (noLog) {
-      $('#finding').textContent = logOffKnown ? "Chat logging is off in the game, so there's nothing to measure." : "No chat log to read, so there's nothing to measure. Turn on chat logging and the meter starts with your first hit.";
+      $('#finding').html = logOffKnown ? "Chat logging is off in the game, so there's nothing to measure." : 'Nothing to measure yet. Turn on <b>Save Chat Logs</b> in the game and the meter starts with your first hit.';
       setStamp('No chat log found', 'missing', 'bad');
-    } else if (old) { $('#finding').textContent = 'The DPS meter needs a newer server.py.'; chatStamp(s); }
+    } else if (old) { $('#finding').textContent = `${NEEDS_NEWER} ${OLD_SERVER_WHY}`; chatStamp(s); }
     else { $('#finding').html = combatFinding(c, scopeWord); chatStamp(s); }
     $('#title-extra').hidden = true;
   }
-  // The chat log follows whoever is logged in; say so when that is not the selected character (as on Session).
-  const follow = $('#d-follow');
-  if (c?.character && S.character && c.character !== S.character) {
-    follow.hidden = false; follow.className = 'sysline';
-    follow.html = `${shape('info')}<span>The chat log follows <em class="t">${esc(c.character)}</em>, who is ${loggedIn() ? 'logged in' : 'the last to log in'}. This meter is ${esc(c.character)}'s.</span>`;
-  } else follow.hidden = true;
   $$('#dscope [role=tab]').forEach(b => { b.setAttribute('aria-selected', String(b.dataset.s === S.scope)); b.tabIndex = b.dataset.s === S.scope ? 0 : -1; b.disabled = noLog || old; });
 
-  const needLog = reading ? '<p class="needs">Reading the chat log…</p>' : '<p class="needs">Needs the chat log.</p>';
   const glance = $('#d-glance'), pane = $('#d-fights');
-  $('#w-d-glance').hidden = noLog && !S.loading;
+  $('#w-d-glance').hidden = noLog;
   if (noLog || old) {
+    const stub = old ? `<p class="needs">${esc(NEEDS_NEWER)}</p>` : '<p class="needs">Needs the chat log.</p>';
     glance.html = ''; $('#d-count').textContent = '';
-    pane.html = old ? '<p class="needs">Needs a newer server.py.</p>' : needLog;
-    $('#d-break').html = old ? '<p class="needs">Needs a newer server.py.</p>' : needLog;
+    pane.html = stub; $('#d-break').html = stub;
     $('#d-break-sub').textContent = ''; $('#d-copy').disabled = true; dUI.hasFight = false; renderPostButtons();
-    const r = old ? 'The DPS meter needs a newer server.py' : fixR;
+    const r = old ? `The meter needs a newer ${APP_NAME}` : fixR;
     setFoot('w-d-glance', live, r); setFoot('w-d-fights', live, r); setFoot('w-d-break', live, r);
     $('#w-d-fights').classList.remove('quiet');
+    applyDeck('combat'); renderParty();
     return;
   }
   if (reading) {
     glance.html = ['Per second now', 'Damage', 'Fights'].map((l, i) => `<div class="fig${i ? '' : ' lead'}"><div class="lb">${l}</div><div class="val"><span class="loading-bar"></span></div></div>`).join('');
-    pane.html = needLog; $('#d-break').html = needLog; $('#d-count').textContent = ''; $('#d-break-sub').textContent = ''; $('#d-copy').disabled = true; dUI.hasFight = false; renderPostButtons();
+    pane.html = '<p class="needs">Reading the chat log…</p>'; $('#d-count').textContent = '';
+    $('#w-d-break').hidden = true; $('#d-break-sub').textContent = ''; $('#d-copy').disabled = true; dUI.hasFight = false; renderPostButtons();
     setFoot('w-d-glance', live, ''); setFoot('w-d-fights', live, ''); setFoot('w-d-break', live, '');
+    applyDeck('combat'); renderParty();
     return;
   }
 
   const t = c.totals || {}, n = c.now || {};
   const fights = c.fights || [];
-  const lastF = fights.at(-1) || null;
+  const lastF = fights.filter(f => !f.minor).at(-1) || fights.at(-1) || null;   // the last real fight; a skirmish only when there is nothing else
   const lastCombat = parseIso(c.lastCombatAt);
   const left = `${live} · ${scopeWord}`;
   const openLog = c.log && !S.filesOld ? ` · <a href="#files?f=${encodeURIComponent('logs/' + c.log)}">Open the log</a>` : '';
   const leftFights = (lastCombat ? `${live} · last combat line ${hhmm(lastCombat)} · ${scopeWord}` : left) + openLog;
 
-  // At a glance: the live figure leads; zeros fold into the finding except the three that frame the day.
+  // At a glance: the live figure leads (the one readout size, the breathing dot while a fight is open); the best
+  // fight, the pet share and the deaths live in the sub-lines, so the finding stays one figure.
   const figs = [];
-  if (n.inFight) figs.push({ lb: 'Per second now', val: perSec(n.dps), sub: `this fight · ${secs(n.sec)} · last ${c.nowSec} s: ${fmt(n.recent)}/s` });
-  else figs.push({ lb: 'Per second, last fight', val: perSec(lastF ? lastF.dps : 0), sub: lastF ? `${lastF.start.slice(9, 14)} · ${secs(lastF.dur)}` : 'none yet' });
+  if (n.inFight) figs.push({ lb: '<span class="livedot" aria-hidden="true"></span>Per second now · live', val: perSec(n.dps), sub: `this fight · ${secs(n.sec)} · last ${c.nowSec} s: ${fmt(n.recent)}/s`, readout: true });
+  else figs.push({ lb: 'Per second, last fight', val: perSec(lastF ? lastF.dps : 0), sub: lastF ? `${lastF.start.slice(9, 14)} · ${secs(lastF.dur)}` : 'none yet', readout: true });
   figs.push({ lb: 'Damage', val: fmt(t.dmg || 0), sub: t.dmg ? `you ${pctOf(t.me, t.dmg)} · pets ${pctOf(t.pet, t.dmg)}` : 'none yet' });
-  figs.push({ lb: 'Fights', val: fmt(t.fights || 0), sub: t.fights ? `${secs(t.activeSec)} fighting · ${fmt(t.dps)}/s over it` : 'none yet' });
-  if (t.kills || t.petKills) figs.push({ lb: 'Kills', val: fmt(t.kills + t.petKills), sub: t.petKills ? `${fmt(t.petKills)} by your pets` : 'all yours' });
-  if (t.taken || t.deaths) figs.push({ lb: 'Damage taken', val: fmt(t.taken), sub: t.deaths ? plural(t.deaths, 'death') + (t.instakills ? `, ${t.instakills === 1 ? 'one' : t.instakills} to a kill mechanic` : '') : 'no deaths' });
-  glance.html = figs.map((f, i) => `<div class="fig${i ? '' : ' lead'}"><div class="lb">${f.lb}</div><div class="val">${f.val}</div><div class="sub">${esc(f.sub)}</div></div>`).join('');
+  figs.push({ lb: 'Fights', val: fmt(t.fights || 0), sub: t.fights ? `${secs(t.activeSec)} fighting${t.best ? ` · best ${fmt(t.best.dps)}/s at ${t.best.start.slice(9, 14)}` : ''}` : 'none yet' });
+  figs.push({ lb: 'Kills', val: fmt((t.kills || 0) + (t.petKills || 0)), sub: t.petKills ? `${fmt(t.petKills)} by your pets` : (t.kills ? 'all yours' : 'none yet') });
+  figs.push({ lb: 'Damage taken', val: fmt(t.taken || 0), sub: t.deaths ? plural(t.deaths, 'death') + (t.instakills ? `, ${t.instakills === 1 ? 'one' : t.instakills} to a kill mechanic` : '') : 'no deaths' });
+  glance.html = figs.map((f, i) => `<div class="fig${i ? '' : ' lead'}"><div class="lb">${f.lb}</div><div class="val${f.readout ? ' readout' : ''}">${f.val}</div><div class="sub">${esc(f.sub)}</div></div>`).join('');
   setFoot('w-d-glance', left, fix);
 
   // Fights
@@ -1869,19 +2579,26 @@ function renderCombatView() {
   $('#d-count').textContent = fights.length ? fmt(fights.length) : '';
   if (quiet) pane.html = `<p class="empty">No fights ${scopeWord}. The first hit you land or take opens one; ${c.gapSec} s without damage closes it.</p>`;
   else pane.html = renderFightPane(c);
-  setFoot('w-d-fights', leftFights, fix);
+  const carried = c.carried && c.since && scopeWord === 'today' ? esc(`Counted from ${hhmm(parseIso(c.since))} yesterday: that run was still going at midnight`) : '';
+  setFoot('w-d-fights', leftFights, carried || fix);
 
   // Breakdown
-  renderBreakdown(c, pickedFight(c));
-  setFoot('w-d-break', live, `Party members' hits aren't in your log; the Party window below puts their copies' numbers beside yours.`);
+  $('#w-d-break').hidden = false;
+  const f = pickedFight(c);
+  renderBreakdown(c, f);
+  const inParty = !!(f?.inParty || f?.party?.length || S.party?.roster?.inParty);
+  setFoot('w-d-break', live, inParty ? "Your party's hits are in Your party, from their own copies" : "Nobody else was logged nearby, so the damage over time is yours or your pets'");
+  applyDeck('combat');
   renderParty();
 }
 
+/* The finding (B-FINAL §1.2): one figure, one clause. Pets, deaths, the best fight and the midnight carry-over live
+   in At a glance and the Fights footer. */
 function combatFinding(c, scopeWord) {
   const t = c.totals || {}, n = c.now || {};
   if (n.inFight) {
     const f = (c.fights || []).at(-1) || {};
-    let out = `Fighting now: <em class="n">${fmt(n.dps)}</em> damage a second over ${secs(n.sec)}`;
+    let out = `Fighting now: <em class="n">${fmt(n.dps)}</em> damage a second`;
     if (f.top) out += ` against <em class="t">${esc(f.top)}</em>${f.targetCount > 1 ? ` and ${plural(f.targetCount - 1, 'other')}` : ''}`;
     out += '.';
     if (f.dmg && f.pet > f.me) {
@@ -1891,12 +2608,7 @@ function combatFinding(c, scopeWord) {
     return out;
   }
   if (!t.fights) return `No fights ${scopeWord}. The meter starts with your first hit.`;
-  let out = `<em class="n">${fmt(t.dmg)}</em> damage in ${plural(t.fights, 'fight')} ${scopeWord}, <em class="n">${fmt(t.dps)}</em> a second while fighting.`;
-  if (t.best) out += ` Best: <em class="n">${fmt(t.best.dps)}</em> a second at ${t.best.start.slice(9, 14)}, over ${secs(t.best.dur)}.`;
-  if (t.dmg && t.pet) out += ` Your pets did ${pctOf(t.pet, t.dmg)} of it.`;
-  if (t.deaths) out += ` Died ${t.deaths === 1 ? 'once' : t.deaths === 2 ? 'twice' : `${fmt(t.deaths)} times`}.`;
-  if (c.carried && c.since && scopeWord === 'today') out += ` <span class="dim">Counted from ${hhmm(parseIso(c.since))} yesterday: that run was still going at midnight, when the game starts a new log.</span>`;
-  return out;
+  return `<em class="n">${fmt(t.dps)}</em> damage a second ${scopeWord}, over ${plural(t.fights, 'fight')}.`;
 }
 
 function fightRow(f, sel) {
@@ -1917,19 +2629,26 @@ function fightRow(f, sel) {
     <td class="m-line2">${esc(line2)}</td>
   </tr>`;
 }
+const FIGHTS_SHOW = 10;  // fights listed before "Show all"; a live fight is always among them
 function renderFightPane(c) {
   const all = c.fights || [];
   const minor = all.filter(f => f.minor && !f.open).length;
   const rows = dUI.minor ? all : all.filter(f => !f.minor || f.open);
   const sorted = sortRows(rows, dUI.sort, (r, k) => k === 'top' ? String(r.top || '').toLowerCase() : r[k]);
+  let shown = dUI.all || sorted.length <= FIGHTS_SHOW ? sorted : sorted.slice(0, FIGHTS_SHOW);
+  const open = sorted.find(f => f.open);
+  if (open && !shown.includes(open)) shown = [open, ...shown];
   const head = `<thead><tr>${D_COLS.map(col => thSort(col, dUI.sort, 'fights')).join('')}</tr></thead>`;
-  const body = sorted.map(f => fightRow(f, dUI.selected === f.id)).join('');
+  const body = shown.map(f => fightRow(f, dUI.selected === f.id)).join('');
   const t = c.totals || {};
-  const shown = rows.reduce((a, f) => ({ dmg: a.dmg + f.dmg, me: a.me + f.me, pet: a.pet + f.pet, kills: a.kills + f.kills + f.petKills, sec: a.sec + f.dur }), { dmg: 0, me: 0, pet: 0, kills: 0, sec: 0 });
-  const grand = `<tr class="grand"><td colspan="2">Total · ${plural(rows.length, 'fight')}</td><td class="num">${fmt(shown.dmg)}</td><td class="num">${fmt(shown.sec ? shown.dmg / shown.sec : 0)}</td><td class="num">${fmt(shown.me)}</td><td class="num">${shown.pet ? fmt(shown.pet) : ''}</td><td class="num">${shown.kills ? fmt(shown.kills) : ''}</td><td></td><td class="m-line2">${esc(`${fmt(shown.dmg)} damage · ${secs(shown.sec)} fighting`)}</td></tr>`;
+  // the grand row counts every fight in scope, shown or not
+  const tot = rows.reduce((a, f) => ({ dmg: a.dmg + f.dmg, me: a.me + f.me, pet: a.pet + f.pet, kills: a.kills + f.kills + f.petKills, sec: a.sec + f.dur }), { dmg: 0, me: 0, pet: 0, kills: 0, sec: 0 });
+  const folded = minor && !dUI.minor ? ` · ${plural(minor, 'skirmish', 'skirmishes')} folded` : '';
+  const grand = `<tr class="grand"><td colspan="2">Total · ${plural(rows.length, 'fight')}${folded}</td><td class="num">${fmt(tot.dmg)}</td><td class="num">${fmt(tot.sec ? tot.dmg / tot.sec : 0)}</td><td class="num">${fmt(tot.me)}</td><td class="num">${tot.pet ? fmt(tot.pet) : ''}</td><td class="num">${tot.kills ? fmt(tot.kills) : ''}</td><td></td><td class="m-line2">${esc(`${fmt(tot.dmg)} damage · ${secs(tot.sec)} fighting`)}</td></tr>`;
+  const more = sorted.length > FIGHTS_SHOW ? `<button type="button" class="linkbtn" data-dall="1" aria-expanded="${dUI.all}">${dUI.all ? `Show the last ${FIGHTS_SHOW}` : `Show all ${fmt(sorted.length)} fights`}</button>` : '';
   const fold = minor ? `<button type="button" class="linkbtn" data-dminor="1" aria-expanded="${dUI.minor}">${dUI.minor ? 'Hide' : 'Show'} ${plural(minor, 'skirmish', 'skirmishes')} under ${c.minor.sec} s and ${fmt(c.minor.dmg)} damage</button>` : '';
-  const under = t.fights && !fold ? 'Select a fight to see it by ability.' : '';
-  return `<div class="pane"><table class="tbl resp">${head}<tbody>${body}${grand}</tbody></table></div><div class="pane-under">${fold || under}</div>`;
+  const under = more || fold ? `${more}${fold}` : (t.fights ? 'Select a fight to see it by ability.' : '');
+  return `<div class="pane"><table class="tbl resp">${head}<tbody>${body}${grand}</tbody></table></div><div class="pane-under party-under">${under}</div>`;
 }
 
 function abilTip(a) {
@@ -1974,9 +2693,14 @@ function renderByEnemy(f) {
   }).join('');
   const left = f.byTargetMore || 0;
   const more = rows.length > ENEMY_SHOW ? `<p style="margin:8px 0 0"><button type="button" class="linkbtn" data-eall aria-expanded="${dUI.enemiesAll}" style="text-decoration:underline">${dUI.enemiesAll ? `Show the top ${ENEMY_SHOW}` : `Show all ${fmt(rows.length)} ${left ? 'listed' : 'enemies'}`}</button></p>` : '';
-  const cap = left ? ` ${fmt(left)} of the ${fmt(f.targetCount)} enemies you hit ${left === 1 ? "isn't" : "aren't"} listed (the server keeps the top ${fmt(f.targetCount - left)}), so the Totals here sum to less than the fight's ${fmt(f.dmg)}.` : '';
-  return `<div style="margin-top:16px"><h3 class="small dim">By enemy</h3><table class="tbl resp-plain by-enemy"><thead><tr><th scope="col">Enemy</th><th scope="col" class="num">You</th><th scope="col" class="num">Pets</th><th scope="col" class="num">Damage over time</th><th scope="col" class="num d-only">Not yours</th><th scope="col" class="num">Total</th></tr></thead><tbody>${tr}</tbody></table>${more}
-    <p class="small dim" style="margin:6px 0 0">Direct hits by name; damage over time from your log after your first hit on that enemy. The game's autopsy lists health and armor apart; this adds them.${cap}</p></div>`;
+  return `<div style="margin-top:16px"><h3 class="small dim">By enemy</h3><table class="tbl resp-plain by-enemy"><thead><tr><th scope="col">Enemy</th><th scope="col" class="num">You</th><th scope="col" class="num">Pets</th><th scope="col" class="num">Damage over time</th><th scope="col" class="num d-only">Not yours</th><th scope="col" class="num">Total</th></tr></thead><tbody>${tr}</tbody></table>${more}</div>`;
+}
+/* The By-enemy sentence, first under "How this is counted". */
+function byEnemyNote(f) {
+  if (!enemyRows(f)?.length) return '';
+  const left = f.byTargetMore || 0;
+  const cap = left ? ` ${fmt(left)} of the ${fmt(f.targetCount)} enemies you hit ${left === 1 ? "isn't" : "aren't"} listed (the server keeps the top ${fmt(f.targetCount - left)}), so the Totals there sum to less than the fight's ${fmt(f.dmg)}.` : '';
+  return `Direct hits by name; damage over time from your log after your first hit on that enemy. The game's autopsy lists health and armor apart; this adds them.${cap}`;
 }
 function renderBreakdown(c, f) {
   const box = $('#d-break'), sub = $('#d-break-sub'), copy = $('#d-copy');
@@ -2001,12 +2725,16 @@ function renderBreakdown(c, f) {
   const taken = f.takenBy.length || f.indirectMe
     ? `<ul class="list">${f.takenBy.map(r => `<li><span>${esc(r.name)} <span class="dim">${esc(pretty(r.ability))}</span>${r.instakill ? ` <span class="tag">kill mechanic</span>` : ''}</span><span class="n">${r.hits ? `${fmt(r.dmg)} <span class="dim small">${plural(r.hits, 'hit')}</span>` : ''}</span></li>`).join('')}${f.indirectMe ? `<li><span class="dim">Indirect (DoTs, falls, weather)</span><span class="n">${fmt(f.indirectMe)}</span></li>` : ''}</ul>`
     : `<p class="empty">Nothing hit you${f.takenPet ? `. Your pets took ${fmt(f.takenPet)}` : ''}.</p>`;
-  let note = '';
-  if (f.party?.length) note += `<p class="small dim" style="margin:12px 0 0">In a party with ${esc(joinNames(f.party))}, per the chat log. Their hits aren't in this meter; what they share shows in Party below.</p>`;
-  else if (f.inParty) note += '<p class="small dim" style="margin:12px 0 0">In a party, per the chat log, with members it hasn\'t named yet (they show up when they speak or leave).</p>';
-  if (f.dotMe || f.dotPet) note += `<p class="small dim" style="margin:${note ? 8 : 12}px 0 0">Damage over time (${fmt((f.dotMe || 0) + (f.dotPet || 0))}) is every tick on an enemy after you or a pet first hit it, from your log; the game doesn't name a tick's source, so a party member's DoT on the same enemy is in it too.</p>`;
-  if (f.indirectUnattributed) note += `<p class="small dim" style="margin:${note ? 8 : 12}px 0 0">Ticks on enemies before you hit them, not counted: ${fmt(f.indirectUnattributed)}${f.party?.length ? ` (${esc(joinNames(f.party))}'s DoTs)` : f.shared ? ' (others nearby)' : ''}.</p>`;
-  if (c.unclassified?.length) note += `<p class="small dim" style="margin:8px 0 0">Not placed: ${esc(joinNames(c.unclassified))}. ${c.unclassified.length === 1 ? 'It hit things you never fought and nothing you fought hit it, so the meter can\'t tell a pet from a stranger; if it is your pet, its damage is missing above.' : 'They hit things you never fought and nothing you fought hit them, so the meter can\'t tell pets from strangers; if any is your pet, its damage is missing above.'}</p>`;
+  // The caveats, six sentences at most, under one disclosure (open state in dUI.how, not persisted).
+  const how = [];
+  const be = byEnemyNote(f); if (be) how.push(be);
+  if (f.dotMe || f.dotPet) how.push(`Damage over time (${fmt((f.dotMe || 0) + (f.dotPet || 0))}) is every tick on an enemy after you or a pet first hit it, from your log; the game doesn't name a tick's source, so a party member's DoT on the same enemy is in it too.`);
+  if (f.indirectUnattributed) how.push(`Ticks on enemies before you hit them, not counted: ${fmt(f.indirectUnattributed)}${f.party?.length ? ` (likely ${esc(joinNames(f.party))}'s)` : f.shared ? ' (others nearby)' : ''}.`);
+  how.push("Party members' hits are never in your log. Your party, above, puts their copies' numbers beside yours.");
+  if (f.party?.length) how.push(`In a party with ${esc(joinNames(f.party))}, per the chat log.`);
+  else if (f.inParty) how.push("In a party, per the chat log, with members it hasn't named yet (they show up when they speak or leave).");
+  if (c.unclassified?.length) how.push(`Not placed: ${esc(joinNames(c.unclassified))}. ${c.unclassified.length === 1 ? 'It hit things you never fought and nothing you fought hit it, so the meter can\'t tell a pet from a stranger; if it is your pet, its damage is missing above.' : 'They hit things you never fought and nothing you fought hit them, so the meter can\'t tell pets from strangers; if any is your pet, its damage is missing above.'}`);
+  const note = `<details class="howcount"${dUI.how ? ' open' : ''}><summary>${TRI(dUI.how)}How this is counted <span class="dim">· direct hits by name, damage over time from your log, party members' hits not here</span></summary>${how.map(x => `<p>${x}</p>`).join('')}</details>`;
   const tl = f.timeline || [];
   const spark = f.dmg && tl.length >= 2
     ? `<div class="chart spark" id="d-spark" data-key="${esc(`${f.id}|${f.dur}|${f.dmg}`)}"><svg role="img" aria-label="Damage a second over this fight" tabindex="0"></svg><div class="tip" hidden></div></div>
@@ -2098,6 +2826,11 @@ function initCombat() {
   $('#d-break').addEventListener('click', e => {
     if (e.target.closest('[data-eall]')) { dUI.enemiesAll = !dUI.enemiesAll; renderCombatView(); $('#d-break [data-eall]')?.focus(); }
   });
+  // "How this is counted": remember the fold across the 2 s re-render; the caret follows in place (toggle doesn't bubble).
+  $('#d-break').addEventListener('toggle', e => {
+    const d = e.target; if (!d.matches?.('details.howcount')) return;
+    dUI.how = d.open; const tri = d.querySelector('.tri'); if (tri) tri.innerHTML = CARET(d.open ? 'down' : 'right');
+  }, true);
   const pane = $('#d-fights');
   const pick = id => {
     const c = S.combat, newest = (c?.fights || []).find(x => x.open) || (c?.fights || []).at(-1);
@@ -2112,6 +2845,7 @@ function initCombat() {
       saveSort('fights', dUI.sort); renderCombatView(); return;
     }
     if (e.target.closest('[data-dminor]')) { dUI.minor = !dUI.minor; renderCombatView(); $('#d-fights [data-dminor]')?.focus(); return; }
+    if (e.target.closest('[data-dall]')) { dUI.all = !dUI.all; renderCombatView(); $('#d-fights [data-dall]')?.focus(); return; }
     const r = e.target.closest('[data-fight]'); if (r) pick(r.dataset.fight);
   });
   pane.addEventListener('keydown', e => {
@@ -2120,11 +2854,11 @@ function initCombat() {
   });
   $('#d-copy').addEventListener('click', () => {
     const c = S.combat, f = c?.fights?.find(x => x.id === dUI.selected);
-    if (f) copyText(discordText(c, f), 'the fight for Discord');
+    if (f) copyText(discordText(c, f), 'the fight as text');
   });
   $('#d-post').addEventListener('click', () => {
     const c = S.combat, f = c?.fights?.find(x => x.id === dUI.selected);
-    if (f) postDiscord({ fight: f.id }, 'the fight');
+    if (f) postDiscord({ fight: f.id }, 'the fight', 'Post fight to Discord');
   });
   initParty();
 }
@@ -2147,7 +2881,7 @@ async function loadVendors() {
   const [v, st, m, pl] = await Promise.all([
     api('/api/vendors' + who).then(x => { S.errors.vendors = null; return x; }, e => { if (isNetworkError(e)) throw e; S.errors.vendors = e; return S.vendors; }),
     api('/api/storage' + who).then(x => { S.errors.storage = null; return x; }, e => { if (isNetworkError(e)) throw e; S.errors.storage = e; return S.storage; }),
-    // Split stacks: a 404 means an older server.py without the endpoint, not an error.
+    // Split stacks: a 404 means an older copy without the endpoint, not an error.
     api('/api/consolidation' + who).then(x => { S.errors.merge = null; S.mergeOld = false; return x; }, e => { if (isNetworkError(e)) throw e; if (e.status === 404) { S.mergeOld = true; return null; } S.errors.merge = e; return S.merge; }),
     api('/api/plan' + who).then(x => { S.errors.plan = null; S.planOld = false; return x; }, e => { if (isNetworkError(e)) throw e; if (e.status === 404) { S.planOld = true; return null; } S.errors.plan = e; return S.plan; }),
   ]);
@@ -2165,7 +2899,7 @@ async function loadVendors() {
 
 const vendorsMissing = () => (S.vendors && S.vendors.error === 'no character export') || (sevOf('character-export') === 'bad' && V('character-export')?.ageSec == null);
 // Age mark for a figure label whose source is stale or missing (Vendors At a glance, Here): shape + "3 d old".
-const ageMarkOf = (v) => v && (v.severity === 'warn' || v.severity === 'bad') ? `${shape(v.severity, 's13')}<span class="age ${v.severity}">${v.ageSec != null ? ageWord(v.ageSec) + ' old' : 'missing'}</span>` : '';
+const ageMarkOf = (v) => v && (v.severity === 'warn' || v.severity === 'bad') && v.source !== STAMP_SRC[S.view] ? `<span class="age">${isMissing(v) ? (neverSeen(v) ? 'to set up' : 'missing') : v.ageSec != null ? ageWord(v.ageSec) + ' old' : 'missing'}</span>` : '';
 const oldServerVendors = () => S.vendors?.vendors?.length && !('resetSinceExport' in S.vendors.vendors[0]);
 
 /* Rows with derived fields; ?shift counts resets that pass in the shifted clock. */
@@ -2226,6 +2960,7 @@ function renderVendors() {
       exportStamp('character-export', 'character');
     }
   }
+  if (renderSetup('vendors') === 'replace') return;
 
   // At a glance
   const vaults = S.storage?.vaults || [];
@@ -2259,6 +2994,7 @@ function renderVendors() {
 
   // Where to sell
   const filtered = applyVendorFilters(live, { skipArea: true });
+  const vSum = (S.loading && !S.vendors) ? 'reading…' : missing ? 'needs a character export' : err ? 'not loaded' : '';
   if (S.loading && !S.vendors) $('#v-where').html = '<p class="needs">Reading the character export…</p>';
   else if (missing || err) $('#v-where').html = `<p class="needs">${missing ? 'Needs a character export.' : 'Not loaded.'}</p>`;
   else {
@@ -2266,18 +3002,22 @@ function renderVendors() {
     filtered.forEach(r => { byArea[r.area] = (byArea[r.area] || 0) + r.remaining; });
     const areas = Object.entries(byArea).sort((a, b) => b[1] - a[1]);
     const max = areas[0]?.[1] || 1;
+    deckSum('vendors', 'w-v-where', areas.length ? `${areas.slice(0, 2).map(([a, n]) => `${esc(a)} ${fmt(n)}`).join(' · ')}${areas.length > 2 ? ` · ${areas.length - 2} more` : ''}` : 'no vendors match');
     $('#v-where').html = areas.length ? `<div class="barlist">${areas.slice(0, WHERE_TOP).map(([a, n]) => `<button type="button" class="barrow" data-area="${esc(a)}" aria-pressed="${vUI.area === a}"><span class="nm">${esc(a)}</span><span class="sr">, </span><div class="bar"><i style="width:${Math.max(1, n / max * 100)}%"></i></div><span class="v">${COIN}${fmt(n)}<span class="sr"> councils</span></span></button>`).join('')}</div>${areas.length > WHERE_TOP ? `<p class="small dim" style="margin:6px 8px 0">${plural(areas.length - WHERE_TOP, 'more area')} in the Vendors list below.</p>` : ''}`
       : '<p class="empty">No vendors match these filters.</p>';
   }
+  if (vSum) deckSum('vendors', 'w-v-where', vSum);
   setFoot('w-v-where', footL, footR);
 
   // What they buy
+  if (vSum) deckSum('vendors', 'w-v-buy', vSum);
   if (S.loading && !S.vendors) $('#v-buy').html = '<p class="needs">Reading the character export…</p>';
   else if (missing || err) $('#v-buy').html = `<p class="needs">${missing ? 'Needs a character export.' : 'Not loaded.'}</p>`;
   else {
     const byType = {};
     live.forEach(r => r.types.forEach(t => { byType[t] = (byType[t] || 0) + r.remaining; }));
     const all = Object.entries(byType).sort((a, b) => b[1] - a[1]);
+    deckSum('vendors', 'w-v-buy', plural(all.length, 'type'));
     const top = all.slice(0, 12);
     // The pressed type stays visible in the first row even when it sits below the twelve.
     if (vUI.type && byType[vUI.type] != null && !top.some(([t]) => t === vUI.type)) top.push([vUI.type, byType[vUI.type]]);
@@ -2312,11 +3052,14 @@ function renderVendors() {
     pane.html = blockError('vendors', S.lastGood.vendors);
   } else renderVendorPane(rows);
   let fr = footR;
-  if (oldServerVendors()) fr += ' · Resets since the export need a newer server.py';
+  if (oldServerVendors()) fr += ` · Resets since the export need a newer ${APP_NAME}`;
   setFoot('w-v-pane', missing ? `Character export · ${shape('bad', 's13')}<span class="age bad">missing</span>` : `${footL} · caps from game data v${esc(ver)}`, missing ? esc(fixText('export-character')) : fr);
   if (missing) { setFoot('w-v-where', `Character export · ${shape('bad', 's13')}<span class="age bad">missing</span>`, esc(fixText('export-character'))); setFoot('w-v-buy', `Character export · ${shape('bad', 's13')}<span class="age bad">missing</span>`, esc(fixText('export-character'))); }
 
   renderSell();
+  // The lower deck: Where to sell · What they buy · Sell, folded by default; a missing character export keeps their footers.
+  deckKeepFoot(['w-v-where', 'w-v-buy', 'w-v-sell'], missing);
+  applyDeck('vendors');
 }
 
 /* The item lookup that belongs to the current search text, else null (a stale answer never filters). */
@@ -2585,13 +3328,14 @@ function renderStorage() {
       exportStamp('storage-export', 'storage');
     }
   }
+  if (renderSetup('storage') === 'replace') return;
   const footL = srcAge('storage-export', 'Storage export');
   const footR = srcFix('storage-export', 'After storing:');
   const missL = `Storage export · ${shape('bad', 's13')}<span class="age bad">missing</span>`;
   const missR = esc(fixText('export-storage'));
 
   // At a glance
-  const ageMark = sv && (sv.severity === 'warn') ? `${shape('warn', 's13')}<span class="age warn">${ageWord(sv.ageSec)} old</span>` : '';
+  const ageMark = ageMarkOf(sv);
   if (S.loading && !S.storage) $('#t-glance').html = ['Slots Free', 'Full', 'Vendor value held'].map((l, i) => `<div class="fig${i ? '' : ' lead'}"><div class="lb">${l}</div><div class="val"><span class="loading-bar"></span></div></div>`).join('');
   else if (!missing && !err) {
     const figs = [`<div class="fig lead"><div class="lb">Slots Free ${ageMark}</div><div class="val">${fmt(free)}</div><div class="sub">in ${plural(known.length, 'vault')}</div></div>`];
@@ -2605,12 +3349,14 @@ function renderStorage() {
   setFoot('w-t-glance', footL, footR);
 
   // Where there's room
-  if (missing || err) $('#t-room').html = `<p class="needs">${missing ? 'Needs a storage export.' : 'Not loaded.'}</p>`;
+  if (missing || err) { $('#t-room').html = `<p class="needs">${missing ? 'Needs a storage export.' : 'Not loaded.'}</p>`; deckSum('storage', 'w-t-room', missing ? 'needs a storage export' : 'not loaded'); }
+  else if (S.loading && !S.storage) deckSum('storage', 'w-t-room', 'reading…');
   else {
     const byArea = {};
     known.forEach(v => { byArea[v.ar] = (byArea[v.ar] || 0) + Math.max(0, v.free); });
     const areas = Object.entries(byArea).sort((a, b) => b[1] - a[1]);
     const max = areas[0]?.[1] || 1;
+    deckSum('storage', 'w-t-room', areas.length ? `${areas.slice(0, 2).map(([a, n], i) => `${esc(a)} ${fmt(n)}${i ? '' : ' free'}`).join(' · ')}${areas.length > 2 ? ` · ${areas.length - 2} more` : ''}` : 'no vaults with a known size');
     $('#t-room').html = areas.length ? `<div class="barlist cols2">${areas.map(([a, n]) => `<button type="button" class="barrow" data-area="${esc(a)}" aria-pressed="${sUI.area === a}"><span class="nm">${esc(a)}</span><span class="sr">, </span><div class="bar"><i style="width:${n ? Math.max(1, n / max * 100) : 0}%"></i></div><span class="v">${n ? fmt(n) + ' free' : 'Full'}</span></button>`).join('')}</div>`
       : '<p class="empty">No vaults with a known size yet.</p>';
   }
@@ -2633,6 +3379,11 @@ function renderStorage() {
 
   renderMerge();
   renderItems();
+  // The lower deck: Where there's room · Stacks to merge · Items, folded by default; a missing export keeps their footers;
+  // an Items search holds that window open.
+  deckKeepFoot(['w-t-room', 'w-t-merge', 'w-t-items'], missing);
+  applyDeck('storage');
+  deckHold('w-t-items', !!sUI.iq.trim());
 }
 
 /* Stacks to merge: one item held in more than one place (/api/consolidation, export-only).
@@ -2649,18 +3400,23 @@ function renderMerge() {
   const footR = srcFix('storage-export', 'After moving things:');
   let tabsOn = false, count = '';
   if (S.mergeOld) {
-    box.html = '<p class="needs">Needs a newer server.py.</p>';
-    setFoot('w-t-merge', footL, 'Stacks to merge need a newer server.py');
+    box.html = `<p class="needs">${esc(NEEDS_NEWER)}</p>`;
+    count = NEEDS_NEWER.replace(/\.$/, '').toLowerCase();
+    setFoot('w-t-merge', footL, `Stacks to merge need a newer ${APP_NAME}`);
   } else if (missing) {
     box.html = '<p class="needs">Needs a storage export.</p>';
+    count = 'needs a storage export';
     setFoot('w-t-merge', `Storage export · ${shape('bad', 's13')}<span class="age bad">missing</span>`, esc(fixText('export-storage')));
   } else if (S.loading && !m && !S.errors.merge) {
     box.html = '<div class="loading-bar" style="width:100%;height:120px"></div>';
+    count = 'reading…';
     setFoot('w-t-merge', 'Loading the storage export…', '');
   } else if (err) {
     box.html = blockError('stacks to merge', S.lastGood.merge);
+    count = "couldn't load";
     setFoot('w-t-merge', footL, footR);
   } else if (!m?.items?.length) {
+    count = 'nothing to merge';
     // Count by reason (summary.skipped), never splitNames: that is every split name, stackable or not.
     const sk = m?.summary?.skipped || {}, un = sk.unstackable || 0;
     const rest = Object.entries(sk).filter(([k, n]) => k !== 'unstackable' && n > 0).map(([k, n]) => `${fmt(n)} ${SKIP_WORDS[k] || k}`);
@@ -2669,7 +3425,7 @@ function renderMerge() {
   } else {
     tabsOn = true;
     const s = m.summary || {};
-    count = ` · ${plural(s.slotsBack, 'slot')}`;
+    count = `${plural(m.items.length, 'merge')} · ${plural(s.slotsBack || 0, 'slot')} back`;
     const itemsPanel = `<div id="t-merge-items" role="tabpanel" aria-labelledby="tm-items" ${sUI.mmode === 'items' ? '' : 'hidden'}>${mergeByItem(m)}</div>`;
     const stopsPanel = `<div id="t-merge-stops" role="tabpanel" aria-labelledby="tm-stops" ${sUI.mmode === 'stops' ? '' : 'hidden'}>${mergeByStop(m)}</div>`;
     box.html = itemsPanel + stopsPanel;
@@ -2677,7 +3433,7 @@ function renderMerge() {
   }
   $('#tmode-wrap').hidden = !tabsOn;
   $$('#tmode [role=tab]').forEach(b => { b.setAttribute('aria-selected', String(b.dataset.m === sUI.mmode)); b.tabIndex = b.dataset.m === sUI.mmode ? 0 : -1; });
-  $('#t-merge-count').textContent = count;
+  deckSum('storage', 'w-t-merge', count);
 }
 /* BY ITEM: the lead sentence, what's not counted, then one row per item with what to take and where to put it. */
 function mergeByItem(m) {
@@ -2759,25 +3515,31 @@ function renderSell() {
   let tabsOn = false, count = '';
   if (S.planOld) {
     box.html = '<p class="needs">Needs a newer Gorgon Notes.</p>';
+    count = NEEDS_NEWER.replace(/\.$/, '').toLowerCase();
     setFoot('w-v-sell', footL, 'The sell plan needs a newer Gorgon Notes');
   } else if (missing) {
     box.html = '<p class="needs">Needs a storage export.</p>';
+    count = 'needs a storage export';
     setFoot('w-v-sell', `Storage export · ${shape('bad', 's13')}<span class="age bad">missing</span>`, esc(fixText('export-storage')));
   } else if (S.loading && !p && !S.errors.plan) {
     box.html = '<div class="loading-bar" style="width:100%;height:120px"></div>';
+    count = 'reading…';
     setFoot('w-v-sell', 'Loading the exports…', '');
   } else if (err) {
     box.html = blockError('the sell plan', S.lastGood.plan);
+    count = "couldn't load";
     setFoot('w-v-sell', footL, footR);
   } else if (noSheet) {
     box.html = '<p class="needs">Nothing to sell yet: no character export, so vendors and the sale price are unknown.</p>';
+    count = 'needs a character export';
     setFoot('w-v-sell', footL, esc(fixText('export-character')));
   } else if (!p.summary?.stacks) {
     box.html = '<p class="empty">Your bags are empty in this export. Nothing to sell.</p>';
+    count = 'bags empty in this export';
     setFoot('w-v-sell', footL, footR);
   } else {
     tabsOn = true;
-    count = p.summary.stops ? ` · ${plural(p.summary.stops, 'stop')}` : '';
+    count = `${plural(p.summary.stops || 0, 'stop')} · ${plural(p.summary.sell?.stacks || 0, 'stack')}${exportsAgeSum('storage-export')}`;
     const lead = sellLead(p);
     const stopsPanel = `<div id="v-sell-stops" role="tabpanel" aria-labelledby="vs-stops" ${vUI.pmode === 'stops' ? '' : 'hidden'}>${lead}${sellByStop(p)}</div>`;
     const itemsPanel = `<div id="v-sell-items" role="tabpanel" aria-labelledby="vs-items" ${vUI.pmode === 'items' ? '' : 'hidden'}>${lead}${sellByItem(p)}</div>`;
@@ -2786,7 +3548,7 @@ function renderSell() {
   }
   $('#vsmode-wrap').hidden = !tabsOn;
   $$('#vsmode [role=tab]').forEach(b => { b.setAttribute('aria-selected', String(b.dataset.m === vUI.pmode)); b.tabIndex = b.dataset.m === vUI.pmode ? 0 : -1; });
-  $('#v-sell-count').textContent = count;
+  deckSum('vendors', 'w-v-sell', count);
 }
 function sellLead(p) {
   const s = p.summary, sell = s.sell, gear = s.gear, keep = s.keep || { stacks: 0 };
@@ -2851,8 +3613,9 @@ function sellByItem(p) {
 
 function stripHtml(v) {
   if (v.unknown) {
-    const n = Math.min(v.used, 40);
-    return `<span class="strip" aria-hidden="true">${'<i></i>'.repeat(n)}<i class="u"></i><i class="u"></i></span>`;
+    // Size unknown: the first 16 used slots as cells, the rest as a count, then two dashed cells for the free slots nobody knows.
+    const n = Math.min(v.used, 16);
+    return `<span class="strip" aria-hidden="true">${'<i></i>'.repeat(n)}${v.used > n ? `<span class="small dim">+${fmt(v.used - n)}</span>` : ''}<i class="u"></i><i class="u"></i></span>`;
   }
   const cap = v.capacity, used = Math.min(v.used, cap);
   if (cap <= 20) return `<span class="strip" aria-hidden="true">${'<i></i>'.repeat(used)}${'<i class="f"></i>'.repeat(Math.max(0, cap - used))}</span>`;
@@ -3047,9 +3810,10 @@ function renderItems() {
   $('#i-loc-wrap').hidden = missing;
   $('#w-t-items .items-grid').style.display = missing ? 'block' : '';
   $('#i-tbl-wrap > .toolbar').hidden = missing;
-  if (missing) { $('#iteminfo').textContent = ''; $('#i-loc').html = ''; $('#chips-items').html = ''; $('#i-tbl').html = '<p class="needs">Needs a storage export.</p>'; return; }
-  if (!d) { $('#i-tbl').html = S.loading ? '<div class="loading-bar" style="width:100%;height:200px"></div>' : '<p class="empty">No storage export picked.</p>'; return; }
+  if (missing) { $('#iteminfo').textContent = ''; $('#i-loc').html = ''; $('#chips-items').html = ''; $('#i-tbl').html = '<p class="needs">Needs a storage export.</p>'; deckSum('storage', 'w-t-items', 'needs a storage export'); return; }
+  if (!d) { $('#i-tbl').html = S.loading ? '<div class="loading-bar" style="width:100%;height:200px"></div>' : '<p class="empty">No storage export picked.</p>'; deckSum('storage', 'w-t-items', S.loading ? 'reading…' : 'no export picked'); return; }
   const rows = itemRows();
+  deckSum('storage', 'w-t-items', `${plural(d.Items.length, 'stack')}${older ? ` · export of ${hhmm(parseUtc(d.Timestamp))}, older, picked` : ''}`);
   const total = rows.reduce((a, r) => a + r.value, 0);
   $('#iteminfo').html = `${plural(d.Items.length, 'stack')} · ${fmt(total)} councils vendor value · exported ${dateTime(parseUtc(d.Timestamp))}${S.itemsFile ? ` · <a href="#files?f=${encodeURIComponent('reports/' + S.itemsFile)}">Open the file</a>` : ''}`;
   // by location
@@ -3179,7 +3943,7 @@ function initStorage() {
 const cUI = {
   sq: '', skSort: (store.json('pgdash.sort', {}).skills) || { key: 'level', dir: 'desc' },
   fq: '', fvSort: (store.json('pgdash.sort', {}).favor) || { key: 'tier', dir: 'desc' }, fvAll: false,
-  stq: '', statAll: false, zeroCur: false, qq: '', tab: 'w-c-skills',
+  stq: '', statAll: false, zeroCur: false, qq: '',
 };
 const STAT_MAP = [
   ['Selling', 'NPC_MOD_MAXSALESVALUE', 'Sale price bonus', 'x'], ['Selling', 'NPC_MOD_TRAININGCOST', 'Training cost', 'x'],
@@ -3253,6 +4017,7 @@ function renderCharacter() {
       else exportStamp('character-export', 'character');
     }
   }
+  if (renderSetup('character') === 'replace') return;
 
   // broken note
   const bw = $('#w-c-broken');
@@ -3290,10 +4055,6 @@ function renderCharacter() {
   }
   setFoot('w-c-glance', ageL(''), footR);
 
-  // phone tabs
-  $$('#ctabs [role=tab]').forEach(b => { const on = b.dataset.w === cUI.tab; b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1; });
-  $$('.cwin').forEach(w => w.classList.toggle('on', w.id === cUI.tab));
-
   // skills
   $('#skillq').disabled = !showData;
   if (missing) {
@@ -3306,10 +4067,13 @@ function renderCharacter() {
 
   // currencies
   const cur = $('#c-cur');
-  if (!showData) cur.html = `<p class="needs">${missing ? 'Needs a character export.' : partial ? 'Not in a partial export.' : ''}</p>`;
+  // Deck summaries while there is nothing to count: the same reason the bodies give.
+  const cSum = showData ? '' : missing ? 'needs a character export' : partial ? 'not in a partial export' : S.loading ? 'reading…' : '';
+  if (!showData) { cur.html = `<p class="needs">${missing ? 'Needs a character export.' : partial ? 'Not in a partial export.' : ''}</p>`; deckSum('character', 'w-c-cur', cSum); }
   else {
     const entries = Object.entries(d.Currencies || {});
     const nz = entries.filter(([, v]) => v).sort((a, b) => (a[0] === 'GOLD' ? -1 : b[0] === 'GOLD' ? 1 : 0));
+    deckSum('character', 'w-c-cur', nz.length ? `${nz[0][0] === 'GOLD' ? `councils ${fmt(nz[0][1])}` : `${esc(curLabel(nz[0][0]))} ${fmt(nz[0][1])}`}${nz.length > 1 ? ` · ${nz.length - 1} more` : ''}` : 'none in this export');
     const zero = entries.filter(([, v]) => !v);
     const show = cUI.zeroCur ? [...nz, ...zero] : nz;
     const colsN = show.length >= 9 ? 3 : show.length >= 4 ? 2 : 1;
@@ -3320,11 +4084,20 @@ function renderCharacter() {
 
   renderStats(d, showData, missing, partial);
   setFoot('w-c-stats', ageL(showData ? `${Object.keys(d.CurrentStats || {}).length} stats` : ''), footR);
+  deckSum('character', 'w-c-stats', showData ? plural(Object.keys(d.CurrentStats || {}).length, 'stat') : cSum);
   renderFavor(d, showData, missing, partial);
   setFoot('w-c-favor', ageL(showData ? `${plural(Object.keys(d.NPCs || {}).length, 'NPC')}` : ''), 'Favor changes as you play; export to update');
+  const soul = showData ? Object.values(d.NPCs || {}).filter(n => n.FavorLevel === 'SoulMates').length : 0;
+  deckSum('character', 'w-c-favor', showData ? `${plural(Object.keys(d.NPCs || {}).length, 'NPC')}${soul ? ` · ${soul} Soul Mates` : ''}` : cSum);
   renderQuests(d, showData, missing, partial);
+  deckSum('character', 'w-c-quests', showData ? fmt((d.ActiveQuests || []).length) : cSum);
   setFoot('w-c-quests', ageL(`names from game data v${esc(cdnVersion())}`), footR);
   if (missing) ['w-c-cur', 'w-c-stats', 'w-c-favor', 'w-c-quests', 'w-c-glance', 'w-c-skills'].forEach(id => setFoot(id, `Character export · ${shape('bad', 's13')}<span class="age bad">missing</span>`, esc(fixText('export-character'))));
+  // The lower deck: Currencies · Active quests · Stats · NPC favor, folded by default (the phone's tab strip is gone);
+  // a missing export keeps their footers; a search in one holds it open.
+  deckKeepFoot(['w-c-cur', 'w-c-quests', 'w-c-stats', 'w-c-favor'], missing);
+  applyDeck('character');
+  deckHold('w-c-quests', !!cUI.qq.trim()); deckHold('w-c-stats', !!cUI.stq.trim()); deckHold('w-c-favor', !!cUI.fq.trim());
 }
 
 function curLabel(k) {
@@ -3423,7 +4196,6 @@ function questName(k) { return S.lookup.quests[k] || pretty(k).replace(/(\D)(\d)
 function renderQuests(d, showData, missing, partial) {
   const box = $('#c-quests');
   $('#questq').disabled = !showData;
-  $('#questcount').textContent = showData ? `(${(d.ActiveQuests || []).length})` : '';
   if (!showData) { box.html = `<p class="needs">${missing ? 'Needs a character export.' : partial ? 'Not in a partial export.' : ''}</p>`; return; }
   const q = cUI.qq.trim().toLowerCase();
   const list = (d.ActiveQuests || []).map(k => ({ k, n: questName(k) })).filter(x => !q || x.n.toLowerCase().includes(q)).sort((a, b) => a.n.localeCompare(b.n));
@@ -3454,10 +4226,7 @@ function initCharacter() {
       cUI.fvSort = { key: k, dir: cur.key === k ? (cur.dir === 'asc' ? 'desc' : 'asc') : (k === 'npc' ? 'asc' : 'desc') };
       saveSort('favor', cUI.fvSort); renderCharacter(); return;
     }
-    const tab = e.target.closest('#ctabs [role=tab]');
-    if (tab) { cUI.tab = tab.dataset.w; renderCharacter(); }
   });
-  tabKeys($('#ctabs'));
   $('#skillq').addEventListener('input', e => { cUI.sq = e.target.value; renderSkills(); });
   $('#ksortm').addEventListener('change', e => { const [k, d] = e.target.value.split(':'); cUI.skSort = { key: k, dir: d }; saveSort('skills', cUI.skSort); renderSkills(); });
   $('#statq').addEventListener('input', e => { cUI.stq = e.target.value; renderCharacter(); });
@@ -3560,8 +4329,9 @@ function renderFiles() {
   const none = S.files && !files.some(f => f.exists !== false);
   const worst = worstExportSource();
   const sev = worst && (worst.severity === 'warn' || worst.severity === 'bad') ? worst.severity : 'ok';
-  // Entering the view fetches the list at once instead of waiting for the round's other endpoints.
-  if (S.view === 'files' && loading && !fUI.listing && PREVIEW.sim !== 'loading') {
+  // Entering the view fetches the list at once instead of waiting for the round's other endpoints. Not while the
+  // server is down: a failed read leaves `loading` true, so this would ask again at once, forever (the round retries).
+  if (S.view === 'files' && loading && !fUI.listing && !S.down && PREVIEW.sim !== 'loading') {
     fUI.listing = true;
     loadFiles().catch(onFetchError).then(() => { fUI.listing = false; if (S.view === 'files') { computeVerdicts(); renderAll(); } });
   }
@@ -3569,7 +4339,7 @@ function renderFiles() {
   if (S.view === 'files') {
     $('#h1').textContent = 'Files';
     $('#title-extra').hidden = true;
-    if (old) { $('#finding').textContent = 'Needs a newer server.py to list the files.'; setStamp('File list', 'not available', 'bad'); }
+    if (old) { $('#finding').textContent = `Needs a newer ${APP_NAME} to list the files.`; setStamp('File list', 'not available', 'bad'); }
     else if (loading) { $('#finding').html = '<span class="dim">Reading Reports/, capacity.json, cache/ and ChatLogs/…</span>'; setStamp('Newest export', '…', 'ok'); }
     else if (none) { $('#finding').textContent = 'No files yet. Exports land in Reports/ once you use the VIP menu, the chat log appears with Save Chat Logs on, and game data is fetched the first time Vendors or Storage loads.'; setStamp('No exports found', 'missing', 'bad'); }
     else if (err) { $('#finding').textContent = "Couldn't load the file list."; setStamp('File list', 'not loaded', 'bad'); }
@@ -3638,7 +4408,7 @@ function renderFilePane({ old, err, loading, none, cur, cdnCur, cap, reps }) {
     ? srcFix(worst.source, worst.ageSec == null ? '' : worst.source === 'storage-export' ? 'After storing:' : 'After selling:')
     : chatV && (chatV.severity === 'warn' || chatV.severity === 'bad') && chatV.fixKey ? srcFix('chat-log')
     : '<span>To refresh: VIP menu → Export Character JSON or Export Storage JSON</span>';
-  if (old) { box.html = '<p class="needs" style="padding:12px">Needs a newer server.py.</p>'; setFoot('w-f-list', footL, 'Files need a newer server.py'); return; }
+  if (old) { box.html = `<p class="needs" style="padding:12px">${esc(NEEDS_NEWER)}</p>`; setFoot('w-f-list', footL, `Files need a newer ${APP_NAME}`); return; }
   if (err) { box.html = `<div style="padding:12px">${blockError('the file list', S.lastGood.files)}</div>`; setFoot('w-f-list', footL, footR); return; }
   if (loading) {
     const bar = w => `<tr class="row"><td class="m1"><span class="loading-bar" style="width:${w}px;height:14px;background:var(--pane-track)"></span><div class="small"><span class="loading-bar" style="width:${w + 60}px;height:12px;background:var(--pane-track)"></span></div></td><td class="num m2"><span class="loading-bar" style="width:48px;height:14px;background:var(--pane-track)"></span></td></tr>`;
@@ -3820,7 +4590,7 @@ function renderContents() {
   contentsFoot(f, st);
 }
 function contentsFoot(f, st) {
-  if (S.filesOld) return setFoot('w-f-view', f ? esc(f.name) : 'No file open', 'Files need a newer server.py');
+  if (S.filesOld) return setFoot('w-f-view', f ? esc(f.name) : 'No file open', `Files need a newer ${APP_NAME}`);
   if (!f) return setFoot('w-f-view', 'No file open', '');
   const row = f.row || {};
   const size = f.bytes != null ? fmtBytes(f.bytes) : '';
@@ -4417,7 +5187,7 @@ function filesChecked(before) {
   const n = fileRows().filter(f => f.exists !== false).length;
   const nw = exportFiles().filter(f => f.valid && !f.partial).sort((a, b) => (parseIso(b.at) || 0) - (parseIso(a.at) || 0))[0];
   const at = nw ? parseIso(nw.at) : null;
-  if (S.filesOld) { sysLine('warn', 'Files need a newer server.py.'); return; }
+  if (S.filesOld) { sysLine('warn', `Files need a newer ${APP_NAME}.`); return; }
   if (after !== before) { sysLine('status', `${plural(n, 'file')} listed.${nw ? ` Newest export: ${nw.name}, ${at ? (isToday(at) ? hhmm(at) : dateTime(at)) : '?'}.` : ''}`); flashView(); return; }
   const worst = worstExportSource();
   const since = at ? (isToday(at) ? hhmm(at) : dateTime(at)) : '?';
@@ -4824,7 +5594,7 @@ let popOpener = null;
 function openPop(id, opener) {
   closePops();
   const pop = $('#' + id);
-  if (id === 'rempanel') renderRemPanel(); else renderAbout();
+  if (id === 'rempanel') renderRemPanel(); else if (id === 'morepop') renderMore(); else renderAbout();
   pop.hidden = false;
   popOpener = opener || null;
   // On a phone the pop is a full-screen sheet: make it modal so focus can't wander under it.
@@ -4840,7 +5610,7 @@ function openPop(id, opener) {
       pop.style.left = Math.max(16, r.left - 360 - 8) + 'px';
       pop.style.top = Math.max(16, Math.min(r.bottom - 300, window.innerHeight - pop.offsetHeight - 16)) + 'px';
     }
-    else { pop.style.left = Math.max(16, Math.min(window.innerWidth - 376, r.right - 360)) + 'px'; pop.style.top = (r.bottom + 6) + 'px'; }
+    else if (id === 'rempanel') { pop.style.left = Math.max(16, Math.min(window.innerWidth - 376, r.right - 360)) + 'px'; pop.style.top = (r.bottom + 6) + 'px'; }
   }
   pop.querySelector('button, input, a')?.focus();
 }
@@ -4859,7 +5629,7 @@ function staleServer() {
   if (PAGE_BUILD !== 'dev' && a.source === 'build' && a.version !== PAGE_BUILD) return a.version;
   return null;
 }
-const STALE_FIX = `Close every ${APP_NAME} window, wait a few seconds, then start ${APP_NAME} again. If it comes back the same, end the python.exe under ${APP_NAME} in Task Manager first.`;
+const STALE_FIX = `Close every ${APP_NAME} window, wait a few seconds, then start ${APP_NAME} again. If it comes back the same, end the ${APP_NAME} process in Task Manager first.`;
 function versionLine() {
   const stale = staleServer();
   if (stale) return `<strong>This window is ${esc(PAGE_BUILD === 'dev' ? 'newer' : PAGE_BUILD)} but the server behind it is still ${esc(stale)}.</strong> The update is not finished. ${esc(STALE_FIX)}`;
@@ -4874,21 +5644,54 @@ function versionLine() {
   } else out += ' The newest release could not be checked' + (a.error ? ` (${esc(a.error)})` : '') + '.';
   return `${out} <a href="https://github.com/${esc(a.repo || 'robaxelsen/gorgon-notes')}/releases" target="_blank" rel="noopener">Releases</a>`;
 }
+/* The view that holds a Setup row, for About's "Show the Setup checklist" link (`#<view>?setup=1`, A §1.1). */
+const SETUP_VIEW = { 'chat-log': 'session', 'combat-logging': 'combat', 'character-export': 'character', 'storage-export': 'storage' };
+function aboutSetup() {
+  if (!S.health) return `<p>Not checked yet. <a href="#session?setup=1">Show the Setup checklist.</a></p>`;
+  const c = setupCounts();
+  if (!c.undone.length) return `<p>${c.done} of ${c.total} done. <a href="#session?setup=1">Show the Setup checklist again</a>, for a new computer or a friend.</p>`;
+  const src = (SETUP_STEPS.find(([, t]) => t === c.undone[0]) || [])[0];
+  return `<p>${c.done} of ${c.total} done · <a href="#${SETUP_VIEW[src] || 'session'}?setup=1">Show the Setup checklist.</a></p>
+    <p class="small dim" style="margin-top:4px">Still to do: ${c.undone.map(esc).join(', ')}.</p>`;
+}
+/* The two rail marks, explained once (Components → Navigation rail). */
+function markLegend() {
+  return `<div class="legend">${shape('warn')}<span>something to do on that page (a number is getting old)</span>${shape('bad')}<span>that page has nothing to read (a file that was there is gone, or broken)</span></div>`;
+}
+const THEME_SEG = `<div class="seg" role="radiogroup" aria-label="Theme" data-themectl><button type="button" role="radio" data-v="auto">Auto</button><button type="button" role="radio" data-v="dark">Dark</button><button type="button" role="radio" data-v="daylight">Daylight</button></div>`;
 function renderAbout() {
   const ver = S.health?.cdnVersion || 'unknown';
   const appv = S.health?.app?.version;
-  const plog = S.health ? (S.verdicts.find(v => v.source === 'player-log')?.severity === 'ok' ? 'Player.log: live inventory events found' : 'Player.log: no live inventory events on Mac') : 'Player.log: unknown';
+  const plog = S.health ? (S.verdicts.find(v => v.source === 'player-log')?.severity === 'ok' ? "Live game events from the game's own log" : "Live game events from the game's own log (none on Mac)") : 'Live game events: unknown until the first check';
   $('#aboutpop').innerHTML = `<header class="win-bar"><h2 id="about-title">${esc(APP_NAME)}${appv && S.health?.app?.source !== 'dev' ? ` <span class="count">${esc(appv)}</span>` : ''}</h2><div class="tools"><button type="button" class="linkbtn" data-rem="close">Close</button></div></header>
-    <section><p>${esc(APP_NAME)} is ${esc(FAN_LINE)}. It reads the files the game already writes on this computer.</p><p class="small dim" style="margin-top:6px">${versionLine()}</p></section>
+    <section><p>${esc(APP_NAME)} is ${esc(FAN_LINE)}. It reads the files the game already writes on this computer and never touches the game.</p><p class="small dim" style="margin-top:6px">${versionLine()}</p></section>
+    <section><h3>Setup</h3>${aboutSetup()}</section>
     <section><h3>Where the data comes from</h3><ul>
-      <li>VIP exports in Reports/ (Character and Storage JSON) · <a href="#files" data-rem="close">Inspect the files</a></li>
-      <li>Chat logs in ChatLogs/ (Settings → V.I.P. → Save Chat Logs)</li>
+      <li>VIP exports (Character and Storage JSON) · <a href="#files">Inspect the files</a></li>
+      <li>Chat logs (Settings → V.I.P. → Save Chat Logs)</li>
       <li>Game data from cdn.projectgorgon.com, version ${esc(ver)}</li>
-      <li>GorgonSettings.txt for logging settings</li>
+      <li>The game's settings file, for the logging switches</li>
       <li>${esc(plog)}</li></ul></section>
-    <section class="about-theme"><h3>Theme</h3><div class="seg" role="radiogroup" aria-label="Theme" data-themectl>
-      <button type="button" role="radio" data-v="auto">Auto</button><button type="button" role="radio" data-v="dark">Dark</button><button type="button" role="radio" data-v="daylight">Daylight</button></div></section>
+    <section><h3>Marks on the rail</h3>${markLegend()}</section>
+    <section class="about-theme"><h3>Theme</h3>${THEME_SEG}</section>
     <footer class="win-foot"><span class="fl">Item art from the game's public CDN.</span><span class="fr"></span></footer>`;
+  syncTheme();
+}
+/* The phone bar's More sheet (A §2.2): the Reference views with their purpose and mark, the two tools, Theme, the fan line.
+   Rows are real links (closing the sheet on the way), About is a button that opens the About popover; never a hash. */
+const MORE_ROWS = [['character', 'Character', 'skills, favor, quests'], ['teleports', 'Teleports', 'machine codes, from the wiki'], ['statehelm', 'Statehelm', 'weekly gifts to trainers']];
+function renderMore() {
+  const icon = sel => document.querySelector(sel)?.outerHTML || '';
+  const mark = view => document.querySelector(`.rail [data-mark="${view}"]`)?.innerHTML || '';
+  const appv = S.health?.app?.version;
+  const row = (view, name, sub) => `<li><a href="#${view}" data-more-view="${view}" ${S.view === view ? 'aria-current="page"' : ''}>${icon(`.rail [data-view="${view}"] svg`)}${name}<span class="sub">${esc(sub)}<span class="mark">${mark(view)}</span></span></a></li>`;
+  $('#morepop').innerHTML = `<header class="win-bar"><h2 id="more-title">More</h2><div class="tools"><button type="button" class="linkbtn" data-rem="close">Close</button></div></header>
+    <section><h3>Reference</h3><ul class="mlist">${MORE_ROWS.map(r => row(...r)).join('')}</ul></section>
+    <section><h3>Tools</h3><ul class="mlist">
+      ${row('files', 'Files', 'the files the app reads')}
+      <li><button type="button" data-more-about>${icon('.brand svg')}About<span class="sub">fan-made${appv && S.health?.app?.source !== 'dev' ? ` · ${esc(appv)}` : ''}</span></button></li></ul></section>
+    <section><h3>Theme</h3>${THEME_SEG}</section>
+    <footer class="win-foot"><span class="fl">${esc(FAN_LINE)}</span><span class="fr"></span></footer>`;
   syncTheme();
 }
 
@@ -4898,6 +5701,7 @@ function initReminders() {
   // Mac app: the native shim re-reads the notification permission on focus and fires this when it changed.
   window.addEventListener('gn-permission', () => { if (!$('#rempanel').hidden) renderRemPanel(); });
   $('#aboutbtn').addEventListener('click', e => { $('#aboutpop').hidden ? openPop('aboutpop', e.currentTarget) : closePops(); });
+  $('#morebtn').addEventListener('click', e => { $('#morepop').hidden ? openPop('morepop', e.currentTarget) : closePops(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.querySelector('.pop:not([hidden])')) { e.stopPropagation(); closePops(); } }, true);
   // Phone sheet is modal: Tab wraps from the last control to the first (and back) without passing through <body>.
   document.addEventListener('keydown', e => {
@@ -4912,7 +5716,7 @@ function initReminders() {
   });
   document.addEventListener('mousedown', e => {
     if (!document.querySelector('.pop:not([hidden])')) return;
-    if (e.target.closest('.pop, #remindbtn, #aboutbtn, #mremind')) return;
+    if (e.target.closest('.pop, #remindbtn, #aboutbtn, #mremind, #morebtn')) return;
     closePops();
   });
   $('#rempanel').addEventListener('click', async e => {
@@ -4941,7 +5745,12 @@ function initReminders() {
     remSave(r);
     if (t.dataset.rem === 'quiet') { renderRemPanel(); $('#rempanel [data-rem="quiet"]')?.focus(); }
   });
-  $('#aboutpop').addEventListener('click', e => { if (e.target.closest('[data-rem="close"]')) closePops(); });
+  // Close, or any in-page link (Inspect the files, the Setup checklist): the popover goes and the hash routes.
+  $('#aboutpop').addEventListener('click', e => { if (e.target.closest('[data-rem="close"], a[href^="#"]')) closePops(); });
+  $('#morepop').addEventListener('click', e => {
+    if (e.target.closest('[data-rem="close"], [data-more-view]')) closePops();        // a row is a real link: close, then the hash routes
+    else if (e.target.closest('[data-more-about]')) openPop('aboutpop', $('#morebtn'));
+  });
   // Reminder line buttons (system line).
   $('#sysline').addEventListener('click', e => {
     const s = e.target.closest('[data-rem-snooze]'), m = e.target.closest('[data-rem-mute]');
@@ -4987,7 +5796,7 @@ async function refreshTeleports() {
   const before = S.teleports?.revid;
   await loadTeleports(true);
   const t = S.teleports;
-  if (tpUI.err?.old) return sysLine('error', 'Teleport codes need a newer server.py.');
+  if (tpUI.err?.old) return sysLine('error', `Teleport codes need a newer ${APP_NAME}.`);
   if (!t) return sysLine('error', "The wiki didn't answer and there's no saved copy yet. Try again when you're online.");
   if (t.error) return sysLine('warn', `The wiki didn't answer. Showing the copy fetched ${dateTime(parseIso(t.fetchedAt))}. ${TP_FIX}`);
   const c = tpCounts(t);
@@ -5023,7 +5832,7 @@ function tpFootHtml() {
   const rot = 'codes rotate after major updates';
   const refresh = `<button type="button" class="linkbtn" data-tprefresh="1"${tpUI.busy ? ' disabled' : ''}>${tpUI.busy ? 'Refreshing…' : 'Refresh'}</button>`;
   const wiki = `<a href="${TP_WIKI}" target="_blank" rel="noopener">check the wiki</a>`;
-  if (tpUI.err?.old) return ['Project: Gorgon wiki', 'Teleport codes need a newer server.py'];
+  if (tpUI.err?.old) return ['Project: Gorgon wiki', `Teleport codes need a newer ${APP_NAME}`];
   if (!t) return tpUI.busy ? ['Project: Gorgon wiki · reading…', ''] : [`Project: Gorgon wiki · ${shape('bad', 's13')}<span class="age bad">not reached</span> · no saved copy`, `${refresh} · or ${wiki}`];
   if (t.error) return [`Project: Gorgon wiki · ${shape('warn', 's13')}<span class="age warn">not reachable</span> · showing the copy ${fetched}${conf ? ` · confirmed there as of ${esc(conf)}` : ''} · ${rot}`, `${refresh} · or ${wiki}`];
   if (v.sev === 'warn') return [`Project: Gorgon wiki · ${fetched} · ${shape('warn', 's13')}<span class="age warn">${ageWord(v.age)} old</span>${conf ? ` · confirmed there as of ${esc(conf)}` : ''} · ${rot}`, refresh];
@@ -5032,12 +5841,12 @@ function tpFootHtml() {
 /* Margin entry (Where these numbers come from): the wiki, its age, and the fix. Not a health verdict: the favicon and the rail never change for it. */
 function teleportNote() {
   const t = S.teleports, v = tpVerdict();
-  if (tpUI.err?.old) return `<div class="note">${shape('bad')}<div class="nt">Project: Gorgon wiki</div><div class="ev">Teleport codes need a newer server.py.</div></div>`;
+  if (tpUI.err?.old) return `<div class="note">${shape('bad')}<div class="nt">Project: Gorgon wiki</div><div class="ev">Teleport codes need a newer ${esc(APP_NAME)}.</div></div>`;
   if (!t && tpUI.busy) return `<div class="note">${shape('info')}<div class="nt">Project: Gorgon wiki</div><div class="ev">Reading the Teleportation Machine page…</div></div>`;
   const conf = tpConfirmed(t);
   const age = v.at ? ` · <span class="age ${v.sev === 'warn' ? 'warn' : ''}">${ago(v.at)}</span>` : v.sev === 'bad' ? ` · <span class="age bad">missing</span>` : '';
   let ev, fx;
-  if (!t && S.down) { ev = "The dashboard server isn't answering, so the wiki's Teleportation Machine page hasn't been fetched."; fx = 'Start it again: python3 server.py; the codes load when it answers.'; }
+  if (!t && S.down) { ev = "The dashboard server isn't answering, so the wiki's Teleportation Machine page hasn't been fetched."; fx = `${fixText('server')} The codes load when it answers.`; }
   else if (!t) { ev = "The wiki didn't answer and there's no saved copy of its Teleportation Machine page yet."; fx = 'When you\'re online: Refresh in any window here, or open the wiki page.'; }
   else if (t.error) { ev = `The wiki didn't answer just now, so this is the copy fetched ${dateTime(v.at)}.${conf ? ` The page said its numbers were confirmed as of ${conf}.` : ''}`; fx = TP_FIX; }
   else if (v.sev === 'warn') { ev = `The copy of the wiki page is ${ageLong(v.age)} old.${conf ? ` The page said its numbers were confirmed as of ${conf}.` : ''}`; fx = TP_FIX; }
@@ -5083,9 +5892,9 @@ function renderTeleports() {
   if (S.view === 'teleports') {
     $('#h1').textContent = 'Teleports';
     $('#title-extra').hidden = true;
-    if (old) { $('#finding').textContent = 'Needs a newer server.py to read the wiki.'; setStamp('Teleport codes', 'not available', 'bad'); }
+    if (old) { $('#finding').textContent = `Needs a newer ${APP_NAME} to read the wiki.`; setStamp('Teleport codes', 'not available', 'bad'); }
     else if (loading) { $('#finding').html = '<span class="dim">Reading the Teleportation Machine page on the wiki…</span>'; setStamp('From the Project: Gorgon wiki', '…', 'ok'); }
-    else if (down) { $('#finding').textContent = "The dashboard server isn't answering, so the wiki's code list hasn't been fetched. Start it again: python3 server.py; the codes load when it answers."; setStamp('No code list yet', `as of ${hhmm(S.downSince || NOW())}`, 'bad'); }
+    else if (down) { $('#finding').textContent = `The dashboard server isn't answering, so the wiki's code list hasn't been fetched. ${fixText('server')} The codes load when it answers.`; setStamp('No code list yet', `as of ${hhmm(S.downSince || NOW())}`, 'bad'); }
     else if (!t) { $('#finding').textContent = "Couldn't reach the wiki, and there's no saved copy of its code list yet. Refresh when you're online."; setStamp('No code list yet', 'missing', 'bad'); }
     else {
       let f = `<em class="n">${fmt(c.codes)}</em> codes for <em class="n">${fmt(c.landmarks)}</em> landmarks in <em class="n">${fmt(c.zones)}</em> zones, from the wiki${conf ? `, confirmed there as of ${esc(conf)}` : ''}.`;
@@ -5103,7 +5912,7 @@ function renderTeleports() {
   $('#tp-count').textContent = t && t.zones.length ? `${fmt(c.codes)} codes` : '';
   // State line in the first window: loading, error, empty.
   const st = $('#tp-state');
-  if (old) st.html = '<p class="empty">Needs a newer server.py.</p>';
+  if (old) st.html = `<p class="empty">${esc(NEEDS_NEWER)}</p>`;
   else if (loading) st.html = '<p><span class="loading-bar"></span></p>';
   else if (down) st.html = `<p class="txt-bad" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${shape('bad')}<span>The dashboard server isn't answering, so the wiki page hasn't been asked for.</span><button type="button" class="btn" data-tpretry="1">Retry</button> <a class="btn" href="${TP_WIKI}" target="_blank" rel="noopener">Open the wiki page</a></p>`;
   else if (!t) st.html = `<p class="txt-bad" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${shape('bad')}<span>Couldn't read the wiki page.${tpUI.err && !isNetworkError(tpUI.err) ? ` ${esc(tpUI.err.message)}` : ''}</span><button type="button" class="btn" data-tpretry="1">Retry</button> <a class="btn" href="${TP_WIKI}" target="_blank" rel="noopener">Open the wiki page</a></p>`;
@@ -5113,7 +5922,8 @@ function renderTeleports() {
   const zones = t?.zones || [];
   const here = tpHereZone(zones);
   const ordered = [...zones].sort((a, b) => (b.zone === here) - (a.zone === here));
-  if (!tpUI.open && zones.length) tpUI.open = new Set(here ? [here] : ordered.slice(0, 3).map(z => z.zone));
+  // Open by default: the zone you are in, nothing else (every other zone is a folded bar with its count); not persisted.
+  if (!tpUI.open && zones.length) tpUI.open = new Set(here ? [here] : []);
   let shownZones = 0, shownRows = 0;
   const html = ordered.map(z => {
     const rows = z.landmarks.filter(l => tpMatch(z, l, q));
@@ -5126,14 +5936,14 @@ function renderTeleports() {
       ? rows.map(l => `<div class="tprow"><div class="tpname">${esc(l.name)}${l.note ? `<span class="sub">${esc(l.note)}</span>` : ''}</div><div class="tpcodes">${l.codes.map(cd => `<button type="button" class="tpcode" data-tpcode="${esc(cd)}" title="Copy ${esc(cd)}" aria-label="Copy ${esc(cd)}, ${esc(l.name)}">${esc(cd)}</button>`).join('')}</div></div>`).join('')
       : `<p class="tpzone-note">${esc(z.note ? `No codes: ${z.note}` : 'No codes listed on the wiki for this zone.')}</p>`;
     const count = rows.length ? `${plural(rows.length, 'landmark')} · ${plural(codes, 'code')}` : 'no codes';
-    const [fl, fr] = tpFootHtml();
+    // One footer per view (on the Teleportation Machine window): zone windows have none, and no Refresh of their own.
     return `<section class="win${open ? '' : ' folded'}" id="${id}" aria-labelledby="t-${id}">
-      <header class="win-bar"><h2 id="t-${id}"><button type="button" class="tpfold" data-tpzone="${esc(z.zone)}" aria-expanded="${open}" aria-controls="b-${id}">${TRI(open)}<span>${esc(z.zone)}</span></button> <span class="count">${count}</span>${z.zone === here ? ' <span class="tag">you\'re here</span>' : ''}</h2></header>
+      <header class="win-bar"><h2 id="t-${id}"><button type="button" class="foldh" data-tpzone="${esc(z.zone)}" aria-expanded="${open}" aria-controls="b-${id}">${TRI(open)}<span class="t">${esc(z.zone)}</span></button></h2><span class="count sum">${count}${z.zone === here ? ' · <span class="tag">you\'re here</span>' : ''}</span></header>
       <div class="win-body" id="b-${id}">${body}</div>
-      <footer class="win-foot"><span class="fl">${fl}</span><span class="fr">${fr}</span></footer>
     </section>`;
   }).join('');
-  $('#tp-zones').html = html;
+  const deckH = zones.length > 1 && !q ? `<div class="deck-h"><span>Other zones</span><button type="button" class="linkbtn" data-deckall="open" aria-label="Open all of Other zones">Open all</button> · <button type="button" class="linkbtn" data-deckall="fold" aria-label="Fold all of Other zones">Fold all</button></div>` : '';
+  $('#tp-zones').html = deckH + html;
   const note = $('#tpq-note');
   if (q && t) {
     note.hidden = false;
@@ -5155,6 +5965,15 @@ function initTeleports() {
       tpUI.open.has(z) ? tpUI.open.delete(z) : tpUI.open.add(z);
       renderTeleports();
       $(`#v-teleports [data-tpzone="${CSS.escape(z)}"]`)?.focus();
+      return;
+    }
+    // Open all / Fold all for the zones: the state is tpUI.open (not pgdash.open), so the generic deck handler must not run.
+    const all = e.target.closest('[data-deckall]');
+    if (all) {
+      e.stopPropagation();
+      tpUI.open = new Set(all.dataset.deckall === 'open' ? (S.teleports?.zones || []).map(z => z.zone) : []);
+      renderTeleports();
+      $(`#v-teleports [data-deckall="${all.dataset.deckall}"]`)?.focus();
       return;
     }
     if (e.target.closest('[data-tprefresh]')) { e.stopPropagation(); refreshTeleports(); return; }
@@ -5199,7 +6018,7 @@ async function saveStatehelm(body, what) {
       if (what) sysLine('status', what(d));
     } catch (e) {
       onFetchError(e);
-      sysLine('error', S.down ? "The dashboard server isn't answering, so that wasn't saved. Start it again: python3 server.py" : `Couldn't save that: ${e.message}`);
+      sysLine('error', S.down ? `The dashboard server isn't answering, so that wasn't saved. ${fixText('server')}` : `Couldn't save that: ${e.message}`);
     }
     shUI.saving = null;
     if (S.view === 'statehelm') renderAll();
@@ -5210,8 +6029,8 @@ async function refreshStatehelm() {
   if (shUI.inflight) await shUI.inflight;
   await loadStatehelm();
   const d = S.statehelm;
-  if (shUI.err?.old) return sysLine('error', 'The Statehelm view needs a newer server.py.');
-  if (!d) return sysLine('error', S.down ? "The dashboard server isn't answering. Start it again: python3 server.py" : `Couldn't read the trainers: ${shUI.err?.message || 'no answer'}`);
+  if (shUI.err?.old) return sysLine('error', `The Statehelm view needs a newer ${APP_NAME}.`);
+  if (!d) return sysLine('error', S.down ? `The dashboard server isn't answering. ${fixText('server')}` : `Couldn't read the trainers: ${shUI.err?.message || 'no answer'}`);
   const c = shCounts(d);
   const logs = d.week?.logs?.length || 0;
   sysLine('status', `${plural(c.logged, 'gift')} logged this week in ${plural(logs, 'chat log')}${d.sources?.storage ? `, items from the storage export of ${hhmm(parseUtc(d.sources.storage.timestamp))}` : ', no storage export to match items against'}. ${plural(c.left, 'gift')} left across ${plural(c.picked, 'picked trainer')}.`);
@@ -5249,7 +6068,7 @@ function shFootHtml() {
   const src = sevOf('storage-export') === 'bad' ? 'storage-export' : ['storage-export', 'character-export'].find(k => ['warn', 'bad'].includes(sevOf(k))) || 'storage-export';
   const missing = sevOf(src) === 'bad' && V(src)?.ageSec == null;
   const left = `${srcAge('storage-export', 'Storage export')} · ${srcAge('character-export', 'Character export')} · ${chatLive()}`;
-  const right = S.statehelmOld ? 'Statehelm needs a newer server.py' : srcFix(src, missing ? '' : src === 'storage-export' ? 'After gifting or storing:' : 'After gifting:');
+  const right = S.statehelmOld ? `Statehelm needs a newer ${APP_NAME}` : srcFix(src, missing ? '' : src === 'storage-export' ? 'After gifting or storing:' : 'After gifting:');
   return [left, right];
 }
 function shTrainerHtml(t, d) {
@@ -5277,7 +6096,7 @@ function shTrainerHtml(t, d) {
   }
   const unchecked = t.unchecked.length ? `<p class="small dim">${esc(joinNames(t.unchecked))} can't be checked from the export.</p>` : '';
   return `<section class="shtrainer${done ? ' done' : ''}" id="${id}" aria-labelledby="t-${id}">
-    <h3 id="t-${id}"><button type="button" class="tpfold" data-shfold="${esc(t.npc)}" aria-expanded="${!folded}" aria-controls="b-${id}">${TRI(!folded)}<span>${esc(t.name)}</span></button> <span class="small dim">${esc(skills)}</span> <span class="small">· ${shFavor(t)}</span> ${prodigy}</h3>
+    <h3 id="t-${id}"><button type="button" class="foldh" data-shfold="${esc(t.npc)}" aria-expanded="${!folded}" aria-controls="b-${id}">${TRI(!folded)}<span class="t">${esc(t.name)}</span></button> <span class="small dim">${esc(skills)}</span> <span class="small">· ${shFavor(t)}</span> ${prodigy}</h3>
     ${counter}
     <div id="b-${id}" ${folded ? 'hidden' : ''}>
       <p class="small dim shprefs">${esc(shPrefText(t))}${items.length ? ` · ${plural(items.length, 'item')} you hold` : ''}</p>
@@ -5302,9 +6121,9 @@ function renderStatehelm() {
   if (S.view === 'statehelm') {
     $('#h1').textContent = 'Statehelm';
     $('#title-extra').hidden = true;
-    if (old) { $('#finding').textContent = 'Needs a newer server.py to read the trainers.'; setStamp('Statehelm trainers', 'not available', 'bad'); }
+    if (old) { $('#finding').textContent = `Needs a newer ${APP_NAME} to read the trainers.`; setStamp('Statehelm trainers', 'not available', 'bad'); }
     else if (loading) { $('#finding').html = '<span class="dim">Reading the trainers, your exports and this week\'s chat log…</span>'; setStamp('From your exports and the chat log', '…', 'ok'); }
-    else if (down) { $('#finding').textContent = "The dashboard server isn't answering, so the trainers haven't been read. Start it again: python3 server.py"; setStamp('Statehelm trainers', `as of ${hhmm(S.downSince || NOW())}`, 'bad'); }
+    else if (down) { $('#finding').textContent = `The dashboard server isn't answering, so the trainers haven't been read. ${fixText('server')}`; setStamp('Statehelm trainers', `as of ${hhmm(S.downSince || NOW())}`, 'bad'); }
     else if (!d) { $('#finding').textContent = `Couldn't read the trainers. ${shUI.err?.message || ''}`.trim(); setStamp('Statehelm trainers', 'not read', 'bad'); }
     else {
       let f;
@@ -5329,7 +6148,7 @@ function renderStatehelm() {
   }
   // Your trainers
   const mine = $('#sh-mine');
-  if (old) mine.html = '<p class="empty">Needs a newer server.py.</p>';
+  if (old) mine.html = `<p class="empty">${esc(NEEDS_NEWER)}</p>`;
   else if (loading) mine.html = '<p><span class="loading-bar"></span></p>';
   else if (down) mine.html = `<p class="txt-bad" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${shape('bad')}<span>The dashboard server isn't answering.</span><button type="button" class="btn" data-shretry="1">Retry</button></p>`;
   else if (!d) mine.html = `<p class="txt-bad" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${shape('bad')}<span>Couldn't read the trainers.${shUI.err && !isNetworkError(shUI.err) ? ` ${esc(shUI.err.message)}` : ''}</span><button type="button" class="btn" data-shretry="1">Retry</button></p>`;
@@ -5355,11 +6174,16 @@ function renderStatehelm() {
     const note = $('#shq-note');
     if (q) { note.hidden = false; note.textContent = rows ? `${plural(list.length, 'trainer')} match "${shUI.q.trim()}".` : ''; } else { note.hidden = true; note.textContent = ''; }
   }
-  $('#sh-pick-count').textContent = d ? `${fmt(c.trainers)} trainers` : '';
+  deckSum('statehelm', 'w-sh-pick', d ? `${plural(c.trainers, 'trainer')} · ${fmt(c.picked)} picked` : loading ? 'reading…' : '');
+  // Footers on At a glance and Pick trainers only (one provenance line per view for the exports; Your trainers has none).
   const [fl, fr] = shFootHtml();
   setFoot('w-sh-glance', fl, fr);
-  setFoot('w-sh-mine', fl, fr);
-  setFoot('w-sh-pick', d ? `Game data v${esc(cdnVersion())} · ${plural(c.trainers, 'trainer')} in Statehelm · picks saved in settings.json` : 'Game data', `<a href="${SH_WIKI}" target="_blank" rel="noopener">Prodigy Potential on the wiki</a>`);
+  setFoot('w-sh-pick', d ? `Game data v${esc(cdnVersion())} · ${plural(c.trainers, 'trainer')} in Statehelm · picks saved by ${esc(APP_NAME)}` : 'Game data', `<a href="${SH_WIKI}" target="_blank" rel="noopener">Prodigy Potential on the wiki</a>`);
+  // Pick trainers stays open while nothing is picked and folds once something is; the default is consulted only until
+  // the player folds or opens it (pgdash.open['deck-statehelm']), and a search holds it open.
+  deckDefaults.statehelm = d && c.picked ? [] : ['w-sh-pick'];
+  applyDeck('statehelm');
+  deckHold('w-sh-pick', !!q);
 }
 function initStatehelm() {
   $('#shq').addEventListener('input', e => { shUI.q = e.target.value; renderStatehelm(); });
@@ -5398,6 +6222,58 @@ function initStatehelm() {
 /* ---------- shared helpers ---------- */
 function saveSort(table, sort) { const all = store.json('pgdash.sort', {}); all[table] = sort; store.set('pgdash.sort', all); }
 function saveOpen(table, open) { const all = store.json('pgdash.open', {}); all[table] = open; store.set('pgdash.open', all); }
+
+/* ---------- lower deck: folded windows (A-FINAL §3, SPEC §2.6) ----------
+   A view's lower-deck windows fold to their title bar. Open state: pgdash.open['deck-<view>'] = array of open window ids;
+   absent → deckDefaults[view]. The fold control is the .foldh button inside the h2 (static markup in index.html; Teleports and
+   Statehelm write theirs); applyDeck() sets .folded + aria-expanded from the state; one delegated #main listener handles
+   [data-deck] (toggle one) and [data-deckall] ("open" | "fold"). */
+const deckDefaults = {
+  session: ['w-s-skill', 'w-s-what'],      // At a glance and Experience are deck 1 (never fold); Here opens itself (P5)
+  combat: ['w-d-party', 'w-d-break'],      // Fights is deck 1; Private room and Discord start folded
+  vendors: [],                             // Where to sell · What they buy · Sell
+  storage: [],                             // Where there's room · Stacks to merge · Items
+  character: [],                           // Currencies · Active quests · Stats · NPC favor
+  teleports: [],                           // every zone but the one you are in (its own key stays)
+  statehelm: ['w-sh-pick'],                // Pick trainers stays open while nothing is picked
+};
+const deckMem = {};  // this visit's fold state, read first: a preview (and a browser with storage blocked) never writes pgdash.open
+function deckOpen(view) {
+  if (deckMem[view]) return deckMem[view].slice();
+  const stored = store.json('pgdash.open', {})[`deck-${view}`];
+  return Array.isArray(stored) ? stored.slice() : (deckDefaults[view] || []).slice();
+}
+function deckIs(view, id) { return deckOpen(view).includes(id); }
+function deckSet(view, id, open) {
+  const ids = new Set(deckOpen(view));
+  if (open) ids.add(id); else ids.delete(id);
+  deckMem[view] = [...ids];
+  saveOpen(`deck-${view}`, [...ids]);
+}
+function deckAll(view, open) {
+  const ids = open ? [...new Set($$(`#v-${view} [data-deck]`).map(b => b.dataset.deck))] : [];
+  deckMem[view] = ids;
+  saveOpen(`deck-${view}`, ids);
+}
+function applyDeck(view) {
+  for (const b of $$(`#v-${view} [data-deck]`)) {
+    const id = b.dataset.deck, open = deckIs(view, id);
+    b.setAttribute('aria-expanded', open ? 'true' : 'false');
+    const tri = b.querySelector('.tri'); if (tri) tri.innerHTML = CARET(open ? 'down' : 'right');
+    const win = document.getElementById(id); if (win) win.classList.toggle('folded', !open);
+  }
+}
+function initDeck() {
+  $('#main').addEventListener('click', e => {
+    const all = e.target.closest('[data-deckall]');
+    if (all) { deckAll(S.view, all.dataset.deckall === 'open'); applyDeck(S.view); renderView(); return; }
+    const b = e.target.closest('[data-deck]');
+    if (!b) return;
+    const id = b.dataset.deck;
+    deckSet(S.view, id, !deckIs(S.view, id)); applyDeck(S.view); renderView();
+    $(`#v-${S.view} [data-deck="${CSS.escape(id)}"]`)?.focus({ preventScroll: true });
+  });
+}
 function tabKeys(list) {
   list.addEventListener('keydown', e => {
     if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
@@ -5487,12 +6363,12 @@ function renderShell() {
   const h = S.health;
   const exporters = [...new Set((S.reports || []).map(r => r.character).filter(c => c && c !== '???'))];
   const sel = $('#charsel-shell');
-  if (exporters.length > 1) {
+  if (exporters.length > 1 && PREVIEW.sim !== 'fresh') {
     sel.hidden = false;
     sel.html = exporters.map(c => `<option ${c === S.character ? 'selected' : ''}>${esc(c)}</option>`).join('');
   } else sel.hidden = true;
   const srv = s.server || h?.server || '';
-  { const nm = S.character || s.character; $('#who').html = nm ? `${esc(nm)}${srv ? `<span class="srv"> · ${esc(srv)}</span>` : ''}` : '…'; }
+  { const nm = PREVIEW.sim === 'fresh' ? null : (S.character || s.character); $('#who').html = nm ? `${esc(nm)}${srv ? `<span class="srv"> · ${esc(srv)}</span>` : ''}` : (S.loading && !S.session && !h) ? '…' : 'No character yet'; }
   $('.scope').classList.toggle('has-sel', exporters.length > 1);
   const area = V('game')?.unknown ? null : s.currentArea || h?.game?.area;
   let where = '';
@@ -5501,13 +6377,18 @@ function renderShell() {
     if (!hasState) where = `<b>${esc(area)}</b>`;
     else if (loggedIn()) where = `<b>${esc(area)}</b> (logged in)`;
     else { const lo = parseIso(s.loggedOutAt || h?.game?.loggedOutAt); where = `<b>${esc(area)}</b> (logged out${lo ? ' ' + (isToday(lo) ? hhmm(lo) : dateTime(lo)) : ''})`; }
-  } else if (V('game')?.unknown) where = 'Location not known without a chat log';
-  else if (S.session) where = 'No area yet today';
+  } else if (S.session || h) {
+    // No chat log (never, gone, or logging off): the location can't be known yet. With a log and no area line: none today.
+    const hasLog = h ? !!h.game?.log : !!s.log;
+    where = V('game')?.unknown || !hasLog || sevOf('chat-log') === 'bad' ? 'Location shows once the chat log is on' : 'No area yet today';
+  }
   $('#where').html = where;
-  $$('.rail a.ri').forEach(a => { if (a.dataset.view === S.view) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+  $$('.rail a.ri, .rail-foot a.rf').forEach(a => { if (a.dataset.view === S.view) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+  // The phone bar's More cell is "current" when one of the views it holds is open.
+  { const mb = $('#morebtn'); if (mb) { if (MORE_VIEWS.includes(S.view)) mb.setAttribute('aria-current', 'page'); else mb.removeAttribute('aria-current'); } }
   const banner = $('#banner-down');
   banner.hidden = !S.down;
-  if (S.down) banner.html = `${shape('bad')}<span>Nothing is loading. The dashboard server isn't answering. Start it again: python3 server.py</span>`;
+  if (S.down) banner.html = `${shape('bad')}<span>Nothing is loading. The dashboard server isn't answering. ${esc(fixText('server'))}</span>`;
   syncTheme();
 }
 function renderNotices() {
@@ -5515,7 +6396,8 @@ function renderNotices() {
   if (!PREVIEW.active) { pn.hidden = true; return; }
   const parts = [];
   if (PREVIEW.shift) parts.push(`pretending ${PREVIEW.shift} hours have passed`);
-  const simCopy = { stale: 'pretending your exports are 3 days old', broken: 'pretending your last character export came out partial', nolog: "pretending there's no chat log", noexport: 'pretending this character has no exports', loading: 'holding every request so the loading state stays up', down: `pretending the server stopped answering after ${S.downSince ? hhmm(S.downSince) : 'the first load'}` };
+  const simCopy = { stale: 'pretending your exports are 3 days old', broken: 'pretending your last character export came out partial', nolog: "pretending there's no chat log", noexport: 'pretending this character has no exports', loading: 'holding every request so the loading state stays up', down: `pretending the server stopped answering after ${S.downSince ? hhmm(S.downSince) : 'the first load'}`,
+    fresh: 'pretending nothing is set up', partiallog: 'pretending 2 Combat Logging rows are Off', party: 'pretending you are in a party of five' };
   if (PREVIEW.sim) parts.push(simCopy[PREVIEW.sim]);
   let txt = parts.length ? `Preview: ${parts.join(', and ')}.${PREVIEW.sim === 'loading' ? '' : ' Real data is unchanged.'}` : '';
   if (PREVIEW.notes.length) txt += ` Preview: ${PREVIEW.notes.join('; ')}.`;
@@ -5554,6 +6436,9 @@ function go(view) { if (VIEWS.includes(view)) { if (route(location.hash.slice(1)
 function showView(view) {
   if (!VIEWS.includes(view)) return;
   const changed = S.view !== view;
+  if (changed) S.setupForced = null;
+  // #<view>?setup=1 (About → "Show the Setup checklist again"): the Setup window above the windows for this visit only.
+  { const r = route(location.hash.slice(1)); if (r.view === view && r.params.get('setup') === '1') S.setupForced = view; }
   S.view = view;
   store.set('pgdash.tab', view);
   $$('.view').forEach(v => { v.hidden = v.dataset.view !== view; });
@@ -5633,8 +6518,10 @@ async function tailRound() {
   if (tailBusy) return;
   tailBusy = true;
   try {
+    const hadLog = !!sessUI.tailLog;
     const lines = await pollTail();
     markUp();
+    if (!hadLog && sessUI.tailLog && sevOf('chat-log') === 'bad') { await loadSession(); await loadHealth(); computeVerdicts(); renderAll(); }
     if (S.view === 'statehelm' && S.statehelm && lines.some(l => /^\[Status\] You gained [\d.,]+ favor with /.test(l.msg))) loadStatehelm();
     if (lines.some(l => /XP|added to inventory|Entering Area|Logged In|Logged Out/.test(l.msg))) {
       await loadSession(); computeVerdicts(); if (S.view === 'session') renderAll(); else renderShell();
@@ -5694,6 +6581,7 @@ async function checkAgain(source) {
   const before = exportSnapshot();
   const filesBefore = filesSnapshot();
   const tailBefore = sessUI.feed.length, lastBefore = S.session?.lastLineAt || (sessUI.feed.at(-1)?.ts);
+  const logBefore = sessionHasLog();
   let failed = false;
   try {
     await loadReports();
@@ -5707,18 +6595,30 @@ async function checkAgain(source) {
   } catch (e) { failed = true; onFetchError(e); }
   computeVerdicts(); renderAll();
   btn.disabled = false; btn.textContent = 'Check again';
-  if (failed && S.down) { sysLine('error', "The dashboard server isn't answering. Start it again: python3 server.py"); return; }
+  if (failed && S.down) { sysLine('error', `The dashboard server isn't answering. Start ${APP_NAME} again.`); return; }
   const after = exportSnapshot();
   if (S.view === 'files' && !source) return filesChecked(filesBefore);
   if (S.view === 'teleports' && !source) return refreshTeleports();
   if (S.view === 'statehelm' && !source) return refreshStatehelm();
-  const view = source === 'export-storage' ? 'storage' : source === 'export-character' || source === 'export-again' ? 'vendors' : source === 'chat-logging' ? 'session' : S.view;
+  // The Combat Logging plaque (Setup row 2, or the margin's): answer about the rows, never about exports.
+  if (source === 'combat-logging') {
+    const cl = V('combat-logging'), off = Array.isArray(cl?.evidenceData?.off) ? cl.evidenceData.off : [];
+    if (!cl) sysLine('note', "The game's settings file couldn't be read, so the rows aren't checked here. The meter counts what the log holds.");
+    else if (cl.severity === 'ok') sysLine('status', `Every "Log when…" row is on. ${S.combat?.totals?.fights > 0 ? 'The meter is running.' : 'Hit something and the meter starts.'}`);
+    else sysLine('warn', off.length ? `Still ${off.length} of 7 rows Off: ${off.map(k => COMBAT_ROW_LABEL[k] || k).join(' · ')}. Steps 1 to 3 in the Setup window, then check again.` : 'Log non-damaging abilities is still off. Step 3 in the Setup window, then check again.');
+    return;
+  }
+  // Combat reads the chat log like Session does, so a plain Check again there reports the log, not the exports.
+  const view = source === 'export-storage' ? 'storage' : source === 'export-character' || source === 'export-again' ? 'vendors' : source === 'chat-logging' || source === 'chat-logging-relog' || S.view === 'combat' ? 'session' : S.view;
   if (view === 'session') {
     const newLines = sessUI.feed.length - tailBefore;
     const last = S.session?.lastLineAt ? hhmm(parseIso(S.session.lastLineAt)) : (sessUI.feed.at(-1)?.ts.slice(9, 14) || '?');
-    if (newLines > 0 || (S.session?.lastLineAt && S.session.lastLineAt !== lastBefore)) sysLine('status', `Chat log read to ${last}. ${plural(Math.max(newLines, 0), 'new line')}.`);
-    else if (last === '?') sysLine('error', `Still no chat log file. ${S.health?.settings?.readable && S.health.settings.LogChat === 0 ? "The game's settings file still says chat logging is off." : ''} Check Settings → V.I.P. → Save Chat Logs is on, log out and back in, then check again.`.replace('  ', ' '));
-    else if (['warn', 'bad'].includes(sevOf('chat-log'))) sysLine(sevOf('chat-log') === 'bad' ? 'error' : 'warn', `No new lines since ${last}. Check Settings → V.I.P. → Save Chat Logs is on, then check again.`);
+    const st = S.health?.settings;
+    if (!logBefore && sessionHasLog()) { sysLine('status', `Chat log found: today's log. ${S.view === 'combat' ? 'The meter fills in as you fight.' : 'Session fills in as you play.'}`); flashView(); }
+    else if (newLines > 0 || (S.session?.lastLineAt && S.session.lastLineAt !== lastBefore)) sysLine('status', `Chat log read to ${last}. ${plural(Math.max(newLines, 0), 'new line')}.`);
+    else if (last === '?' && st?.readable && st.LogChat === 1) sysLine('warn', 'Save Chat Logs is on; the file appears at your next login. Log out and back in, then check again.');
+    else if (last === '?') sysLine('error', `Still no chat log file. ${st?.readable && st.LogChat === 0 ? "The game's settings file still says chat logging is off. " : ''}Steps 1 to 4 in the Setup window, then press Save Chat Logs there.`);
+    else if (['warn', 'bad'].includes(sevOf('chat-log'))) sysLine(sevOf('chat-log') === 'bad' ? 'error' : 'warn', `No new lines since ${last}. Check that Settings → V.I.P. → Save Chat Logs is on, then check again.`);
     else sysLine('note', `No new lines since ${last}. The chat log only grows while you're in game.`);
     return;
   }
@@ -5734,7 +6634,8 @@ async function checkAgain(source) {
   const srcs = view === 'storage' ? ['storage-export', 'character-export'] : ['character-export'];
   const worst = srcs.map(V).filter(Boolean).sort((a, b) => SEV_RANK[b.severity] - SEV_RANK[a.severity])[0];
   const at = worst?.ageSec != null ? hhmm(NOW() - worst.ageSec * 1000) : '?';
-  if (worst && (worst.severity === 'warn' || worst.severity === 'bad')) sysLine('warn', `Nothing new since ${at}. ${checkFix(worst)}, then check again.`);
+  if (worst && isMissing(worst)) sysLine('warn', `Nothing new. ${checkFix(worst)}, then check again.`);
+  else if (worst && (worst.severity === 'warn' || worst.severity === 'bad')) sysLine('warn', `Nothing new since ${at}. ${checkFix(worst)}, then check again.`);
   else sysLine('note', `Nothing new since ${at}. Your exports are recent.`);
 }
 
@@ -5746,7 +6647,7 @@ function boot() {
   $$('[data-fan-aria]').forEach(el => el.setAttribute('aria-label', `About: ${APP_NAME} is ${FAN_LINE}`));
   $$('[data-brand-aria]').forEach(el => el.setAttribute('aria-label', `${APP_NAME}, Session`));
   $('#favicon').href = FAVICONS.ok;
-  initSession(); initCombat(); initVendors(); initStorage(); initCharacter(); initFiles(); initTeleports(); initStatehelm(); initReminders();
+  initSession(); initCombat(); initVendors(); initStorage(); initCharacter(); initFiles(); initTeleports(); initStatehelm(); initReminders(); initDeck();
   $('#checkbtn').addEventListener('click', () => checkAgain());
   document.addEventListener('click', e => {
     const p = e.target.closest('[data-fix]');

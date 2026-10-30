@@ -1,6 +1,6 @@
 # Gorgon Notes
 
-A personal dashboard for **Project: Gorgon**, built from the files the game already writes on your computer: the VIP menu's character and storage exports, the chat log, and the public game data CDN. It runs on your own machine, reads the game folder, and sends nothing about your character anywhere except fight numbers and character names: every fight goes to the shared [everyone's fights page](https://gorgon-notes-room.rob-30c.workers.dev/everyone) unless you press Stop sending in the Party window, and to your party and Discord only when you ask.
+A personal dashboard for **Project: Gorgon**, built from the files the game already writes on your computer: the VIP menu's character and storage exports, the chat log, and the public game data CDN. It runs on your own machine, reads the game folder, and sends nothing about your character anywhere except fight numbers and character names: every fight goes to [everyone's fights](https://gorgon-notes-room.rob-30c.workers.dev/everyone) unless you press Stop sending in the Your party window (the app says so once, the first time it matters), and to Discord only when you ask.
 
 Fan-made, not affiliated with Elder Game. MIT licensed. Source and releases: https://github.com/robaxelsen/gorgon-notes
 
@@ -10,9 +10,9 @@ Fan-made, not affiliated with Elder Game. MIT licensed. Source and releases: htt
 
 Every number in the app says where it came from, how old it is, and the exact in-game step that would make it current. That is the one rule the whole thing is built on.
 
-- **Combat**: a personal DPS meter from the chat log, live while you play. Damage per second now, damage today split between you and your pets, every fight with its length, damage, kills and what you fought, and a breakdown of any fight by ability, by enemy (you, pets and damage over time per enemy, to check against the game's autopsy) and with a damage-a-second chart. Damage over time is counted from your own log. Party members' hits never appear in your log, so the **Party** window shares fights instead: one of you makes a code, the others join it, and everyone's fights line up side by side, with a live per-second line while you fight and a session table (one row per player and pet) by area or by a session you start and stop yourself.
+- **Combat**: a personal DPS meter from the chat log, live while you play. Damage per second now, damage today split between you and your pets, every fight with its length, damage, kills and what you fought, and a breakdown of any fight by ability, by enemy (you, pets and damage over time per enemy, to check against the game's autopsy) and with a damage-a-second chart. Damage over time is counted from your own log. Party members' hits never appear in your log, so **Your party** shows them from their own copies instead, with no code: the chat log names your hunting party, every copy already sends its fights to everyone's fights, and the window lines up the ones from your party side by side, with a live per-second line while you fight and a run table (one row per player and pet; a run is fights in one area with no gap over 15 minutes). A party code still exists as a folded **Private room** for groups that would rather not use the public page.
 - **Everyone's fights**: every fight the apps send, grouped into runs on one page, no party code needed: https://gorgon-notes-room.rob-30c.workers.dev/everyone (fights fought while the app was closed go up at its next start).
-- **Discord**: Connect Discord once from the Party window (Discord's own server and channel picker, no webhook to copy) and post a fight or a whole session to a channel as a card with a picture of the table.
+- **Discord**: Connect Discord once from the folded Discord window on Combat (Discord's own server and channel picker, nothing to copy) and press **Post this run to Discord** on the run table, or **Post fight to Discord** on a fight's Breakdown; each post carries the table as text and a picture of it.
 - **Session**: XP per skill and per hour, level-ups, loot with icons, councils in and out, deaths and kills, what happened when, the chat log with channel colours, and **Here**: the NPCs where you are standing with favor, councils left to spend, storage and what they love as gifts.
 - **Vendors**: councils left at every vendor, how much you have drained, resets since your export, where to sell and who buys what, and a **Sell** plan for your bags: the books, documents and scrolls to sell, to whom and for about how much, stop by stop, and the gear with its prices as your call. Nothing else is treated as trash; a Sell or Keep mark per item type is remembered.
 - **Storage**: slots free per vault, where there is room, and every item you hold. Stacks to merge finds the same item held in several places.
@@ -62,17 +62,20 @@ Two optional layers on top:
 
 ### Anywhere else
 
-`python3 server.py` is all it takes. The game folder is found per OS (Mac `~/Library/Application Support/unity.Elder Game.Project Gorgon`, Windows `%USERPROFILE%\AppData\LocalLow\Elder Game\Project Gorgon`); on Linux under Proton point `PG_DIR` at that `LocalLow` folder inside the game's prefix. Startup prints the folder it found and how many exports and chat logs it holds. Other settings: `PG_PORT` (default 8787), `PG_PLAYER_LOG`, `PG_ROOM` (another party room, empty for ntfy.sh only), `PG_NTFY`.
+`python3 server.py` is all it takes. The game folder is found per OS (Mac `~/Library/Application Support/unity.Elder Game.Project Gorgon`, Windows `%USERPROFILE%\AppData\LocalLow\Elder Game\Project Gorgon`); on Linux under Proton point `PG_DIR` at that `LocalLow` folder inside the game's prefix. Startup prints the folder it found and how many exports and chat logs it holds. Other settings: `PG_PORT` (default 8787), `PG_PLAYER_LOG`, `PG_ROOM` (another Worker address for everyone's fights and the Private room; empty for the ntfy.sh fallback only), `PG_NTFY`.
 
 ## In the game
 
 - **Exports**: VIP menu → **Export Character JSON** and **Export Storage JSON**. They land in the game's `Reports` folder and the app reads them there. Export storage again after a big sorting session; the app tells you when it is time.
-- **Chat log**: Settings → V.I.P. → **Save Chat Logs**. The Session and Combat views come from it, live. Without it the app still shows everything the exports hold.
+- **Chat log**: Settings → V.I.P. → **Save Chat Logs**, then log out and back in. The Session and Combat views come from it, live. Without it the app still shows everything the exports hold. The first time you open a view that needs something, its **Setup** window lists the steps and ticks each one itself as the file appears.
+- **Combat Logging**: Settings → V.I.P. → Combat Logging. Every "Log when…" row should be on for the meter to count everything; Combat says which rows are Off. This section is on the V.I.P. tab, so it most likely needs VIP.
 - **VIP auto-export**: the VIP settings can save the character automatically on logout and area changes. The app notices those files too.
 
 ## Playing with friends
 
-Each party member runs Gorgon Notes with chat logging on, since each log only holds its owner's hits. Before fighting, one of you presses **New code** in the Party window and pastes the code into party chat; the others paste it into the code field and press **Join**. Fights are shared through a small Cloudflare Worker (`cloud/`, no account, no secrets, only fight numbers and character names) and merged by time and by the party the chat log names. Press **Start session** before a dungeon run, **Stop session** after, and **Post session to Discord** for one report of the whole run. Windows copies of the friends update themselves, so one release serves everyone.
+Each party member runs Gorgon Notes with Save Chat Logs and Combat Logging on, since each log only holds its owner's hits. That is all: no code to make or paste. Every copy sends its fights to everyone's fights, and your Combat page's **Your party** window picks out the players your chat log names as your hunting party, says who is sharing, and lines up the runs. For a friend who is not sharing yet, press **Copy an invite line** and paste it into party chat or Discord: it names the download and the two in-game settings. A friend whose copy is too old to share updates by starting it again (Windows copies update themselves at each start, so one release serves everyone).
+
+If you would rather not use the public page, press **Stop sending** in Your party's footer and use the folded **Private room** under the Breakdown instead: one of you makes a code, the others join it, and fights go only to the room (a small Cloudflare Worker, `cloud/`, no account, no secrets, only fight numbers and character names). **Post this run to Discord** on the run table sends one report of the whole run.
 
 ## How it is built
 
@@ -82,7 +85,7 @@ A Python standard-library server (`server.py`) plus one HTML page with vanilla J
 |---|---|
 | `server.py` | JSON API and static server: parses chat logs, reads exports, fetches and caches game data |
 | `static/` | `index.html`, `app.css`, `app.js`: the UI |
-| `cloud/` | The party room: a Cloudflare Worker with one Durable Object per party code, and the Discord connect broker |
+| `cloud/` | The Cloudflare Worker: everyone's fights (one feed every copy posts to), the Private room (one Durable Object per code), and the Discord connect broker |
 | `windows/` | `build.sh`, the Go launcher, the zip's README |
 | `mac/` | The menu-bar app, its build script, the launchd plist |
 | `cache/v<N>/`, `cache/wiki/` | Cached game data per client version, and the wiki's Teleportation Machine page (created on first use) |
@@ -90,9 +93,9 @@ A Python standard-library server (`server.py`) plus one HTML page with vanilla J
 | `tools/` | `compare-logs.py` (two players' logs side by side), the autopsy probe |
 | `DESIGN.md` | Design system, per-view spec and the server contracts. Follow it for any UI work |
 | `PRODUCT.md` | Product brief |
-| `docs/` | `ROADMAP.md` (status and next steps, start there), `API.md` (every endpoint), `DATA-AWARENESS.md` (the one rule), `DATA-SOURCES.md` (where the data lives, verified), `DPS-FEASIBILITY.md` (what the chat log can and cannot say), `SHARING.md` and `DISCORD.md` (party room and Discord), `DISTRIBUTION.md`, `GLOGGER-COMPARISON.md`, `DESIGN-PROCESS.md` |
+| `docs/` | `ROADMAP.md` (status and next steps, start there), `API.md` (every endpoint), `DATA-AWARENESS.md` (the one rule), `DATA-SOURCES.md` (where the data lives, verified), `DPS-FEASIBILITY.md` (what the chat log can and cannot say), `SHARING.md` and `DISCORD.md` (everyone's fights, the Private room and Discord), `DISTRIBUTION.md`, `GLOGGER-COMPARISON.md`, `DESIGN-PROCESS.md` |
 | `design/` | Research, concepts, archived UI and the final screenshots of every view |
 
 Releasing: commit, push, tag `v0.<n>.<m>` and push the tag; `.github/workflows/release.yml` builds the exe, the zip and `version.txt` and attaches them to a GitHub release, which the Windows copies pick up at their next start. The Mac app needs no rebuild for UI changes, since it shows the page from the server.
 
-Open a view directly with a hash: `#session`, `#combat`, `#vendors`, `#storage`, `#character`, `#files`, `#teleports`, `#statehelm`. Preview modes for development, never saved: `?sim=stale|broken|nolog|noexport|loading|down`, `?shift=72`, `?theme=dark|daylight|auto`.
+Open a view directly with a hash: `#session`, `#combat`, `#vendors`, `#storage`, `#character`, `#files`, `#teleports`, `#statehelm`. Preview modes for development, never saved: `?sim=fresh|partiallog|party|stale|broken|nolog|noexport|loading|down`, `?shift=72`, `?theme=dark|daylight|auto`.

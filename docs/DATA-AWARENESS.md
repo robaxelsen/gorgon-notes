@@ -21,14 +21,17 @@ One central **Data Health** object, computed server-side, drives every channel. 
 | Character export age | `Character_<Name>_*.json` `Timestamp` | VIP → Export Character JSON |
 | **Broken export** | `Character: "???"`, `Race: "Error"`, empty quests/recipes | Re-export while fully logged in (not right before logout) |
 | Activity since export | chat log after export time, only lines while that character was logged in: storage/vendor areas visited, `You received N Councils`, 1+ storage searches, 50+ stacks of loot since the storage export (built 24 Oct; the `export-stale` moment fires on a search, or on a zone change after 50 more stacks, unless it is within 15 min after entering a vault area, where the `zone-storage` reminder already fired; then on the next one, and again after 2 h, until the next storage export) | Re-export: your storage/vendor numbers have changed |
-| Chat logging on | `GorgonSettings.txt` → `LogChat 1`; and today's chat log is growing while game runs | Settings → V.I.P. → "Save Chat Logs" |
-| Combat logging levels | `GorgonSettings.txt` → `combatLog_*`, `LogNonAttacks` | Enable for death tracker |
+| Chat logging on | `GorgonSettings.txt` → `LogChat 1`; and today's chat log is growing while game runs | Settings → V.I.P. → "Save Chat Logs", then log out and back in. First run: the view's Setup window lists the steps |
+| Combat logging levels (`combat-logging`) | `GorgonSettings.txt` → `combatLog_*`, `LogNonAttacks`; warn on Combat when any "Log when…" row is Off (provisional: level 1 taken as writing the file, `VIP_CombatLogging` not read) | Settings → V.I.P. → Combat Logging: the Off rows by the game's labels |
+| Combat lines today (`combat-lines`, 30 Oct) | today's log holds a `[Combat]` line; info while none yet, warn when logged in 20+ min, 200+ lines since the login and no combat line while Combat Logging is ok (the silent meter) | "The game writes combat lines for VIP accounts; if you have VIP, check the Combat Logging rows above." (hedged: the VIP rule is what every log tool says, not seen) On a computer where the meter has worked before, no Setup window, just "No fights today" |
 | Game running / logged in | `Project Gorgon` process (binary inside `MacPlayer.app`, verified 2026-10-23); `Logged In As` / `Logged Out` lines | — (context for reminders) |
 | Player.log live events | presence of `LocalPlayer: Process` lines | Unknown fix (open question); explain what's missing |
 | Alts missing/stale | characters seen in chat logins or reports vs exports present | Log into alt → export both |
 | Manual vault sizes | vaults with unknown capacity; safebox size drifts (server-driven 1–150) | Check size in game, enter on Vendors & Space |
 | Game patch / CDN version | `fileversion.txt` changed | Auto-refresh CDN cache; tell player data was refreshed |
 | VIP active | exports stop appearing / VIP menu missing | Renew VIP (exports need it) |
+
+**Scoping (30 Oct, the UX redesign).** Every verdict carries `views[]`, and a view lists only its own sources: the pill, the tab title, the favicon and the margin count what this view's numbers depend on (plus `server`, and `vip` when not ok). Other views' to-dos appear as one dim "Elsewhere: 2 to do on Vendors and Storage" line and as rail marks, so nothing to act on is hidden, but a 3-hour-old export is amber twice on Vendors and plain text on Session. A source never seen is "to set up" (a todo ring and the view's Setup window, never red); red is reserved for a source that was there and is gone, or broken (`pgdash.seen`). The fix sentence appears once per view: in the Setup window while it shows, else on the primary window's footer and the margin note; one plaque per view, and only when the fix is possible now. Spec: DESIGN.md → Data health, Setup window.
 
 ## 3. Moments that trigger reminders (examples)
 - **Game launched / logged in:** show a short checklist: "Storage export 3 days old · Character export OK · Chat logging ON".

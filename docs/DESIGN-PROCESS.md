@@ -1,27 +1,105 @@
 # How the redesign was made
 
-Record of the overnight redesign of 22 to 23 Oct 2026. An autonomous agent run did all of it while the user was asleep, so no interview took place. This file explains how the current UI came about and where each piece of evidence is kept. The spec for the result is **`DESIGN.md`** (repo root), and the product brief is **`PRODUCT.md`**.
+Record of the overnight redesign of 22 to 23 Oct 2026, and (first section) of the plug-and-play redesign of 30 Oct 2026. An autonomous agent run did all of it while the user was asleep, so no interview took place. This file explains how the current UI came about and where each piece of evidence is kept. The spec for the result is **`DESIGN.md`** (repo root), and the product brief is **`PRODUCT.md`**.
 
 **Brief (from the user):** a completely new design whose *only* influence is that it should look like an app Elder Game (Project Gorgon's studio) designed itself. Not a generic dashboard and not generic "fantasy". The product requirement from `docs/DATA-AWARENESS.md` stays: every view must say how fresh its data is and exactly what to do in game to improve it.
 
-## Final screenshots
+## 30 Oct 2026: the plug-and-play redesign
 
-Real player data, retaken 24 Oct about 02:57 at the final gate of the leftovers pass (Session, Storage and their nolog / noexport / merge states; Vendors and Character from the 02:05 gate of the 23 Oct (night) feature batch) (character Robchew, logged out after midnight, a quiet day with 0 XP; the first set was taken 23 Oct 11:53). Desktop is 1440 x 1000. Phone is a true 390 x 844 device emulation at 2x through CDP (`~/.claude/skills/taste-skill/scripts/lib/cdp.mjs`); `--window-size` cannot go that narrow and makes every view look clipped on the right. All captures have `scrollWidth == innerWidth` and no JS errors.
+User, 30 Oct 00:35: "make the app easier to use: it gets overwhelming, a newcomer can't tell what is worth using or how to start; the design is nice but lacking; aim for 7.5/10 against industry leaders", and "Combat is especially hard; … make it so easy a grandmother could follow the flow; as plug-and-play as possible." An autonomous run of workflow agents in four phases; every report is kept in `docs/ux-2026-10-30/`.
 
-| View | 1440 dark (default) | 1440 Daylight | 390 dark | 390 Daylight |
-|---|---|---|---|---|
-| Session | [png](../design/screenshots/session-1440-dark.png) | [png](../design/screenshots/session-1440-light.png) | [png](../design/screenshots/session-390-dark.png) | [png](../design/screenshots/session-390-light.png) |
-| Vendors | [png](../design/screenshots/vendors-1440-dark.png) | [png](../design/screenshots/vendors-1440-light.png) | [png](../design/screenshots/vendors-390-dark.png) | [png](../design/screenshots/vendors-390-light.png) |
-| Storage | [png](../design/screenshots/storage-1440-dark.png) | [png](../design/screenshots/storage-1440-light.png) | [png](../design/screenshots/storage-390-dark.png) | [png](../design/screenshots/storage-390-light.png) |
-| Character | [png](../design/screenshots/character-1440-dark.png) | [png](../design/screenshots/character-1440-light.png) | [png](../design/screenshots/character-390-dark.png) | [png](../design/screenshots/character-390-light.png) |
-| Files (24 Oct 12:50 gate; `items.json` open with two items expanded at 1440, the character export with Skills → Unknown expanded and the Contents window scrolled into view at 390) | [png](../design/screenshots/files-1440-dark.png) | [png](../design/screenshots/files-1440-light.png) | [png](../design/screenshots/files-390-dark.png) | [png](../design/screenshots/files-390-light.png) |
+- **Phase 1, understand** (00:35 to 01:50, 7 agents): a UI map, a trace of the combat flow, a design critique, a cognitive walkthrough, UX research on the category leaders and research on the Project: Gorgon community and its tools, synthesised into **`PROBLEM-MAP.md`**. The problem map: no first-run surface (a fresh install rendered as a broken one, one setting stated 11 to 20 times per page); health chrome not scoped to the view's sources; eight equal rail items; every view 4 to 5 screens of same-rank windows; Combat with the party meter ~2,700 px down behind the Fights table, five sharing paths, a silent meter when Combat Logging is off, and the zero-setup everyone feed as a dim link. Newcomer score 5.6/10, Combat 4/10.
+- **Phase 2, design** (to 03:10, 15 agents): three designs per problem (a design leader's, a minimal one, a "grandmother" user-first one), each judged by three judges (design leader, engineer, grandmother), then finals and one integrated spec: **`A-FINAL.md`** (first run, the Setup window, health scoping, the ranked rail, the lower deck, copy), **`B-FINAL.md`** (Combat turned inside out, Your party from the everyone feed with no code, the server contract) and **`SPEC.md`** (the merge, nine work packages, the instrument targets). Both winners were the user-first designs, built on the minimal design's additive `/api/party` contract.
+- **Phase 3, build** (03:10 to about 10:00): 7 build agents in git worktrees (P0 foundation, S1 server health verdicts, S2 Your party from the feed, P1+P2 health scoping and the Setup window, P3 rail and About, P5 lower deck, P4 Combat), merged in spec order; 7 read-only checks (instruments, desktop, phone, party flow on a fake room, semantic merge, accessibility; `ISSUES.md`, 51 findings → 44 issues); 4 fix agents (health/setup/shell, Combat/party, the other renderers, server); then this close (docs, DESIGN.md consolidation, the copy sweep, the proof run below) as part of about 16 closing agents.
+- **Decisions taken without the user** (DESIGN.md → Review decisions → 30 Oct): the party code survives as a folded "Private room"; the public feed stays default-on with a one-time disclosure; the landing tab stays the remembered one (default Session); Combat Logging warns on Combat with a provisional rule (level 1 and `VIP_CombatLogging` unverified); the chat-log setting is named on the GUI tab with the April 2026 note, the in-game look still open; Session with defaults accepted at 1,522 px; the amber glyph reads "To do".
 
-Also from the gate (dark only): the Storage No export state [1440](../design/screenshots/storage-noexport-1440-dark.png) / [390](../design/screenshots/storage-noexport-390-dark.png) (`?sim=noexport`: every window says "Needs a storage export.", no vault-size note), the Session no-chat-log state [1440](../design/screenshots/session-nolog-1440-dark.png) / [390](../design/screenshots/session-nolog-390-dark.png) (`?sim=nolog`: Here, Councils and Combat say "Needs the chat log."), the Stacks to merge window scrolled into view [1440](../design/screenshots/storage-merge-1440-dark.png) / [390](../design/screenshots/storage-merge-390-dark.png), and the Councils / Combat pair on the phone [390](../design/screenshots/session-councils-combat-390-dark.png). The Here window is hidden in these captures (logged out after midnight, today's log names no area; its states are in the table below). Files states (24 Oct, 1440 dark, the 422 and 409 ones through a local proxy because nothing may be written into Reports/): [invalid JSON](../design/screenshots/files-invalid-1440-dark.png) (red line with line and column, the "Export Character JSON again" plaque, the row chipped "won't parse"), [file rewritten while open](../design/screenshots/files-changed-1440-dark.png) (amber note with Reload, loaded rows kept) and [no exports](../design/screenshots/files-noexport-1440-dark.png) (`?sim=noexport`: the Exports group's line and one plaque, "Pick a file on the left."). From the 12:50 final gate (live server, dark): the list with the newest character export auto-opened [1440](../design/screenshots/files-list-1440-dark.png) / the pane alone on the phone [390](../design/screenshots/files-list-390-dark.png), [capacity.json](../design/screenshots/files-capacity-1440-dark.png) (six rows, each with "Open in storagevaults.json"), [a file that is gone](../design/screenshots/files-gone-1440-dark.png) (`#files?f=reports%2Fnope.json`: "This file is gone." with Retry, footer "nope.json · gone") and [search](../design/screenshots/files-search-1440-dark.png) ("amethyst" in `items.json`: 23 matches, the hit term bold in each snippet).
+### Screenshots (30 Oct proof run)
 
-![Session, 1440 dark](../design/screenshots/session-1440-dark.png)
-![Vendors, 1440 Daylight](../design/screenshots/vendors-1440-light.png)
+Real player data on a harness copy of the final tree (port 8862, the game folder read-only, no Worker, so Your party says "no sharing address" outside `?sim=party`), CDP via `~/.claude/skills/taste-skill/scripts/lib/cdp.mjs`, full page. 1440 is dsf 1; 390 is a true 390 × 844 device emulation at dsf 2 (SPEC §5 #12: emulation, not a real phone). Daylight at 1440 only. Named `<view>-<state>-<width>-<theme>.png` in `design/screenshots/` (git-ignored, like the earlier set). The player logged in during the run: the dark 1440 set shows "Casino (logged out 01:38)", the Daylight set "Casino (logged in)" with the plaques a running game allows.
 
-The health states (`?sim=stale|broken|nolog|noexport|loading|down`, `?shift=72`) were captured during review. See `design/shots/build/sim-*.png`, `design/shots/rev-fidelity/` and `design/shots/pass3/`.
+| URL | 1440 dark | 1440 Daylight | 390 dark |
+|---|---|---|---|
+| `#session` | [png](../design/screenshots/session-default-1440-dark.png) | [png](../design/screenshots/session-default-1440-daylight.png) | [png](../design/screenshots/session-default-390-dark.png) |
+| `#combat` | [png](../design/screenshots/combat-default-1440-dark.png) | [png](../design/screenshots/combat-default-1440-daylight.png) | [png](../design/screenshots/combat-default-390-dark.png) |
+| `#vendors` | [png](../design/screenshots/vendors-default-1440-dark.png) | [png](../design/screenshots/vendors-default-1440-daylight.png) | [png](../design/screenshots/vendors-default-390-dark.png) |
+| `#storage` | [png](../design/screenshots/storage-default-1440-dark.png) | [png](../design/screenshots/storage-default-1440-daylight.png) | [png](../design/screenshots/storage-default-390-dark.png) |
+| `#character` | [png](../design/screenshots/character-default-1440-dark.png) | [png](../design/screenshots/character-default-1440-daylight.png) | [png](../design/screenshots/character-default-390-dark.png) |
+| `#teleports` | [png](../design/screenshots/teleports-default-1440-dark.png) | [png](../design/screenshots/teleports-default-1440-daylight.png) | [png](../design/screenshots/teleports-default-390-dark.png) |
+| `#statehelm` | [png](../design/screenshots/statehelm-default-1440-dark.png) | [png](../design/screenshots/statehelm-default-1440-daylight.png) | [png](../design/screenshots/statehelm-default-390-dark.png) |
+| `#files` | [png](../design/screenshots/files-default-1440-dark.png) | [png](../design/screenshots/files-default-1440-daylight.png) | [png](../design/screenshots/files-default-390-dark.png) |
+| `?sim=fresh#session` | [png](../design/screenshots/session-fresh-1440-dark.png) | [png](../design/screenshots/session-fresh-1440-daylight.png) | [png](../design/screenshots/session-fresh-390-dark.png) |
+| `?sim=fresh#combat` | [png](../design/screenshots/combat-fresh-1440-dark.png) | [png](../design/screenshots/combat-fresh-1440-daylight.png) | [png](../design/screenshots/combat-fresh-390-dark.png) |
+| `?sim=fresh#vendors` | [png](../design/screenshots/vendors-fresh-1440-dark.png) | [png](../design/screenshots/vendors-fresh-1440-daylight.png) | [png](../design/screenshots/vendors-fresh-390-dark.png) |
+| `?sim=partiallog#combat` | [png](../design/screenshots/combat-partiallog-1440-dark.png) | [png](../design/screenshots/combat-partiallog-1440-daylight.png) | [png](../design/screenshots/combat-partiallog-390-dark.png) |
+| `?sim=party#combat` | [png](../design/screenshots/combat-party-1440-dark.png) | [png](../design/screenshots/combat-party-1440-daylight.png) | [png](../design/screenshots/combat-party-390-dark.png) |
+| `?sim=loading#combat` | [png](../design/screenshots/combat-loading-1440-dark.png) | [png](../design/screenshots/combat-loading-1440-daylight.png) | [png](../design/screenshots/combat-loading-390-dark.png) |
+| `?sim=stale#vendors` | [png](../design/screenshots/vendors-stale-1440-dark.png) | [png](../design/screenshots/vendors-stale-1440-daylight.png) | [png](../design/screenshots/vendors-stale-390-dark.png) |
+| `?sim=stale#session` | [png](../design/screenshots/session-stale-1440-dark.png) | [png](../design/screenshots/session-stale-1440-daylight.png) | [png](../design/screenshots/session-stale-390-dark.png) |
+| `?sim=noexport#combat` | [png](../design/screenshots/combat-noexport-1440-dark.png) | [png](../design/screenshots/combat-noexport-1440-daylight.png) | [png](../design/screenshots/combat-noexport-390-dark.png) |
+| `?sim=nolog#storage` | [png](../design/screenshots/storage-nolog-1440-dark.png) | [png](../design/screenshots/storage-nolog-1440-daylight.png) | [png](../design/screenshots/storage-nolog-390-dark.png) |
+
+These replace the 23 to 24 Oct per-view set (`session-`, `vendors-`, `storage-`, `character-`, `files-`, `combat-` `1440`/`390` × `dark`/`light`) and the superseded states `session-nolog-*`, `combat-nolog-1440-dark`, `storage-noexport-*` (now the Setup window) and `session-councils-combat-390-dark` (the side-by-side pair is gone). Kept from the earlier set because no 30 Oct shot covers them: the Here window states below, the Files states (`files-invalid`, `-changed`, `-noexport`, `-list`, `-capacity`, `-gone`, `-search`), `storage-merge-*` and `combat-break-*`.
+
+![Session first run, 1440 dark](../design/screenshots/session-fresh-1440-dark.png)
+![Combat with a party (preview), 1440 dark](../design/screenshots/combat-party-1440-dark.png)
+
+### Measured
+
+**Instrument table** (SPEC §3.0 targets; measured 30 Oct 09:39 to 09:50 on a harness copy of the final tree, port 8862, real game folder read-only, no Worker (`PG_ROOM` empty), CDP at 1440 (dsf 1) and true 390 × 844 (dsf 2), settle 3.5 s, 8 s for six phone pages that were still "Checking…" at 3.5 s; counts of rendered elements; DOM dumps and per-page JSON in the scratch `phase3/proof/`). The player logged in during the run, so the Daylight and some phone shots show "Casino (logged in)" and the plaque where the dark 1440 ones show "logged out".
+
+| Target | Expected | Measured | Met |
+|---|---|---|---|
+| Fix strings per page (Save Chat Logs / Export Character JSON / Export Storage JSON in footers, margin, stamp, note lines; Setup steps excluded) | ≤ 2 | Session 1 · Combat 1 · Character 2 · Teleports 0 · fresh Session / Combat 1, fresh Vendors 0 · **Vendors 3 · Storage 3 · Statehelm 3 · Files 3** (the margin's quiet "To refresh" line beside the primary footer's fix; was 3 / 3 / 4 / 4 at the integration check, 9 to 20 at phase 1) | no (4 views at 3) |
+| Plaques rendered per page | ≤ 1 | 0 or 1 on every page (max DOM 2 on fresh Vendors 390, one hidden) | yes |
+| Export plaques on Combat / Teleports | 0 | 0 / 0 in every state | yes |
+| Red objects on a fresh install (`sev-bad`, "(!)", red favicon) | 0 | 0 / none / taupe on `?sim=fresh` Session, Combat, Vendors, both themes and widths | yes |
+| Session fresh windows | 1 | 1 (`#w-s-setup`; the margin is the second counted box) | yes |
+| Rail | 4 + 3 in two groups, Files at the foot | Play 4 · Reference 3 · foot Files + About (7 items at 1440) | yes |
+| Phone bar cells | 5 | 5 on all 18 phone pages | yes |
+| First-run Combat primary buttons | ≤ 1 | 0 `.btn.primary`; 0 plaques with the game closed (1440), 1 plaque with it open (390, Daylight) | yes |
+| Combat screens to the party table (`?sim=party`, 1440) | first row above y = 900 | first member row at y = 594 (window top ≈ 350); 390: y = 1,146 | yes |
+| Fights rows open | 10 | 10 + the Total row ("Total · 35 fights · 6 skirmishes folded") | yes |
+| Breakdown caveat paragraphs open | 0 | 0 (`details.howcount` closed on every Combat page) | yes |
+| Rust elements per screen | 1 (0 when all share) | ≤ 1 on all 54 pages (party: "Copy an invite line"; Storage / Files / stale Vendors: the one margin plaque when the game is open) | yes |
+| Amber in Combat's main column, working meter | 0 | 0 (default, party, noexport); partial-logging 2 = the Setup row's triangle and status, by design | yes |
+| Discord-named affordances on Combat | 2 + the folded window | party: "Post this run to Discord", "Post fight to Discord" + folded "Discord" = 2 + 1; solo: 1 + window (no run table) | yes |
+| Retired words in dumped DOM (server.py, PG_ROOM, ntfy.sh, party room, json block, webhook, GorgonSettings.txt, python.exe, "V.I.P. → Save") | 0 (webhook ≤ 1) | 0 of each in all 54 dumps ("Manage Webhooks", Discord's permission name, sits in the folded Discord window's hint) | yes |
+| Retired words in `static/` + `cloud/src/everyone.html` (SPEC §3.9.2 grep) | 0 | 0 in UI strings (4 code comments left: app.js 179, 1900, 1905, 2096); file names only in Files (the Session chat-log footer now says "Today's chat log") | yes |
+| Session page, 1440, defaults open | ≤ 1,400 px | **1,522** (logged out; 1,616 logged in in Daylight). Accepted by the orchestrator: XP by skill and What happened stay open | accepted miss |
+| Loading shot | nothing red or amber | `?sim=loading#combat`: 0 red, 0 amber but the preview notice; pill "Checking…"; no Setup window; Breakdown hidden | yes |
+| App steps to party damage after the in-game settings | 0 | 0 (`?sim=party`: the table renders with no code; real feed not exercised on this harness) | yes (sim) |
+| `domstats` windows · controls · words (1440 dark) vs phase 1 | fewer, ranked | Session fresh 1 · 0 · 149 (was nolog 9 · 4 · 156); Combat fresh 1 · 0 · 170 (was nolog 3 · 8 · 50 with a live Connect Discord); Vendors fresh 1 · 0 · 127 (was noexport 4 · 7 · 89); Combat default 6 · 22 · 646 (was 4 · 30 · 1,240); Session default 10 · 34 · 1,876 (folded windows counted; was 10 · 22 · 1,204); Statehelm 3 · 47 · 932 (was 3 · 78 · 1,447); Teleports 15 · 230 · 780 (was 15 · 244 · 1,106) | |
+
+Page heights at 1440 dark (px): Session 1,522 · Combat 1,464 · Combat party 3,218 · Vendors 3,646 · Storage 2,672 · Character 1,226 · Teleports 987 · Statehelm 2,844 · Files 1,020 · every fresh page 900 (one screen). Phase 1 had 3,900 to 4,900 on the long views.
+
+**The 13-dimension rubric, re-scored** (PROBLEM-MAP §3.1 calibration: 10 = Linear issue view / Apple Health, 8 = Stripe home, 6 = competent internal tool, 4 = working POC; scored by the package D agent from the 54 shots and the counts above, not by an independent judge):
+
+| Dimension | 29 Oct | 30 Oct | Why |
+|---|---|---|---|
+| Visual hierarchy | 5 | 7.5 | At a glance + the primary window open, everything else a one-line folded bar; Combat's party table second |
+| Information density | 4 | 6.5 | Session 1,522 px, Combat 1,464, fresh pages one screen; Vendors (3,646) and Storage (2,672) stay long because the panes are; the party view is 3,218 with ten fight blocks |
+| Typography scale | 7 | 7 | five sizes plus the one named 30 px readout |
+| Spacing rhythm | 7 | 7.5 | no ragged `grid2` pairs, footers only where they carry something |
+| Colour (healthy is quiet?) | 5 | 7 | amber once per view, red 0 on a fresh install; margin notes still draw 8 to 9 warn shapes on the export views |
+| Component consistency | 7 | 7.5 | one fold pattern everywhere, one Setup component, one rust element per screen |
+| Affordance | 5 | 6.5 | real fold buttons with `aria-expanded`, sticky filter bars, labelled Leave the room / Disconnect Discord; many controls are still small text buttons |
+| Empty states | 5 | 7.5 | the Setup window and one-sentence states replace placeholder windows |
+| Copy length and tone | 7 | 7.5 | caveats folded, internals retired; four views still say a fix three times |
+| Scannability | 6 | 7 | deck summaries scan; long panes still scroll |
+| Answers its question in 3 s | 6 | 7 | Combat's finding is one figure; fresh pages say the one thing to do |
+| First-run / onboarding | 2 | 7.5 | one calm window per view that ticks itself; the GUI path is still unseen in game |
+| Brand brief | 8 | 8 | unchanged; the readout and the live dot are argued exceptions |
+
+**Overall 7.2 / 10 newcomer** (was 5.6; target 7.5 **not met**), owner about 7.5. **Combat 7.0 newcomer** (hierarchy 7.5, density 6, affordance 6.5, empty state 7.5, copy 7, liveness 7.5; was 4; target 7 met). What would close the gap: the fix said twice instead of three times on Vendors, Storage, Statehelm and Files; shorter primary panes (Vendors and Storage open on their area summaries); a shorter party view (five fight blocks, not ten); the in-game look at Settings → GUI so the first-run copy stops hedging.
+
+
+### Outstanding after 30 Oct
+
+The three in-game looks (Settings → GUI for Save Chat Logs; Settings → V.I.P. → Combat Logging; one "Log when…" row set to the chat-window option with a hit), the first real party evening on the feed, the friends' restarts onto v0.11.0+, the Worker page copy deploy, and the "in your party? Yes / No" edit: `docs/ROADMAP.md` → Next up. The logged-out Setup variants are seen in the proof shots (`?sim=fresh`, game closed); a real phone and a forwarded Discord post remain unseen.
+
+## Screenshots of the 23 to 24 Oct redesign (kept states)
+
+The per-view table of the 23 to 24 Oct set was replaced by the 30 Oct set above. The Stacks to merge window scrolled into view [1440](../design/screenshots/storage-merge-1440-dark.png) / [390](../design/screenshots/storage-merge-390-dark.png). Files states (24 Oct, 1440 dark, the 422 and 409 ones through a local proxy because nothing may be written into Reports/): [invalid JSON](../design/screenshots/files-invalid-1440-dark.png), [file rewritten while open](../design/screenshots/files-changed-1440-dark.png) and [no exports](../design/screenshots/files-noexport-1440-dark.png); from the 12:50 final gate: the list [1440](../design/screenshots/files-list-1440-dark.png) / [390](../design/screenshots/files-list-390-dark.png), [capacity.json](../design/screenshots/files-capacity-1440-dark.png), [a file that is gone](../design/screenshots/files-gone-1440-dark.png) and [search](../design/screenshots/files-search-1440-dark.png). The health states of that time (`?sim=stale|broken|nolog|noexport|loading|down`, `?shift=72`) are in `design/shots/build/sim-*.png`, `design/shots/rev-fidelity/` and `design/shots/pass3/`.
 
 ### Here window (zone panel), 24 Oct
 

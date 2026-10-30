@@ -1,0 +1,2857 @@
+{
+ "version": 1,
+ "code": "gn-z4g5yhyzj3h9",
+ "since": "2026-10-25T18:54:52+01:00",
+ "character": "Robchew",
+ "base": "https://ntfy.sh",
+ "source": "room",
+ "ntfy": {
+  "reachable": true,
+  "lastOkAt": "2026-10-30T00:28:40+01:00",
+  "lastErrorAt": null,
+  "lastError": null,
+  "lastPostAt": "2026-10-30T00:25:02+01:00",
+  "lastMessageAt": "2026-10-30T00:27:51+01:00",
+  "posted": 356,
+  "pending": 0,
+  "received": 128,
+  "pasted": 0
+ },
+ "feed": {
+  "readAt": "2026-10-30T00:28:40+01:00",
+  "error": null,
+  "errorAt": null,
+  "rows": 240,
+  "members": [
+   {
+    "who": "Akriex",
+    "lastSeen": 1793402000000,
+    "app": "gorgon-notes v0.11.0"
+   },
+   {
+    "who": "Woltlump",
+    "lastSeen": 1793402880000,
+    "app": "gorgon-notes v0.11.0"
+   },
+   {
+    "who": "Robchew",
+    "lastSeen": 1793402900000,
+    "app": "gorgon-notes v0.11.0"
+   }
+  ]
+ },
+ "roster": {
+  "inParty": true,
+  "name": "Robchew's party",
+  "members": [
+   "Woltlump",
+   "Akriex",
+   "Caboozles",
+   "Fraghonk"
+  ],
+  "leader": "Woltlump",
+  "log": "Chat-26-10-30.log",
+  "notSharing": [
+   "Caboozles",
+   "Fraghonk"
+  ],
+  "unnamed": false,
+  "sharing": [
+   "Akriex",
+   "Robchew",
+   "Woltlump"
+  ],
+  "status": {
+   "Robchew": "you",
+   "Woltlump": "sharing",
+   "Akriex": "sharing",
+   "Fraghonk": "too-old",
+   "Caboozles": "not-running"
+  },
+  "apps": {
+   "Fraghonk": "gorgon-notes v0.9.0"
+  }
+ },
+ "invite": {
+  "repo": "robaxelsen/gorgon-notes"
+ },
+ "area": "Povus Caves",
+ "discord": {
+  "webhook": true,
+  "hint": "https://discord.com/api/webhooks/1564331249420607670/…",
+  "connected": {
+   "channelId": "1564074164619583589",
+   "guildId": "311206458731528213",
+   "name": "gorgon-notes",
+   "at": "2026-10-26T18:33:54+01:00"
+  },
+  "pending": null,
+  "canConnect": true,
+  "lastPostAt": "2026-10-30T00:14:20+01:00",
+  "lastError": null,
+  "lastErrorAt": null
+ },
+ "everyone": {
+  "on": true,
+  "available": true,
+  "url": "https://gorgon-notes-room.rob-30c.workers.dev/everyone",
+  "lastPostAt": "2026-10-30T00:25:02+01:00",
+  "lastError": null,
+  "lastErrorAt": null,
+  "down": false,
+  "posted": 131,
+  "pending": 0
+ },
+ "transport": {
+  "kind": "room",
+  "name": "the party room",
+  "base": "https://gorgon-notes-room.rob-30c.workers.dev",
+  "roomOkAt": "2026-10-30T00:28:40+01:00",
+  "roomErrorAt": null,
+  "roomError": null,
+  "fallback": false
+ },
+ "live": [
+  {
+   "who": "Woltlump",
+   "dps": 1171,
+   "recent": 1240,
+   "me": 18200,
+   "pet": 7600,
+   "sec": 22,
+   "inFight": true,
+   "fightStart": "2026-10-30T00:28:02+01:00",
+   "area": "Povus Caves",
+   "at": 1793402920000,
+   "app": "gorgon-notes v0.11.0"
+  }
+ ],
+ "roomMembers": [
+  {
+   "who": "Akriex",
+   "lastSeen": 1793306573725,
+   "app": "gorgon-notes v0.11.0"
+  },
+  {
+   "who": "Fraghonk",
+   "lastSeen": 1793285254985,
+   "app": "gorgon-notes v0.9.0"
+  },
+  {
+   "who": "Robchew",
+   "lastSeen": 1793402900000,
+   "app": "gorgon-notes v0.11.0"
+  },
+  {
+   "who": "Woltlump",
+   "lastSeen": 1793402880000,
+   "app": "gorgon-notes v0.11.0"
+  }
+ ],
+ "members": [
+  "Akriex",
+  "Fraghonk",
+  "Robchew",
+  "Woltlump"
+ ],
+ "fights": [
+  {
+   "id": "2026-10-29T20:03:10+01:00",
+   "start": "2026-10-29T20:03:10+01:00",
+   "end": "2026-10-29T20:04:02+01:00",
+   "dur": 52,
+   "area": "Vidaria",
+   "total": 102000,
+   "byIds": true,
+   "byRoster": true,
+   "nearby": false,
+   "members": [
+    {
+     "who": "Woltlump",
+     "start": "2026-10-29T20:03:10+01:00",
+     "end": "2026-10-29T20:04:02+01:00",
+     "dur": 52,
+     "dmg": 61200,
+     "me": 42900,
+     "pets": {
+      "Smarmfire Wall": 18300
+     },
+     "dps": 1176.9,
+     "by": [
+      {
+       "who": "Woltlump",
+       "pet": false,
+       "dmg": 42900,
+       "health": 38610,
+       "armor": 4290,
+       "kills": 2
+      },
+      {
+       "who": "Smarmfire Wall",
+       "pet": true,
+       "dmg": 18300,
+       "health": 16836,
+       "armor": 1464,
+       "kills": 0
+      }
+     ],
+     "taken": 3200,
+     "kills": 2,
+     "deaths": 0,
+     "top": [
+      [
+       "Fire Wall",
+       42900
+      ]
+     ],
+     "targets": [
+      "Sand Kraken"
+     ],
+     "enemies": [
+      "2000000",
+      "2000001",
+      "2000002"
+     ],
+     "party": [
+      "Robchew",
+      "Caboozles"
+     ],
+     "area": "Vidaria",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-29T20:04:02+01:00",
+     "mine": false,
+     "share": 0.6,
+     "via": "feed"
+    },
+    {
+     "who": "Robchew",
+     "start": "2026-10-29T20:03:10+01:00",
+     "end": "2026-10-29T20:04:02+01:00",
+     "dur": 52,
+     "dmg": 40800,
+     "me": 28700,
+     "pets": {
+      "Doomstorm": 12100
+     },
+     "dps": 784.6,
+     "by": [
+      {
+       "who": "Robchew",
+       "pet": false,
+       "dmg": 28700,
+       "health": 25256,
+       "armor": 3444,
+       "kills": 1
+      },
+      {
+       "who": "Doomstorm",
+       "pet": true,
+       "dmg": 12100,
+       "health": 11495,
+       "armor": 605,
+       "kills": 0
+      }
+     ],
+     "taken": 2100,
+     "kills": 1,
+     "deaths": 0,
+     "top": [
+      [
+       "Damage over time",
+       28700
+      ]
+     ],
+     "targets": [
+      "Sand Kraken"
+     ],
+     "enemies": [
+      "2000000",
+      "2000001"
+     ],
+     "party": [
+      "Woltlump",
+      "Caboozles",
+      "Fraghonk"
+     ],
+     "area": "Vidaria",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-29T20:04:02+01:00",
+     "mine": true,
+     "share": 0.4,
+     "via": "local"
+    }
+   ],
+   "solo": false,
+   "pasted": false
+  },
+  {
+   "id": "2026-10-29T20:11:40+01:00",
+   "start": "2026-10-29T20:11:40+01:00",
+   "end": "2026-10-29T20:12:30+01:00",
+   "dur": 50,
+   "area": "Vidaria",
+   "total": 82000,
+   "byIds": true,
+   "byRoster": true,
+   "nearby": false,
+   "members": [
+    {
+     "who": "Woltlump",
+     "start": "2026-10-29T20:11:40+01:00",
+     "end": "2026-10-29T20:12:30+01:00",
+     "dur": 50,
+     "dmg": 48900,
+     "me": 34700,
+     "pets": {
+      "Smarmfire Wall": 14200
+     },
+     "dps": 978.0,
+     "by": [
+      {
+       "who": "Woltlump",
+       "pet": false,
+       "dmg": 34700,
+       "health": 31230,
+       "armor": 3470,
+       "kills": 2
+      },
+      {
+       "who": "Smarmfire Wall",
+       "pet": true,
+       "dmg": 14200,
+       "health": 13064,
+       "armor": 1136,
+       "kills": 0
+      }
+     ],
+     "taken": 3200,
+     "kills": 2,
+     "deaths": 0,
+     "top": [
+      [
+       "Fire Wall",
+       34700
+      ]
+     ],
+     "targets": [
+      "Sand Kraken"
+     ],
+     "enemies": [
+      "2000000",
+      "2000001",
+      "2000002"
+     ],
+     "party": [
+      "Robchew",
+      "Caboozles"
+     ],
+     "area": "Vidaria",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-29T20:12:30+01:00",
+     "mine": false,
+     "share": 0.596,
+     "via": "feed"
+    },
+    {
+     "who": "Robchew",
+     "start": "2026-10-29T20:11:40+01:00",
+     "end": "2026-10-29T20:12:30+01:00",
+     "dur": 50,
+     "dmg": 33100,
+     "me": 23300,
+     "pets": {
+      "Doomstorm": 9800
+     },
+     "dps": 662.0,
+     "by": [
+      {
+       "who": "Robchew",
+       "pet": false,
+       "dmg": 23300,
+       "health": 20504,
+       "armor": 2796,
+       "kills": 1
+      },
+      {
+       "who": "Doomstorm",
+       "pet": true,
+       "dmg": 9800,
+       "health": 9310,
+       "armor": 490,
+       "kills": 0
+      }
+     ],
+     "taken": 2100,
+     "kills": 1,
+     "deaths": 0,
+     "top": [
+      [
+       "Damage over time",
+       23300
+      ]
+     ],
+     "targets": [
+      "Sand Kraken"
+     ],
+     "enemies": [
+      "2000000",
+      "2000001"
+     ],
+     "party": [
+      "Woltlump",
+      "Caboozles",
+      "Fraghonk"
+     ],
+     "area": "Vidaria",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-29T20:12:30+01:00",
+     "mine": true,
+     "share": 0.404,
+     "via": "local"
+    }
+   ],
+   "solo": false,
+   "pasted": false
+  },
+  {
+   "id": "2026-10-29T20:31:05+01:00",
+   "start": "2026-10-29T20:31:05+01:00",
+   "end": "2026-10-29T20:32:40+01:00",
+   "dur": 95,
+   "area": "Vidaria",
+   "total": 145600,
+   "byIds": true,
+   "byRoster": true,
+   "nearby": false,
+   "members": [
+    {
+     "who": "Woltlump",
+     "start": "2026-10-29T20:31:05+01:00",
+     "end": "2026-10-29T20:32:40+01:00",
+     "dur": 95,
+     "dmg": 90400,
+     "me": 63300,
+     "pets": {
+      "Smarmfire Wall": 27100
+     },
+     "dps": 951.6,
+     "by": [
+      {
+       "who": "Woltlump",
+       "pet": false,
+       "dmg": 63300,
+       "health": 56970,
+       "armor": 6330,
+       "kills": 2
+      },
+      {
+       "who": "Smarmfire Wall",
+       "pet": true,
+       "dmg": 27100,
+       "health": 24932,
+       "armor": 2168,
+       "kills": 0
+      }
+     ],
+     "taken": 3200,
+     "kills": 2,
+     "deaths": 0,
+     "top": [
+      [
+       "Fire Wall",
+       63300
+      ]
+     ],
+     "targets": [
+      "Sand Kraken"
+     ],
+     "enemies": [
+      "2000000",
+      "2000001",
+      "2000002"
+     ],
+     "party": [
+      "Robchew",
+      "Caboozles"
+     ],
+     "area": "Vidaria",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-29T20:32:40+01:00",
+     "mine": false,
+     "share": 0.621,
+     "via": "feed"
+    },
+    {
+     "who": "Robchew",
+     "start": "2026-10-29T20:31:05+01:00",
+     "end": "2026-10-29T20:32:40+01:00",
+     "dur": 95,
+     "dmg": 55200,
+     "me": 38800,
+     "pets": {
+      "Doomstorm": 16400
+     },
+     "dps": 581.1,
+     "by": [
+      {
+       "who": "Robchew",
+       "pet": false,
+       "dmg": 38800,
+       "health": 34144,
+       "armor": 4656,
+       "kills": 1
+      },
+      {
+       "who": "Doomstorm",
+       "pet": true,
+       "dmg": 16400,
+       "health": 15580,
+       "armor": 820,
+       "kills": 0
+      }
+     ],
+     "taken": 2100,
+     "kills": 1,
+     "deaths": 0,
+     "top": [
+      [
+       "Damage over time",
+       38800
+      ]
+     ],
+     "targets": [
+      "Sand Kraken"
+     ],
+     "enemies": [
+      "2000000",
+      "2000001"
+     ],
+     "party": [
+      "Woltlump",
+      "Caboozles",
+      "Fraghonk"
+     ],
+     "area": "Vidaria",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-29T20:32:40+01:00",
+     "mine": true,
+     "share": 0.379,
+     "via": "local"
+    }
+   ],
+   "solo": false,
+   "pasted": false
+  },
+  {
+   "id": "2026-10-29T21:10:20+01:00",
+   "start": "2026-10-29T21:10:20+01:00",
+   "end": "2026-10-29T21:11:15+01:00",
+   "dur": 55,
+   "area": "Povus Caves",
+   "total": 122400,
+   "byIds": true,
+   "byRoster": false,
+   "nearby": false,
+   "members": [
+    {
+     "who": "Woltlump",
+     "start": "2026-10-29T21:10:20+01:00",
+     "end": "2026-10-29T21:11:15+01:00",
+     "dur": 55,
+     "dmg": 70100,
+     "me": 49100,
+     "pets": {
+      "Smarmfire Wall": 21000
+     },
+     "dps": 1274.5,
+     "by": [
+      {
+       "who": "Woltlump",
+       "pet": false,
+       "dmg": 49100,
+       "health": 44190,
+       "armor": 4910,
+       "kills": 1
+      },
+      {
+       "who": "Smarmfire Wall",
+       "pet": true,
+       "dmg": 21000,
+       "health": 19320,
+       "armor": 1680,
+       "kills": 0
+      }
+     ],
+     "taken": 2800,
+     "kills": 1,
+     "deaths": 0,
+     "top": [
+      [
+       "Fire Wall",
+       49100
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "3000000",
+      "3000001",
+      "3000002"
+     ],
+     "party": [
+      "Robchew"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-29T21:11:15+01:00",
+     "mine": false,
+     "share": 0.573,
+     "via": "feed"
+    },
+    {
+     "who": "Robchew",
+     "start": "2026-10-29T21:10:20+01:00",
+     "end": "2026-10-29T21:11:15+01:00",
+     "dur": 55,
+     "dmg": 52300,
+     "me": 36700,
+     "pets": {
+      "Doomstorm": 15600
+     },
+     "dps": 950.9,
+     "by": [
+      {
+       "who": "Robchew",
+       "pet": false,
+       "dmg": 36700,
+       "health": 32296,
+       "armor": 4404,
+       "kills": 0
+      },
+      {
+       "who": "Doomstorm",
+       "pet": true,
+       "dmg": 15600,
+       "health": 14820,
+       "armor": 780,
+       "kills": 0
+      }
+     ],
+     "taken": 1900,
+     "kills": 0,
+     "deaths": 0,
+     "top": [
+      [
+       "Damage over time",
+       36700
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "3000000",
+      "3000001"
+     ],
+     "party": [
+      "Woltlump"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-29T21:11:15+01:00",
+     "mine": true,
+     "share": 0.427,
+     "via": "local"
+    }
+   ],
+   "solo": false,
+   "pasted": false
+  },
+  {
+   "id": "2026-10-29T21:40:00+01:00",
+   "start": "2026-10-29T21:40:00+01:00",
+   "end": "2026-10-29T21:41:12+01:00",
+   "dur": 72,
+   "area": "Povus Caves",
+   "total": 150600,
+   "byIds": true,
+   "byRoster": true,
+   "nearby": false,
+   "members": [
+    {
+     "who": "Woltlump",
+     "start": "2026-10-29T21:40:00+01:00",
+     "end": "2026-10-29T21:41:12+01:00",
+     "dur": 72,
+     "dmg": 88700,
+     "me": 62100,
+     "pets": {
+      "Smarmfire Wall": 26600
+     },
+     "dps": 1231.9,
+     "by": [
+      {
+       "who": "Woltlump",
+       "pet": false,
+       "dmg": 62100,
+       "health": 55890,
+       "armor": 6210,
+       "kills": 1
+      },
+      {
+       "who": "Smarmfire Wall",
+       "pet": true,
+       "dmg": 26600,
+       "health": 24472,
+       "armor": 2128,
+       "kills": 0
+      }
+     ],
+     "taken": 2800,
+     "kills": 1,
+     "deaths": 0,
+     "top": [
+      [
+       "Fire Wall",
+       62100
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "3000000",
+      "3000001",
+      "3000002"
+     ],
+     "party": [
+      "Robchew"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-29T21:41:12+01:00",
+     "mine": false,
+     "share": 0.589,
+     "via": "feed"
+    },
+    {
+     "who": "Robchew",
+     "start": "2026-10-29T21:40:00+01:00",
+     "end": "2026-10-29T21:41:12+01:00",
+     "dur": 72,
+     "dmg": 61900,
+     "me": 43400,
+     "pets": {
+      "Doomstorm": 18500
+     },
+     "dps": 859.7,
+     "by": [
+      {
+       "who": "Robchew",
+       "pet": false,
+       "dmg": 43400,
+       "health": 38192,
+       "armor": 5208,
+       "kills": 0
+      },
+      {
+       "who": "Doomstorm",
+       "pet": true,
+       "dmg": 18500,
+       "health": 17575,
+       "armor": 925,
+       "kills": 0
+      }
+     ],
+     "taken": 1900,
+     "kills": 0,
+     "deaths": 0,
+     "top": [
+      [
+       "Damage over time",
+       43400
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "3000000",
+      "3000001"
+     ],
+     "party": [
+      "Woltlump"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-29T21:41:12+01:00",
+     "mine": true,
+     "share": 0.411,
+     "via": "local"
+    }
+   ],
+   "solo": false,
+   "pasted": false
+  },
+  {
+   "id": "2026-10-29T21:58:30+01:00",
+   "start": "2026-10-29T21:58:30+01:00",
+   "end": "2026-10-29T21:59:20+01:00",
+   "dur": 50,
+   "area": "Povus Caves",
+   "total": 70100,
+   "byIds": false,
+   "byRoster": false,
+   "nearby": true,
+   "members": [
+    {
+     "who": "Woltlump",
+     "start": "2026-10-29T21:58:30+01:00",
+     "end": "2026-10-29T21:59:20+01:00",
+     "dur": 50,
+     "dmg": 40300,
+     "me": 28200,
+     "pets": {
+      "Smarmfire Wall": 12100
+     },
+     "dps": 806.0,
+     "by": [
+      {
+       "who": "Woltlump",
+       "pet": false,
+       "dmg": 28200,
+       "health": 25380,
+       "armor": 2820,
+       "kills": 1
+      },
+      {
+       "who": "Smarmfire Wall",
+       "pet": true,
+       "dmg": 12100,
+       "health": 11132,
+       "armor": 968,
+       "kills": 0
+      }
+     ],
+     "taken": 2800,
+     "kills": 1,
+     "deaths": 0,
+     "top": [
+      [
+       "Fire Wall",
+       28200
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "3000000",
+      "3000001",
+      "3000002"
+     ],
+     "party": [],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-29T21:59:20+01:00",
+     "mine": false,
+     "share": 0.575,
+     "via": "feed"
+    },
+    {
+     "who": "Robchew",
+     "start": "2026-10-29T21:58:30+01:00",
+     "end": "2026-10-29T21:59:20+01:00",
+     "dur": 50,
+     "dmg": 29800,
+     "me": 20900,
+     "pets": {
+      "Doomstorm": 8900
+     },
+     "dps": 596.0,
+     "by": [
+      {
+       "who": "Robchew",
+       "pet": false,
+       "dmg": 20900,
+       "health": 18392,
+       "armor": 2508,
+       "kills": 0
+      },
+      {
+       "who": "Doomstorm",
+       "pet": true,
+       "dmg": 8900,
+       "health": 8455,
+       "armor": 445,
+       "kills": 0
+      }
+     ],
+     "taken": 1900,
+     "kills": 0,
+     "deaths": 0,
+     "top": [
+      [
+       "Damage over time",
+       20900
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "3100000"
+     ],
+     "party": [],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-29T21:59:20+01:00",
+     "mine": true,
+     "share": 0.425,
+     "via": "local"
+    }
+   ],
+   "solo": false,
+   "pasted": false
+  },
+  {
+   "id": "2026-10-29T23:46:34+01:00",
+   "start": "2026-10-29T23:46:34+01:00",
+   "end": "2026-10-29T23:47:36+01:00",
+   "dur": 62,
+   "area": "Povus Caves",
+   "total": 132144,
+   "byIds": false,
+   "byRoster": true,
+   "nearby": false,
+   "members": [
+    {
+     "who": "Woltlump",
+     "start": "2026-10-29T23:46:34+01:00",
+     "end": "2026-10-29T23:47:36+01:00",
+     "dur": 62,
+     "dmg": 81584,
+     "me": 47319,
+     "pets": {
+      "Smarmfire Wall": 34265
+     },
+     "dps": 1315.9,
+     "by": [
+      {
+       "who": "Woltlump",
+       "pet": false,
+       "dmg": 47319,
+       "health": 42587,
+       "armor": 4732,
+       "kills": 0
+      },
+      {
+       "who": "Smarmfire Wall",
+       "pet": true,
+       "dmg": 34265,
+       "health": 31523,
+       "armor": 2742,
+       "kills": 0
+      }
+     ],
+     "taken": 3100,
+     "kills": 0,
+     "deaths": 0,
+     "top": [
+      [
+       "Fire Wall",
+       47319
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4000000",
+      "4000001",
+      "4000002"
+     ],
+     "party": [
+      "Robchew",
+      "Caboozles"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-29T23:47:36+01:00",
+     "mine": false,
+     "share": 0.617,
+     "via": "feed"
+    },
+    {
+     "who": "Robchew",
+     "start": "2026-10-29T23:46:34+01:00",
+     "end": "2026-10-29T23:47:36+01:00",
+     "dur": 62,
+     "dmg": 50560,
+     "me": 38426,
+     "pets": {
+      "Doomstorm": 12134
+     },
+     "dps": 815.5,
+     "by": [
+      {
+       "who": "Robchew",
+       "pet": false,
+       "dmg": 38426,
+       "health": 33814,
+       "armor": 4612,
+       "kills": 0
+      },
+      {
+       "who": "Doomstorm",
+       "pet": true,
+       "dmg": 12134,
+       "health": 11527,
+       "armor": 607,
+       "kills": 0
+      }
+     ],
+     "taken": 1700,
+     "kills": 0,
+     "deaths": 0,
+     "top": [
+      [
+       "Damage over time",
+       38426
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4000000",
+      "4000001"
+     ],
+     "party": [
+      "Woltlump",
+      "Caboozles",
+      "Fraghonk"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-29T23:47:36+01:00",
+     "mine": true,
+     "share": 0.383,
+     "via": "local"
+    }
+   ],
+   "solo": false,
+   "pasted": false
+  },
+  {
+   "id": "2026-10-29T23:49:16+01:00",
+   "start": "2026-10-29T23:49:16+01:00",
+   "end": "2026-10-29T23:49:40+01:00",
+   "dur": 24,
+   "area": "Povus Caves",
+   "total": 68618,
+   "byIds": true,
+   "byRoster": true,
+   "nearby": false,
+   "members": [
+    {
+     "who": "Woltlump",
+     "start": "2026-10-29T23:49:16+01:00",
+     "end": "2026-10-29T23:49:40+01:00",
+     "dur": 24,
+     "dmg": 44215,
+     "me": 25645,
+     "pets": {
+      "Smarmfire Wall": 18570
+     },
+     "dps": 1842.3,
+     "by": [
+      {
+       "who": "Woltlump",
+       "pet": false,
+       "dmg": 25645,
+       "health": 23080,
+       "armor": 2565,
+       "kills": 1
+      },
+      {
+       "who": "Smarmfire Wall",
+       "pet": true,
+       "dmg": 18570,
+       "health": 17084,
+       "armor": 1486,
+       "kills": 0
+      }
+     ],
+     "taken": 3100,
+     "kills": 1,
+     "deaths": 0,
+     "top": [
+      [
+       "Fire Wall",
+       25645
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4000005",
+      "4000006",
+      "4000007"
+     ],
+     "party": [
+      "Robchew",
+      "Caboozles"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-29T23:49:40+01:00",
+     "mine": false,
+     "share": 0.644,
+     "via": "feed"
+    },
+    {
+     "who": "Robchew",
+     "start": "2026-10-29T23:49:16+01:00",
+     "end": "2026-10-29T23:49:40+01:00",
+     "dur": 24,
+     "dmg": 24403,
+     "me": 18547,
+     "pets": {
+      "Doomstorm": 5856
+     },
+     "dps": 1016.8,
+     "by": [
+      {
+       "who": "Robchew",
+       "pet": false,
+       "dmg": 18547,
+       "health": 16321,
+       "armor": 2226,
+       "kills": 0
+      },
+      {
+       "who": "Doomstorm",
+       "pet": true,
+       "dmg": 5856,
+       "health": 5563,
+       "armor": 293,
+       "kills": 0
+      }
+     ],
+     "taken": 1700,
+     "kills": 0,
+     "deaths": 0,
+     "top": [
+      [
+       "Damage over time",
+       18547
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4000005",
+      "4000006"
+     ],
+     "party": [
+      "Woltlump",
+      "Caboozles",
+      "Fraghonk"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-29T23:49:40+01:00",
+     "mine": true,
+     "share": 0.356,
+     "via": "local"
+    }
+   ],
+   "solo": false,
+   "pasted": false
+  },
+  {
+   "id": "2026-10-29T23:52:08+01:00",
+   "start": "2026-10-29T23:52:08+01:00",
+   "end": "2026-10-29T23:52:36+01:00",
+   "dur": 28,
+   "area": "Povus Caves",
+   "total": 72927,
+   "byIds": true,
+   "byRoster": true,
+   "nearby": false,
+   "members": [
+    {
+     "who": "Woltlump",
+     "start": "2026-10-29T23:52:08+01:00",
+     "end": "2026-10-29T23:52:36+01:00",
+     "dur": 28,
+     "dmg": 51523,
+     "me": 29884,
+     "pets": {
+      "Smarmfire Wall": 21639
+     },
+     "dps": 1840.1,
+     "by": [
+      {
+       "who": "Woltlump",
+       "pet": false,
+       "dmg": 29884,
+       "health": 26895,
+       "armor": 2989,
+       "kills": 0
+      },
+      {
+       "who": "Smarmfire Wall",
+       "pet": true,
+       "dmg": 21639,
+       "health": 19907,
+       "armor": 1732,
+       "kills": 0
+      }
+     ],
+     "taken": 3100,
+     "kills": 0,
+     "deaths": 0,
+     "top": [
+      [
+       "Fire Wall",
+       29884
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4000010",
+      "4000011",
+      "4000012"
+     ],
+     "party": [
+      "Robchew",
+      "Caboozles"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-29T23:52:36+01:00",
+     "mine": false,
+     "share": 0.707,
+     "via": "feed"
+    },
+    {
+     "who": "Robchew",
+     "start": "2026-10-29T23:52:08+01:00",
+     "end": "2026-10-29T23:52:36+01:00",
+     "dur": 28,
+     "dmg": 21404,
+     "me": 16268,
+     "pets": {
+      "Doomstorm": 5136
+     },
+     "dps": 764.4,
+     "by": [
+      {
+       "who": "Robchew",
+       "pet": false,
+       "dmg": 16268,
+       "health": 14315,
+       "armor": 1953,
+       "kills": 0
+      },
+      {
+       "who": "Doomstorm",
+       "pet": true,
+       "dmg": 5136,
+       "health": 4879,
+       "armor": 257,
+       "kills": 0
+      }
+     ],
+     "taken": 1700,
+     "kills": 0,
+     "deaths": 0,
+     "top": [
+      [
+       "Damage over time",
+       16268
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4000010",
+      "4000011"
+     ],
+     "party": [
+      "Woltlump",
+      "Caboozles",
+      "Fraghonk"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-29T23:52:36+01:00",
+     "mine": true,
+     "share": 0.293,
+     "via": "local"
+    }
+   ],
+   "solo": false,
+   "pasted": false
+  },
+  {
+   "id": "2026-10-29T23:55:33+01:00",
+   "start": "2026-10-29T23:55:33+01:00",
+   "end": "2026-10-29T23:56:28+01:00",
+   "dur": 55,
+   "area": "Povus Caves",
+   "total": 115337,
+   "byIds": false,
+   "byRoster": true,
+   "nearby": false,
+   "members": [
+    {
+     "who": "Woltlump",
+     "start": "2026-10-29T23:55:33+01:00",
+     "end": "2026-10-29T23:56:28+01:00",
+     "dur": 55,
+     "dmg": 72347,
+     "me": 41962,
+     "pets": {
+      "Smarmfire Wall": 30385
+     },
+     "dps": 1315.4,
+     "by": [
+      {
+       "who": "Woltlump",
+       "pet": false,
+       "dmg": 41962,
+       "health": 37765,
+       "armor": 4197,
+       "kills": 1
+      },
+      {
+       "who": "Smarmfire Wall",
+       "pet": true,
+       "dmg": 30385,
+       "health": 27954,
+       "armor": 2431,
+       "kills": 0
+      }
+     ],
+     "taken": 3100,
+     "kills": 1,
+     "deaths": 0,
+     "top": [
+      [
+       "Fire Wall",
+       41962
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4000015",
+      "4000016",
+      "4000017"
+     ],
+     "party": [
+      "Robchew",
+      "Caboozles"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-29T23:56:28+01:00",
+     "mine": false,
+     "share": 0.627,
+     "via": "feed"
+    },
+    {
+     "who": "Robchew",
+     "start": "2026-10-29T23:55:33+01:00",
+     "end": "2026-10-29T23:56:28+01:00",
+     "dur": 55,
+     "dmg": 42990,
+     "me": 32673,
+     "pets": {
+      "Doomstorm": 10317
+     },
+     "dps": 781.6,
+     "by": [
+      {
+       "who": "Robchew",
+       "pet": false,
+       "dmg": 32673,
+       "health": 28752,
+       "armor": 3921,
+       "kills": 0
+      },
+      {
+       "who": "Doomstorm",
+       "pet": true,
+       "dmg": 10317,
+       "health": 9801,
+       "armor": 516,
+       "kills": 0
+      }
+     ],
+     "taken": 1700,
+     "kills": 0,
+     "deaths": 0,
+     "top": [
+      [
+       "Damage over time",
+       32673
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4000015",
+      "4000016"
+     ],
+     "party": [
+      "Woltlump",
+      "Caboozles",
+      "Fraghonk"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-29T23:56:28+01:00",
+     "mine": true,
+     "share": 0.373,
+     "via": "local"
+    }
+   ],
+   "solo": false,
+   "pasted": false
+  },
+  {
+   "id": "2026-10-29T23:58:10+01:00",
+   "start": "2026-10-29T23:58:10+01:00",
+   "end": "2026-10-29T23:59:35+01:00",
+   "dur": 85,
+   "area": "Povus Caves",
+   "total": 195284,
+   "byIds": true,
+   "byRoster": true,
+   "nearby": false,
+   "members": [
+    {
+     "who": "Woltlump",
+     "start": "2026-10-29T23:58:10+01:00",
+     "end": "2026-10-29T23:59:35+01:00",
+     "dur": 85,
+     "dmg": 121916,
+     "me": 70712,
+     "pets": {
+      "Smarmfire Wall": 51204
+     },
+     "dps": 1434.3,
+     "by": [
+      {
+       "who": "Woltlump",
+       "pet": false,
+       "dmg": 70712,
+       "health": 63640,
+       "armor": 7072,
+       "kills": 0
+      },
+      {
+       "who": "Smarmfire Wall",
+       "pet": true,
+       "dmg": 51204,
+       "health": 47107,
+       "armor": 4097,
+       "kills": 0
+      }
+     ],
+     "taken": 3100,
+     "kills": 0,
+     "deaths": 0,
+     "top": [
+      [
+       "Fire Wall",
+       70712
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4000020",
+      "4000021",
+      "4000022"
+     ],
+     "party": [
+      "Robchew",
+      "Caboozles"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-29T23:59:35+01:00",
+     "mine": false,
+     "share": 0.624,
+     "via": "feed"
+    },
+    {
+     "who": "Robchew",
+     "start": "2026-10-29T23:58:10+01:00",
+     "end": "2026-10-29T23:59:35+01:00",
+     "dur": 85,
+     "dmg": 73368,
+     "me": 55760,
+     "pets": {
+      "Doomstorm": 17608
+     },
+     "dps": 863.2,
+     "by": [
+      {
+       "who": "Robchew",
+       "pet": false,
+       "dmg": 55760,
+       "health": 49068,
+       "armor": 6692,
+       "kills": 0
+      },
+      {
+       "who": "Doomstorm",
+       "pet": true,
+       "dmg": 17608,
+       "health": 16727,
+       "armor": 881,
+       "kills": 0
+      }
+     ],
+     "taken": 1700,
+     "kills": 0,
+     "deaths": 0,
+     "top": [
+      [
+       "Damage over time",
+       55760
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4000020",
+      "4000021"
+     ],
+     "party": [
+      "Woltlump",
+      "Caboozles",
+      "Fraghonk"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-29T23:59:35+01:00",
+     "mine": true,
+     "share": 0.376,
+     "via": "local"
+    }
+   ],
+   "solo": false,
+   "pasted": false
+  },
+  {
+   "id": "2026-10-30T00:02:04+01:00",
+   "start": "2026-10-30T00:02:04+01:00",
+   "end": "2026-10-30T00:03:29+01:00",
+   "dur": 85,
+   "area": "Povus Caves",
+   "total": 179943,
+   "byIds": true,
+   "byRoster": true,
+   "nearby": false,
+   "members": [
+    {
+     "who": "Woltlump",
+     "start": "2026-10-30T00:02:04+01:00",
+     "end": "2026-10-30T00:03:29+01:00",
+     "dur": 85,
+     "dmg": 111270,
+     "me": 64537,
+     "pets": {
+      "Smarmfire Wall": 46733
+     },
+     "dps": 1309.1,
+     "by": [
+      {
+       "who": "Woltlump",
+       "pet": false,
+       "dmg": 64537,
+       "health": 58083,
+       "armor": 6454,
+       "kills": 1
+      },
+      {
+       "who": "Smarmfire Wall",
+       "pet": true,
+       "dmg": 46733,
+       "health": 42994,
+       "armor": 3739,
+       "kills": 0
+      }
+     ],
+     "taken": 3100,
+     "kills": 1,
+     "deaths": 0,
+     "top": [
+      [
+       "Fire Wall",
+       64537
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4000025",
+      "4000026",
+      "4000027"
+     ],
+     "party": [
+      "Robchew",
+      "Caboozles"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-30T00:03:29+01:00",
+     "mine": false,
+     "share": 0.618,
+     "via": "feed"
+    },
+    {
+     "who": "Robchew",
+     "start": "2026-10-30T00:02:04+01:00",
+     "end": "2026-10-30T00:03:29+01:00",
+     "dur": 85,
+     "dmg": 68673,
+     "me": 52192,
+     "pets": {
+      "Doomstorm": 16481
+     },
+     "dps": 807.9,
+     "by": [
+      {
+       "who": "Robchew",
+       "pet": false,
+       "dmg": 52192,
+       "health": 45928,
+       "armor": 6264,
+       "kills": 0
+      },
+      {
+       "who": "Doomstorm",
+       "pet": true,
+       "dmg": 16481,
+       "health": 15656,
+       "armor": 825,
+       "kills": 0
+      }
+     ],
+     "taken": 1700,
+     "kills": 0,
+     "deaths": 0,
+     "top": [
+      [
+       "Damage over time",
+       52192
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4000025",
+      "4000026"
+     ],
+     "party": [
+      "Woltlump",
+      "Caboozles",
+      "Fraghonk"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-30T00:03:29+01:00",
+     "mine": true,
+     "share": 0.382,
+     "via": "local"
+    }
+   ],
+   "solo": false,
+   "pasted": false
+  },
+  {
+   "id": "2026-10-30T00:06:36+01:00",
+   "start": "2026-10-30T00:06:36+01:00",
+   "end": "2026-10-30T00:07:38+01:00",
+   "dur": 62,
+   "area": "Povus Caves",
+   "total": 143335,
+   "byIds": false,
+   "byRoster": true,
+   "nearby": false,
+   "members": [
+    {
+     "who": "Woltlump",
+     "start": "2026-10-30T00:06:36+01:00",
+     "end": "2026-10-30T00:07:38+01:00",
+     "dur": 62,
+     "dmg": 94651,
+     "me": 54898,
+     "pets": {
+      "Smarmfire Wall": 39753
+     },
+     "dps": 1526.6,
+     "by": [
+      {
+       "who": "Woltlump",
+       "pet": false,
+       "dmg": 54898,
+       "health": 49408,
+       "armor": 5490,
+       "kills": 0
+      },
+      {
+       "who": "Smarmfire Wall",
+       "pet": true,
+       "dmg": 39753,
+       "health": 36572,
+       "armor": 3181,
+       "kills": 0
+      }
+     ],
+     "taken": 3100,
+     "kills": 0,
+     "deaths": 0,
+     "top": [
+      [
+       "Fire Wall",
+       54898
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4000030",
+      "4000031",
+      "4000032"
+     ],
+     "party": [
+      "Robchew",
+      "Caboozles"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-30T00:07:38+01:00",
+     "mine": false,
+     "share": 0.66,
+     "via": "feed"
+    },
+    {
+     "who": "Robchew",
+     "start": "2026-10-30T00:06:36+01:00",
+     "end": "2026-10-30T00:07:38+01:00",
+     "dur": 62,
+     "dmg": 48684,
+     "me": 37000,
+     "pets": {
+      "Doomstorm": 11684
+     },
+     "dps": 785.2,
+     "by": [
+      {
+       "who": "Robchew",
+       "pet": false,
+       "dmg": 37000,
+       "health": 32560,
+       "armor": 4440,
+       "kills": 0
+      },
+      {
+       "who": "Doomstorm",
+       "pet": true,
+       "dmg": 11684,
+       "health": 11099,
+       "armor": 585,
+       "kills": 0
+      }
+     ],
+     "taken": 1700,
+     "kills": 0,
+     "deaths": 0,
+     "top": [
+      [
+       "Damage over time",
+       37000
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4000030",
+      "4000031"
+     ],
+     "party": [
+      "Woltlump",
+      "Caboozles",
+      "Fraghonk"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-30T00:07:38+01:00",
+     "mine": true,
+     "share": 0.34,
+     "via": "local"
+    }
+   ],
+   "solo": false,
+   "pasted": false
+  },
+  {
+   "id": "2026-10-30T00:08:17+01:00",
+   "start": "2026-10-30T00:08:17+01:00",
+   "end": "2026-10-30T00:08:45+01:00",
+   "dur": 28,
+   "area": "Povus Caves",
+   "total": 78947,
+   "byIds": true,
+   "byRoster": true,
+   "nearby": false,
+   "members": [
+    {
+     "who": "Woltlump",
+     "start": "2026-10-30T00:08:17+01:00",
+     "end": "2026-10-30T00:08:45+01:00",
+     "dur": 28,
+     "dmg": 52602,
+     "me": 30510,
+     "pets": {
+      "Smarmfire Wall": 22092
+     },
+     "dps": 1878.6,
+     "by": [
+      {
+       "who": "Woltlump",
+       "pet": false,
+       "dmg": 30510,
+       "health": 27459,
+       "armor": 3051,
+       "kills": 1
+      },
+      {
+       "who": "Smarmfire Wall",
+       "pet": true,
+       "dmg": 22092,
+       "health": 20324,
+       "armor": 1768,
+       "kills": 0
+      }
+     ],
+     "taken": 3100,
+     "kills": 1,
+     "deaths": 0,
+     "top": [
+      [
+       "Fire Wall",
+       30510
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4000035",
+      "4000036",
+      "4000037"
+     ],
+     "party": [
+      "Robchew",
+      "Caboozles"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-30T00:08:45+01:00",
+     "mine": false,
+     "share": 0.666,
+     "via": "feed"
+    },
+    {
+     "who": "Robchew",
+     "start": "2026-10-30T00:08:17+01:00",
+     "end": "2026-10-30T00:08:45+01:00",
+     "dur": 28,
+     "dmg": 26345,
+     "me": 20023,
+     "pets": {
+      "Doomstorm": 6322
+     },
+     "dps": 940.9,
+     "by": [
+      {
+       "who": "Robchew",
+       "pet": false,
+       "dmg": 20023,
+       "health": 17620,
+       "armor": 2403,
+       "kills": 0
+      },
+      {
+       "who": "Doomstorm",
+       "pet": true,
+       "dmg": 6322,
+       "health": 6005,
+       "armor": 317,
+       "kills": 0
+      }
+     ],
+     "taken": 1700,
+     "kills": 0,
+     "deaths": 0,
+     "top": [
+      [
+       "Damage over time",
+       20023
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4000035",
+      "4000036"
+     ],
+     "party": [
+      "Woltlump",
+      "Caboozles",
+      "Fraghonk"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-30T00:08:45+01:00",
+     "mine": true,
+     "share": 0.334,
+     "via": "local"
+    }
+   ],
+   "solo": false,
+   "pasted": false
+  },
+  {
+   "id": "2026-10-30T00:12:08+01:00",
+   "start": "2026-10-30T00:12:08+01:00",
+   "end": "2026-10-30T00:13:10+01:00",
+   "dur": 62,
+   "area": "Povus Caves",
+   "total": 142063,
+   "byIds": true,
+   "byRoster": true,
+   "nearby": false,
+   "members": [
+    {
+     "who": "Woltlump",
+     "start": "2026-10-30T00:12:08+01:00",
+     "end": "2026-10-30T00:13:10+01:00",
+     "dur": 62,
+     "dmg": 90814,
+     "me": 52673,
+     "pets": {
+      "Smarmfire Wall": 38141
+     },
+     "dps": 1464.7,
+     "by": [
+      {
+       "who": "Woltlump",
+       "pet": false,
+       "dmg": 52673,
+       "health": 47405,
+       "armor": 5268,
+       "kills": 0
+      },
+      {
+       "who": "Smarmfire Wall",
+       "pet": true,
+       "dmg": 38141,
+       "health": 35089,
+       "armor": 3052,
+       "kills": 0
+      }
+     ],
+     "taken": 3100,
+     "kills": 0,
+     "deaths": 0,
+     "top": [
+      [
+       "Fire Wall",
+       52673
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4000040",
+      "4000041",
+      "4000042"
+     ],
+     "party": [
+      "Robchew",
+      "Caboozles"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-30T00:13:10+01:00",
+     "mine": false,
+     "share": 0.639,
+     "via": "feed"
+    },
+    {
+     "who": "Robchew",
+     "start": "2026-10-30T00:12:08+01:00",
+     "end": "2026-10-30T00:13:10+01:00",
+     "dur": 62,
+     "dmg": 51249,
+     "me": 38950,
+     "pets": {
+      "Doomstorm": 12299
+     },
+     "dps": 826.6,
+     "by": [
+      {
+       "who": "Robchew",
+       "pet": false,
+       "dmg": 38950,
+       "health": 34276,
+       "armor": 4674,
+       "kills": 0
+      },
+      {
+       "who": "Doomstorm",
+       "pet": true,
+       "dmg": 12299,
+       "health": 11684,
+       "armor": 615,
+       "kills": 0
+      }
+     ],
+     "taken": 1700,
+     "kills": 0,
+     "deaths": 0,
+     "top": [
+      [
+       "Damage over time",
+       38950
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4000040",
+      "4000041"
+     ],
+     "party": [
+      "Woltlump",
+      "Caboozles",
+      "Fraghonk"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-30T00:13:10+01:00",
+     "mine": true,
+     "share": 0.361,
+     "via": "local"
+    }
+   ],
+   "solo": false,
+   "pasted": false
+  },
+  {
+   "id": "2026-10-30T00:15:32+01:00",
+   "start": "2026-10-30T00:15:32+01:00",
+   "end": "2026-10-30T00:16:00+01:00",
+   "dur": 28,
+   "area": "Povus Caves",
+   "total": 66197,
+   "byIds": false,
+   "byRoster": true,
+   "nearby": false,
+   "members": [
+    {
+     "who": "Woltlump",
+     "start": "2026-10-30T00:15:32+01:00",
+     "end": "2026-10-30T00:16:00+01:00",
+     "dur": 28,
+     "dmg": 40933,
+     "me": 23742,
+     "pets": {
+      "Smarmfire Wall": 17191
+     },
+     "dps": 1461.9,
+     "by": [
+      {
+       "who": "Woltlump",
+       "pet": false,
+       "dmg": 23742,
+       "health": 21367,
+       "armor": 2375,
+       "kills": 1
+      },
+      {
+       "who": "Smarmfire Wall",
+       "pet": true,
+       "dmg": 17191,
+       "health": 15815,
+       "armor": 1376,
+       "kills": 0
+      }
+     ],
+     "taken": 3100,
+     "kills": 1,
+     "deaths": 0,
+     "top": [
+      [
+       "Fire Wall",
+       23742
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4000045",
+      "4000046",
+      "4000047"
+     ],
+     "party": [
+      "Robchew",
+      "Caboozles"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-30T00:16:00+01:00",
+     "mine": false,
+     "share": 0.618,
+     "via": "feed"
+    },
+    {
+     "who": "Robchew",
+     "start": "2026-10-30T00:15:32+01:00",
+     "end": "2026-10-30T00:16:00+01:00",
+     "dur": 28,
+     "dmg": 25264,
+     "me": 19201,
+     "pets": {
+      "Doomstorm": 6063
+     },
+     "dps": 902.3,
+     "by": [
+      {
+       "who": "Robchew",
+       "pet": false,
+       "dmg": 19201,
+       "health": 16896,
+       "armor": 2305,
+       "kills": 0
+      },
+      {
+       "who": "Doomstorm",
+       "pet": true,
+       "dmg": 6063,
+       "health": 5759,
+       "armor": 304,
+       "kills": 0
+      }
+     ],
+     "taken": 1700,
+     "kills": 0,
+     "deaths": 0,
+     "top": [
+      [
+       "Damage over time",
+       19201
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4000045",
+      "4000046"
+     ],
+     "party": [
+      "Woltlump",
+      "Caboozles",
+      "Fraghonk"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-30T00:16:00+01:00",
+     "mine": true,
+     "share": 0.382,
+     "via": "local"
+    }
+   ],
+   "solo": false,
+   "pasted": false
+  },
+  {
+   "id": "2026-10-30T00:18:20+01:00",
+   "start": "2026-10-30T00:18:20+01:00",
+   "end": "2026-10-30T00:18:48+01:00",
+   "dur": 28,
+   "area": "Povus Caves",
+   "total": 65333,
+   "byIds": true,
+   "byRoster": true,
+   "nearby": false,
+   "members": [
+    {
+     "who": "Woltlump",
+     "start": "2026-10-30T00:18:20+01:00",
+     "end": "2026-10-30T00:18:48+01:00",
+     "dur": 28,
+     "dmg": 37341,
+     "me": 21658,
+     "pets": {
+      "Smarmfire Wall": 15683
+     },
+     "dps": 1333.6,
+     "by": [
+      {
+       "who": "Woltlump",
+       "pet": false,
+       "dmg": 21658,
+       "health": 19492,
+       "armor": 2166,
+       "kills": 0
+      },
+      {
+       "who": "Smarmfire Wall",
+       "pet": true,
+       "dmg": 15683,
+       "health": 14428,
+       "armor": 1255,
+       "kills": 0
+      }
+     ],
+     "taken": 3100,
+     "kills": 0,
+     "deaths": 0,
+     "top": [
+      [
+       "Fire Wall",
+       21658
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4000050",
+      "4000051",
+      "4000052"
+     ],
+     "party": [
+      "Robchew",
+      "Caboozles"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-30T00:18:48+01:00",
+     "mine": false,
+     "share": 0.572,
+     "via": "feed"
+    },
+    {
+     "who": "Robchew",
+     "start": "2026-10-30T00:18:20+01:00",
+     "end": "2026-10-30T00:18:48+01:00",
+     "dur": 28,
+     "dmg": 27992,
+     "me": 21274,
+     "pets": {
+      "Doomstorm": 6718
+     },
+     "dps": 999.7,
+     "by": [
+      {
+       "who": "Robchew",
+       "pet": false,
+       "dmg": 21274,
+       "health": 18721,
+       "armor": 2553,
+       "kills": 0
+      },
+      {
+       "who": "Doomstorm",
+       "pet": true,
+       "dmg": 6718,
+       "health": 6382,
+       "armor": 336,
+       "kills": 0
+      }
+     ],
+     "taken": 1700,
+     "kills": 0,
+     "deaths": 0,
+     "top": [
+      [
+       "Damage over time",
+       21274
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4000050",
+      "4000051"
+     ],
+     "party": [
+      "Woltlump",
+      "Caboozles",
+      "Fraghonk"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-30T00:18:48+01:00",
+     "mine": true,
+     "share": 0.428,
+     "via": "local"
+    }
+   ],
+   "solo": false,
+   "pasted": false
+  },
+  {
+   "id": "2026-10-30T00:20:05+01:00",
+   "start": "2026-10-30T00:20:05+01:00",
+   "end": "2026-10-30T00:20:31+01:00",
+   "dur": 26,
+   "area": "Povus Caves",
+   "total": 21400,
+   "byIds": false,
+   "byRoster": false,
+   "nearby": false,
+   "members": [
+    {
+     "who": "Robchew",
+     "start": "2026-10-30T00:20:05+01:00",
+     "end": "2026-10-30T00:20:31+01:00",
+     "dur": 26,
+     "dmg": 21400,
+     "me": 16300,
+     "pets": {
+      "Doomstorm": 5100
+     },
+     "dps": 823.1,
+     "by": [
+      {
+       "who": "Robchew",
+       "pet": false,
+       "dmg": 16300,
+       "health": 14344,
+       "armor": 1956,
+       "kills": 0
+      },
+      {
+       "who": "Doomstorm",
+       "pet": true,
+       "dmg": 5100,
+       "health": 4845,
+       "armor": 255,
+       "kills": 0
+      }
+     ],
+     "taken": 400,
+     "kills": 0,
+     "deaths": 0,
+     "top": [
+      [
+       "Damage over time",
+       16300
+      ]
+     ],
+     "targets": [
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4100001"
+     ],
+     "party": [
+      "Woltlump",
+      "Caboozles",
+      "Fraghonk"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-30T00:20:31+01:00",
+     "mine": true,
+     "share": 1.0,
+     "via": "local"
+    }
+   ],
+   "solo": true,
+   "pasted": false
+  },
+  {
+   "id": "2026-10-30T00:22:10+01:00",
+   "start": "2026-10-30T00:22:10+01:00",
+   "end": "2026-10-30T00:22:28+01:00",
+   "dur": 18,
+   "area": "Povus Caves",
+   "total": 9300,
+   "byIds": false,
+   "byRoster": false,
+   "nearby": false,
+   "members": [
+    {
+     "who": "Robchew",
+     "start": "2026-10-30T00:22:10+01:00",
+     "end": "2026-10-30T00:22:28+01:00",
+     "dur": 18,
+     "dmg": 9300,
+     "me": 7100,
+     "pets": {
+      "Doomstorm": 2200
+     },
+     "dps": 516.7,
+     "by": [
+      {
+       "who": "Robchew",
+       "pet": false,
+       "dmg": 7100,
+       "health": 6248,
+       "armor": 852,
+       "kills": 0
+      },
+      {
+       "who": "Doomstorm",
+       "pet": true,
+       "dmg": 2200,
+       "health": 2090,
+       "armor": 110,
+       "kills": 0
+      }
+     ],
+     "taken": 400,
+     "kills": 0,
+     "deaths": 0,
+     "top": [
+      [
+       "Damage over time",
+       7100
+      ]
+     ],
+     "targets": [
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4100001"
+     ],
+     "party": [
+      "Woltlump",
+      "Caboozles",
+      "Fraghonk"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-30T00:22:28+01:00",
+     "mine": true,
+     "share": 1.0,
+     "via": "local"
+    }
+   ],
+   "solo": true,
+   "pasted": false
+  },
+  {
+   "id": "2026-10-30T00:24:32+01:00",
+   "start": "2026-10-30T00:24:32+01:00",
+   "end": "2026-10-30T00:25:34+01:00",
+   "dur": 62,
+   "area": "Povus Caves",
+   "total": 142168,
+   "byIds": true,
+   "byRoster": true,
+   "nearby": false,
+   "members": [
+    {
+     "who": "Woltlump",
+     "start": "2026-10-30T00:24:32+01:00",
+     "end": "2026-10-30T00:25:34+01:00",
+     "dur": 62,
+     "dmg": 86468,
+     "me": 50152,
+     "pets": {
+      "Smarmfire Wall": 36316
+     },
+     "dps": 1394.6,
+     "by": [
+      {
+       "who": "Woltlump",
+       "pet": false,
+       "dmg": 50152,
+       "health": 45136,
+       "armor": 5016,
+       "kills": 1
+      },
+      {
+       "who": "Smarmfire Wall",
+       "pet": true,
+       "dmg": 36316,
+       "health": 33410,
+       "armor": 2906,
+       "kills": 0
+      }
+     ],
+     "taken": 3100,
+     "kills": 1,
+     "deaths": 0,
+     "top": [
+      [
+       "Fire Wall",
+       50152
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4000055",
+      "4000056",
+      "4000057"
+     ],
+     "party": [
+      "Robchew",
+      "Caboozles"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-30T00:25:34+01:00",
+     "mine": false,
+     "share": 0.608,
+     "via": "feed"
+    },
+    {
+     "who": "Robchew",
+     "start": "2026-10-30T00:24:32+01:00",
+     "end": "2026-10-30T00:25:34+01:00",
+     "dur": 62,
+     "dmg": 55700,
+     "me": 42332,
+     "pets": {
+      "Doomstorm": 13368
+     },
+     "dps": 898.4,
+     "by": [
+      {
+       "who": "Robchew",
+       "pet": false,
+       "dmg": 42332,
+       "health": 37252,
+       "armor": 5080,
+       "kills": 1
+      },
+      {
+       "who": "Doomstorm",
+       "pet": true,
+       "dmg": 13368,
+       "health": 12699,
+       "armor": 669,
+       "kills": 0
+      }
+     ],
+     "taken": 1700,
+     "kills": 1,
+     "deaths": 0,
+     "top": [
+      [
+       "Damage over time",
+       42332
+      ]
+     ],
+     "targets": [
+      "Aktaari Royal Guard",
+      "Aktaari Worker"
+     ],
+     "enemies": [
+      "4000055",
+      "4000056"
+     ],
+     "party": [
+      "Woltlump",
+      "Caboozles",
+      "Fraghonk"
+     ],
+     "area": "Povus Caves",
+     "app": "gorgon-notes v0.11.0",
+     "ntfyAt": "2026-10-30T00:25:34+01:00",
+     "mine": true,
+     "share": 0.392,
+     "via": "local"
+    }
+   ],
+   "solo": false,
+   "pasted": false
+  }
+ ],
+ "sessions": [
+  {
+   "id": "a:2026-10-29T23:45:12+01:00",
+   "kind": "auto",
+   "start": "2026-10-29T23:45:12+01:00",
+   "end": null,
+   "open": true,
+   "areas": [
+    "Povus Caves"
+   ],
+   "rows": [
+    {
+     "who": "Woltlump",
+     "owner": null,
+     "mine": false,
+     "dmg": 513692,
+     "health": 462317,
+     "armor": 51375,
+     "kills": 6,
+     "secs": 609,
+     "split": true,
+     "dps": 843.5008210180624,
+     "share": 0.35847413391244637
+    },
+    {
+     "who": "Robchew",
+     "owner": null,
+     "mine": true,
+     "dmg": 416046,
+     "health": 366115,
+     "armor": 49931,
+     "kills": 1,
+     "secs": 653,
+     "split": true,
+     "dps": 637.1301684532925,
+     "share": 0.2903329806922001
+    },
+    {
+     "who": "Smarmfire Wall",
+     "owner": "Woltlump",
+     "mine": false,
+     "dmg": 371972,
+     "health": 342207,
+     "armor": 29765,
+     "kills": 0,
+     "secs": 609,
+     "split": true,
+     "dps": 610.7914614121511,
+     "share": 0.25957643985049506
+    },
+    {
+     "who": "Doomstorm",
+     "owner": "Robchew",
+     "mine": true,
+     "dmg": 131286,
+     "health": 124716,
+     "armor": 6570,
+     "kills": 0,
+     "secs": 653,
+     "split": true,
+     "dps": 201.05053598774884,
+     "share": 0.09161644554485847
+    }
+   ],
+   "total": 1432996,
+   "secs": 653,
+   "kills": 7,
+   "fights": 14,
+   "players": [
+    "Robchew",
+    "Woltlump"
+   ]
+  },
+  {
+   "id": "a:2026-10-29T21:10:20+01:00",
+   "kind": "auto",
+   "start": "2026-10-29T21:10:20+01:00",
+   "end": "2026-10-29T22:02:05+01:00",
+   "open": false,
+   "areas": [
+    "Povus Caves"
+   ],
+   "rows": [
+    {
+     "who": "Woltlump",
+     "owner": null,
+     "mine": false,
+     "dmg": 139400,
+     "health": 125460,
+     "armor": 13940,
+     "kills": 3,
+     "secs": 177,
+     "split": true,
+     "dps": 787.5706214689266,
+     "share": 0.4062955406587001
+    },
+    {
+     "who": "Robchew",
+     "owner": null,
+     "mine": true,
+     "dmg": 101000,
+     "health": 88880,
+     "armor": 12120,
+     "kills": 0,
+     "secs": 177,
+     "split": true,
+     "dps": 570.6214689265537,
+     "share": 0.2943748178373652
+    },
+    {
+     "who": "Smarmfire Wall",
+     "owner": "Woltlump",
+     "mine": false,
+     "dmg": 59700,
+     "health": 54924,
+     "armor": 4776,
+     "kills": 0,
+     "secs": 177,
+     "split": true,
+     "dps": 337.2881355932203,
+     "share": 0.1740017487612941
+    },
+    {
+     "who": "Doomstorm",
+     "owner": "Robchew",
+     "mine": true,
+     "dmg": 43000,
+     "health": 40850,
+     "armor": 2150,
+     "kills": 0,
+     "secs": 177,
+     "split": true,
+     "dps": 242.93785310734464,
+     "share": 0.12532789274264064
+    }
+   ],
+   "total": 343100,
+   "secs": 177,
+   "kills": 3,
+   "fights": 3,
+   "players": [
+    "Robchew",
+    "Woltlump"
+   ]
+  },
+  {
+   "id": "a:2026-10-29T20:03:10+01:00",
+   "kind": "auto",
+   "start": "2026-10-29T20:03:10+01:00",
+   "end": "2026-10-29T20:40:12+01:00",
+   "open": false,
+   "areas": [
+    "Vidaria"
+   ],
+   "rows": [
+    {
+     "who": "Woltlump",
+     "owner": null,
+     "mine": false,
+     "dmg": 140900,
+     "health": 126810,
+     "armor": 14090,
+     "kills": 6,
+     "secs": 197,
+     "split": true,
+     "dps": 715.2284263959391,
+     "share": 0.4274878640776699
+    },
+    {
+     "who": "Robchew",
+     "owner": null,
+     "mine": true,
+     "dmg": 90800,
+     "health": 79904,
+     "armor": 10896,
+     "kills": 3,
+     "secs": 197,
+     "split": true,
+     "dps": 460.9137055837563,
+     "share": 0.27548543689320387
+    },
+    {
+     "who": "Smarmfire Wall",
+     "owner": "Woltlump",
+     "mine": false,
+     "dmg": 59600,
+     "health": 54832,
+     "armor": 4768,
+     "kills": 0,
+     "secs": 197,
+     "split": true,
+     "dps": 302.53807106598987,
+     "share": 0.1808252427184466
+    },
+    {
+     "who": "Doomstorm",
+     "owner": "Robchew",
+     "mine": true,
+     "dmg": 38300,
+     "health": 36385,
+     "armor": 1915,
+     "kills": 0,
+     "secs": 197,
+     "split": true,
+     "dps": 194.41624365482232,
+     "share": 0.11620145631067962
+    }
+   ],
+   "total": 329600,
+   "secs": 197,
+   "kills": 9,
+   "fights": 3,
+   "players": [
+    "Robchew",
+    "Woltlump"
+   ]
+  }
+ ]
+}

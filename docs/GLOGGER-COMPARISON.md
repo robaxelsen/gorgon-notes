@@ -14,7 +14,7 @@ glogger parses `LocalPlayer: ProcessAddItem / ProcessDeleteItem / ProcessUpdateI
 |---|---|---|
 | **Current zone panel** | NPCs in current zone: favor, storage used/total, vendor councils left, reset timer | Chat log area + existing vendor/storage data. **Top pick** |
 | **Councils feed** | Councils in/out per session (corpse coins, received, muggings) | Chat `[Status]` lines (~1,600 since Oct 10) |
-| **Personal DPS meter** (built 24 Oct, Combat view) | Fights, damage a second live, you vs pets, by ability, damage taken, Discord copy | Chat log `[Combat]` lines; glogger has no DPS meter (its README says so), the Windows tools PGCombatTracker / MultiTool read the same lines (`docs/DPS-FEASIBILITY.md`) |
+| **Personal DPS meter** (built 24 Oct, Combat view) | Fights, damage a second live, you vs pets, by ability, damage taken, Discord copy; since 30 Oct a **party meter with no code** (Your party: the hunting party from the chat log, each member's numbers from their own copy through everyone's fights) | Chat log `[Combat]` lines; glogger has no DPS meter (its README says so), the Windows tools PGCombatTracker / MultiTool read the same lines (`docs/DPS-FEASIBILITY.md`) |
 | **Death tracker** | Recent deaths, killer, ability; who rezzed you / you rezzed | `[Combat] … (FATALITY!)` (48 own deaths) + rez messages |
 | **Skill cards** | Session XP + XP/hr + current level + progress bar | Session XP merged with character export |
 | **Storage consolidation** | Duplicate stacks across vaults, slots saved, zone-by-zone pickup plan | Storage export |

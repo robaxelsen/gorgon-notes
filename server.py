@@ -7,6 +7,7 @@ Application Support folder and serves a small JSON API + static UI.
 import base64
 import bisect
 import json
+import math
 import os
 import re
 import secrets
@@ -980,6 +981,7 @@ class DpsTracker:
         self.roster = set()         # members named since the party line (never you)
         self.leader = None
         self.lines = 0              # [Combat] lines seen
+        self.first_combat = None    # ts of the first [Combat] line in the newest log (/api/health combat-lines)
         self.last_combat = None     # ts of the last [Combat] line
         self.last_damage = None     # ts of the last direct-damage line
         self.first_ts = self.last_ts = None
@@ -989,7 +991,7 @@ class DpsTracker:
         """Called after the previous day's log was fed: its lines gave this tracker the area, the character, the
         party and the fights, and from here on the counters describe the newest log alone."""
         self.seeded_from = prev_name
-        self.first_ts = self.last_ts = self.last_combat = None
+        self.first_ts = self.last_ts = self.first_combat = self.last_combat = None
         self.lines = 0
 
     def day_boundary(self):
@@ -1056,6 +1058,8 @@ class DpsTracker:
             return
         if not msg.startswith("[Combat] "):
             return
+        if self.first_combat is None:
+            self.first_combat = ts
         self.lines += 1
         self.last_combat = ts
         if self.char is None and self.resolve:
@@ -1672,8 +1676,9 @@ ROOM_LIVE_MAX_SEC = 20       # a tick older than this is over
 _party = {"code": None, "since": None, "posted": {}, "remote": {}, "sinceId": None, "lastPoll": 0.0, "lastReq": 0.0,
           "lastOkAt": None, "lastErrAt": None, "lastErr": None, "lastPostAt": None, "lastMsgAt": None, "thread": None,
           "roomSince": 0, "roomOkAt": None, "roomErrAt": None, "roomErr": None, "live": {}, "roomMembers": [], "inFight": False,
-          "sessions": [],
-          "allPostAt": None, "allErr": None, "allErrAt": None}   # the everyone feed (everyone_publish)   # manual sessions: [{"start": iso, "end": iso | None}], Start/Stop in the Party window
+          "sessions": [],   # manual sessions: [{"start": iso, "end": iso | None}], Start/Stop in the Party window
+          "allPostAt": None, "allErr": None, "allErrAt": None,   # the everyone feed, publishing (everyone_publish)
+          "feedSince": 0, "feedOkAt": None, "feedErr": None, "feedErrAt": None, "feedRows": 0, "feedMembers": []}   # the everyone feed, reading (room_poll(None), 30 Oct)
 SESSION_GAP_SEC = 15 * 60   # automatic sessions: merged fights in one area, at most this far apart
 SESSION_KEEP = 40           # manual sessions remembered
 
@@ -1727,7 +1732,7 @@ def party_set(code):
             if not PARTY_CODE_RE.match(code):
                 raise BadRequest("a party code looks like gn- and 12 letters or digits")
         if code != _party["code"]:
-            pasted = {k: v for k, v in _party["remote"].items() if v.get("pasted")}  # a paste outlives the code
+            pasted = {k: v for k, v in _party["remote"].items() if v.get("pasted") or v.get("via") == "feed"}  # a paste and the feed's rows outlive the code
             _party.update(code=code, since=party_backfill_since() if code else None, remote=pasted, sinceId=None, lastPoll=0.0,
                           lastOkAt=None, lastErrAt=None, lastErr=None, lastPostAt=None, lastMsgAt=None,
                           roomSince=0, roomOkAt=None, roomErrAt=None, roomErr=None, live={}, roomMembers=[])
@@ -1772,7 +1777,7 @@ def ntfy(path, data=None, headers=None):
 
 def iso_dt(s):
     try:
-        return datetime.fromisoformat(s) if s else None
+        return datetime.fromisoformat(s) if isinstance(s, str) and s else None
     except ValueError:
         return None
 
@@ -1808,14 +1813,23 @@ def link_name():
     return "the party room" if ROOM_BASE else "ntfy.sh"
 
 
-def party_local_rows(all_day=False):
-    """This machine's closed, non-minor fights since the code was set (the day scope of the live tracker);
-    `all_day` ignores the join clock (the everyone feed takes the whole day scope)."""
+def party_local_report():
+    """The live tracker's day report for the newest log, or None without a log."""
     log = latest_chatlog()
     if not log:
-        return None, []
+        return None
     tracker, st = dps_tracker(log)
-    rep = tracker.result("day", log, st)
+    rep = dict(tracker.result("day", log, st))
+    rep["_area"] = tracker.area   # the session zone, for a day with no fight yet (never sent: /api/combat is untouched)
+    return rep
+
+
+def party_local_rows(all_day=False, rep=None):
+    """This machine's closed, non-minor fights since the code was set (the day scope of the live tracker);
+    `all_day` ignores the join clock (the everyone feed and Your party take the whole day scope)."""
+    rep = rep or party_local_report()
+    if not rep:
+        return None, []
     since = iso_dt(_party["since"]) if _party["code"] and not all_day else None
     rows = [r for r in rep["fights"] if not r["open"] and not r["minor"] and r["dmg"] > 0 and r["endAt"]
             and (since is None or (iso_dt(r["endAt"]) or since) >= since)]
@@ -1931,8 +1945,16 @@ def everyone_info():
             "down": bool(err_at and (not ok_at or err_at > ok_at)), "posted": posted, "pending": pending}
 
 
-def room_poll(code):
-    """Read the room: fights since the last id, the members it has seen, the live ticks. True when it answered."""
+FEED_MEMBERS_MAX = 100       # the everyone feed's members list kept in memory (every copy that ever posted)
+
+
+def feed_fail(e, what):
+    msg = f"{what}: {e}"[:200]
+    _party.update(feedErr=msg, feedErrAt=_party["feedErrAt"] or local_iso(datetime.now()))   # the first failure of the streak: "since"
+
+
+def party_me():
+    """This copy's character for the room and the feed (`_party["me"]`, read from the chat log once). Call under PARTY_LOCK."""
     me = _party.get("me")
     if not me:
         try:
@@ -1940,51 +1962,115 @@ def room_poll(code):
             _party["me"] = me
         except Exception:
             me = None
+    return me
+
+
+def room_poll(code=None):
+    """Read the room (a code) or, with `code` None, the everyone feed (30 Oct): fights since the last id, the
+    members it has seen, the live ticks. True when it answered. Room rows are keyed `via` "room", feed rows "feed";
+    on a key clash (the same player and fight in both) the room's row wins, the code being the consent.
+    Call WITHOUT PARTY_LOCK: the lock is taken to snapshot the cursor and again to merge, never across the HTTP
+    read (#43: with no code every copy reads the feed every PARTY_TICK_SEC, and a slow Worker must not stall
+    /api/health and /api/party, which take the same lock)."""
     now = datetime.now()
+    feed = code is None
+    with PARTY_LOCK:
+        me = party_me()
     for _ in range(5):
+        with PARTY_LOCK:
+            if feed:
+                after = int((now - timedelta(hours=24)).timestamp() * 1000)
+                path = f"everyone/fights?after={after}&since={_party['feedSince']}&who={quote(me or '')}"
+            else:
+                path = f"room/{code}/fights?since={_party['roomSince']}&who={quote(me or '')}"
         try:
-            d = room_req(f"room/{code}/fights?since={_party['roomSince']}&who={quote(me or '')}")
+            d = room_req(path)
         except Exception as e:
-            room_fail(e, "poll")
+            with PARTY_LOCK:
+                (feed_fail if feed else room_fail)(e, "poll")
             return False
-        for f in d.get("fights") or []:
-            summ = party_clean(f.get("summary"))
-            if summ is None or summ["who"] == me:   # the room hands back our own posts too
-                continue
-            summ["ntfyAt"] = local_iso(datetime.fromtimestamp((f.get("at") or now.timestamp() * 1000) / 1000))
-            _party["remote"][f"{summ['who']}|{summ['start']}"] = summ
-            _party["lastMsgAt"] = summ["ntfyAt"]
-        _party["roomSince"] = int(d.get("last") or _party["roomSince"])
-        _party["roomMembers"] = [m for m in (d.get("members") or []) if isinstance(m, dict) and isinstance(m.get("who"), str)][:40]
-        live = {}
-        for t in (d.get("live") or [])[:40]:
-            if isinstance(t, dict) and isinstance(t.get("who"), str):
-                live[t["who"]] = t
-        _party["live"] = live
-        _party.update(lastPoll=time.time())
-        room_ok()
+        with PARTY_LOCK:
+            if not feed and _party["code"] != code:   # left or changed rooms while the read was in flight: not ours
+                return False
+            for f in d.get("fights") or []:
+                summ = party_clean(f.get("summary"))
+                if summ is None or summ["who"] == me:   # the room hands back our own posts too
+                    continue
+                key = f"{summ['who']}|{summ['start']}"
+                if feed and _party["remote"].get(key, {}).get("via") == "room":
+                    continue
+                summ["ntfyAt"] = local_iso(datetime.fromtimestamp((f.get("at") or now.timestamp() * 1000) / 1000))
+                summ["via"] = "feed" if feed else "room"
+                _party["remote"][key] = summ
+                if not feed:
+                    _party["lastMsgAt"] = summ["ntfyAt"]
+            live = {}
+            for t in (d.get("live") or [])[:40]:
+                if isinstance(t, dict) and isinstance(t.get("who"), str):
+                    live[t["who"]] = t
+            members = [m for m in (d.get("members") or []) if isinstance(m, dict) and isinstance(m.get("who"), str)]
+            if feed:
+                _party["feedSince"] = int(d.get("last") or _party["feedSince"])
+                _party["feedMembers"] = members[:FEED_MEMBERS_MAX]
+                if _party["code"]:
+                    for who, t in live.items():   # the room's ticks (read just before) win; the feed adds the codeless
+                        _party["live"].setdefault(who, t)
+                else:
+                    _party["live"] = live
+                _party.update(feedOkAt=local_iso(now), feedErr=None, feedErrAt=None, lastPoll=time.time())
+            else:
+                _party["roomSince"] = int(d.get("last") or _party["roomSince"])
+                _party["roomMembers"] = members[:40]
+                _party["live"] = live
+                _party.update(lastPoll=time.time())
+                room_ok()
         if not d.get("more"):
             break
-    cutoff = now - timedelta(seconds=PARTY_KEEP_SEC)
-    for k in [k for k, v in _party["remote"].items() if not v.get("pasted") and (iso_dt(v.get("ntfyAt")) or now).replace(tzinfo=None) < cutoff]:
-        del _party["remote"][k]
+    with PARTY_LOCK:
+        cutoff = now - timedelta(seconds=PARTY_KEEP_SEC)
+        for k in [k for k, v in _party["remote"].items() if not v.get("pasted") and (iso_dt(v.get("ntfyAt")) or now).replace(tzinfo=None) < cutoff]:
+            del _party["remote"][k]
+        _party["feedRows"] = sum(1 for v in _party["remote"].values() if v.get("via") == "feed")
     return True
 
 
-def party_poll():
-    """Read what the others posted: the room since the last id, else ntfy since the last message seen (all of
-    the topic's 12 h cache the first time)."""
-    code = _party["code"]
-    if not code:
-        return
-    if room_usable() and room_poll(code):
-        return
+def feed_usable():
+    """The everyone feed is read (and ticked to) while the room is set and sending is on: Stop sending stops both."""
+    return room_usable() and everyone_on()
+
+
+def party_poll(feed=True):
+    """Read what the others posted: with a code the room since the last id (else ntfy since the last message seen,
+    all of the topic's 12 h cache the first time); then, with or without a code, the everyone feed (30 Oct), unless
+    `feed` is False (the in-request room read) or sending is off. Call WITHOUT PARTY_LOCK (see room_poll)."""
+    with PARTY_LOCK:
+        code = _party["code"]
+        want_feed = feed and feed_usable()
+    if code and not (room_usable() and room_poll(code)):
+        ntfy_poll(code)
+    if want_feed:
+        room_poll(None)
+
+
+def ntfy_poll(code):
+    """The ntfy.sh fallback read. Call WITHOUT PARTY_LOCK (see room_poll)."""
+    with PARTY_LOCK:
+        since_id = _party["sinceId"] or "all"
     try:
-        raw = ntfy(f"{code}/json?poll=1&since={_party['sinceId'] or 'all'}")
+        raw = ntfy(f"{code}/json?poll=1&since={since_id}")
     except Exception as e:
-        _party.update(lastErr=f"poll: {e}"[:200], lastErrAt=local_iso(datetime.now()))
+        with PARTY_LOCK:
+            _party.update(lastErr=f"poll: {e}"[:200], lastErrAt=local_iso(datetime.now()))
         return
     now = datetime.now()
+    with PARTY_LOCK:
+        if _party["code"] != code:   # left the topic while the read was in flight
+            return
+        ntfy_merge(code, raw, now)
+
+
+def ntfy_merge(code, raw, now):
+    """Fold one ntfy poll answer into `_party`. Call under PARTY_LOCK."""
     _party.update(lastOkAt=local_iso(now), lastPoll=time.time())
     for line in raw.decode("utf-8", errors="replace").splitlines():
         try:
@@ -2002,6 +2088,7 @@ def party_poll():
         if summ is None:
             continue
         summ["ntfyAt"] = local_iso(datetime.fromtimestamp(ev.get("time") or now.timestamp()))
+        summ["via"] = "room"
         _party["remote"][f"{summ['who']}|{summ['start']}"] = summ  # one row per player and fight, however often it was posted
         _party["lastMsgAt"] = summ["ntfyAt"]
     cutoff = now - timedelta(seconds=PARTY_KEEP_SEC)
@@ -2009,23 +2096,51 @@ def party_poll():
         del _party["remote"][k]
 
 
+def party_num(x):
+    """A received figure: a finite number from 0 to 1e9, else 0 (bool, text, NaN, inf and 1e308 are not figures)."""
+    if isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x):
+        return 0
+    return min(max(x, 0), 1e9)
+
+
 def party_clean(summ):
-    """A received summary (ntfy message or paste) checked and trimmed, or None when it is not a version-1 summary."""
-    if not isinstance(summ, dict) or summ.get("v") != PARTY_VERSION or not isinstance(summ.get("who"), str):
+    """A received summary (ntfy message, room or everyone-feed row, paste) checked and rebuilt field by field, or
+    None when it is not a version-1 summary. Anyone can post to the everyone feed (no accounts), so only the keys
+    party_summary writes survive, each coerced to its type: one malformed row must never break /api/party or the
+    page for the player it names. Start and end must carry a UTC offset (they are compared with local times)."""
+    if not isinstance(summ, dict) or summ.get("v") != PARTY_VERSION or not isinstance(summ.get("who"), str) or not summ["who"]:
         return None
-    if not all(isinstance(summ.get(k), str) and iso_dt(summ[k]) for k in ("start", "end")) or not isinstance(summ.get("dmg"), (int, float)):
+    for k in ("start", "end"):
+        t = iso_dt(summ.get(k)) if isinstance(summ.get(k), str) else None
+        if t is None or t.tzinfo is None:
+            return None
+    if isinstance(summ.get("dmg"), bool) or not isinstance(summ.get("dmg"), (int, float)):
         return None
-    summ = dict(summ)
-    summ["who"] = summ["who"][:40]
-    summ["party"] = [str(x)[:40] for x in (summ.get("party") or []) if isinstance(x, str)][:12] if isinstance(summ.get("party"), list) else []
+    def text(x, n=60):
+        return x[:n] if isinstance(x, str) else None
+    def strs(x, n, size=40):
+        return [v[:size] for v in x if isinstance(v, str)][:n] if isinstance(x, list) else []
+    out = {"v": PARTY_VERSION, "who": summ["who"][:40], "start": summ["start"], "end": summ["end"]}
+    for k in ("dur", "dmg", "me", "dps", "taken", "kills", "deaths"):
+        out[k] = party_num(summ.get(k))
+    pets = summ.get("pets")
+    out["pets"] = {str(n)[:40]: party_num(d) for n, d in list(pets.items())[:8]} if isinstance(pets, dict) else {}
     by = []
     for b in (summ.get("by") or [])[:8] if isinstance(summ.get("by"), list) else []:
         if isinstance(b, dict) and isinstance(b.get("who"), str):
             by.append({"who": b["who"][:40], "pet": bool(b.get("pet")),
-                       **{k: (b.get(k) if isinstance(b.get(k), (int, float)) else 0) for k in ("dmg", "health", "armor", "kills")}})
-    summ["by"] = by
-    summ.pop("pasted", None)
-    return summ
+                       **{k: party_num(b.get(k)) for k in ("dmg", "health", "armor", "kills")}})
+    out["by"] = by
+    top = summ.get("top") if isinstance(summ.get("top"), list) else []
+    out["top"] = [[t[0][:80], party_num(t[1])] for t in top[:5] if isinstance(t, list) and len(t) == 2 and isinstance(t[0], str)]
+    out["targets"] = strs(summ.get("targets"), 3, 60)
+    ens = summ.get("enemies") if isinstance(summ.get("enemies"), list) else []
+    out["enemies"] = [e[:40] if isinstance(e, str) else e for e in ens
+                      if isinstance(e, str) or (isinstance(e, int) and not isinstance(e, bool))][:40]
+    out["party"] = strs(summ.get("party"), 12)
+    out["area"] = text(summ.get("area"))
+    out["app"] = text(summ.get("app"))
+    return out
 
 
 PASTE_MAX = 200_000
@@ -2064,58 +2179,80 @@ def party_paste(text):
 
 def party_tick():
     with PARTY_LOCK:
-        if not _party["code"]:
-            return
-        try:
-            party_publish()
-        except Exception as e:
-            _party.update(lastErr=f"publish: {e}"[:200], lastErrAt=local_iso(datetime.now()))
-        try:
-            everyone_publish()
-        except Exception as e:
-            _party.update(allErr=f"publish: {e}"[:200], allErrAt=local_iso(datetime.now()))
-        if time.time() - _party["lastReq"] < PARTY_IDLE_SEC:
-            party_poll()
+        if _party["code"]:
+            try:
+                party_publish()
+            except Exception as e:
+                _party.update(lastErr=f"publish: {e}"[:200], lastErrAt=local_iso(datetime.now()))
+        everyone_tick()   # the everyone feed needs no code
+        watching = time.time() - _party["lastReq"] < PARTY_IDLE_SEC   # reads cost only while a view watches
+    if watching:
+        party_poll()   # outside the lock (#43)
 
 
 def party_live_tick():
-    """While this character is in a fight, tell the room its per-second figure (every ROOM_LIVE_SEC)."""
-    code = _party["code"]
-    if not code or not room_usable():
-        return
-    log = latest_chatlog()
-    if not log:
-        return
-    try:
-        tracker, st = dps_tracker(log)
-        rep = tracker.result("day", log, st)
-    except Exception:
-        return
-    nowfig, me = rep["now"], rep["character"]
-    _party["me"] = me
-    was = _party["inFight"]
-    _party["inFight"] = bool(nowfig["inFight"])
-    if not me or not (nowfig["inFight"] or was):   # one last tick when the fight ends, so the others see it close
-        return
-    fs = rep["fights"][-1] if rep["fights"] else None
-    tick = {"who": me, "dps": nowfig["dps"], "recent": nowfig["recent"], "me": nowfig["me"], "pet": nowfig["pet"], "sec": nowfig["sec"],
-            "inFight": bool(nowfig["inFight"]), "fightStart": fs["at"] if fs else None, "area": fs["area"] if fs else None,
-            "app": f"gorgon-notes {app_version()[0]}"}
-    try:
-        d = room_req(f"room/{code}/tick", tick)
+    """While this character is in a fight, tell the room (a code) and the everyone feed (sending on; 30 Oct) its
+    per-second figure (every ROOM_LIVE_SEC), whether or not a view is watching: the others must see you fighting now.
+    Call WITHOUT PARTY_LOCK: the tick is built under it and sent without it (#43, same stall as the feed read)."""
+    with PARTY_LOCK:
+        code = _party["code"]
+        to_room, to_feed = bool(code and room_usable()), feed_usable()
+        if not (to_room or to_feed):
+            return
+        try:
+            rep = party_local_report()
+        except Exception:
+            return
+        if not rep:
+            return
+        nowfig, me = rep["now"], rep["character"]
+        _party["me"] = me
+        was = _party["inFight"]
+        _party["inFight"] = bool(nowfig["inFight"])
+        if not me or not (nowfig["inFight"] or was):   # one last tick when the fight ends, so the others see it close
+            return
+        fs = rep["fights"][-1] if rep["fights"] else None
+        tick = {"who": me, "dps": nowfig["dps"], "recent": nowfig["recent"], "me": nowfig["me"], "pet": nowfig["pet"], "sec": nowfig["sec"],
+                "inFight": bool(nowfig["inFight"]), "fightStart": fs["at"] if fs else None, "area": fs["area"] if fs else None,
+                "app": f"gorgon-notes {app_version()[0]}"}
+    def ticks(d):
         live = {}
         for t in (d.get("live") or [])[:40]:
             if isinstance(t, dict) and isinstance(t.get("who"), str):
                 live[t["who"]] = t
-        _party["live"] = live
-        room_ok()
-    except Exception as e:
-        room_fail(e, "tick")
+        return live
+    if to_room:
+        try:
+            room_live = ticks(room_req(f"room/{code}/tick", tick))
+        except Exception as e:
+            with PARTY_LOCK:
+                room_fail(e, "tick")
+        else:
+            with PARTY_LOCK:
+                if _party["code"] == code:
+                    _party["live"] = room_live
+                    room_ok()
+    if to_feed:
+        try:
+            live = ticks(room_req("everyone/tick", tick))
+        except Exception as e:
+            with PARTY_LOCK:
+                feed_fail(e, "tick")
+        else:
+            with PARTY_LOCK:
+                if to_room:
+                    for who, t in live.items():
+                        _party["live"].setdefault(who, t)
+                else:
+                    _party["live"] = live
+                _party.update(feedErr=None, feedErrAt=None)
 
 
 def party_thread():
-    """One daemon thread: every ROOM_LIVE_SEC a live tick (room only, while fighting) and, while a view is
-    watching and someone is fighting, a fast poll; every PARTY_TICK_SEC the publish and the ordinary poll."""
+    """One daemon thread, code or not: every ROOM_LIVE_SEC a live tick (the room and/or the everyone feed, while
+    fighting) and, with a code while a view is watching and someone in the room is fighting, a fast room read;
+    every PARTY_TICK_SEC the publish
+    (the room with a code, the everyone feed always) and the ordinary poll (only while a view is watching)."""
     t = _party.get("thread")
     if t and t.is_alive():
         return
@@ -2126,41 +2263,99 @@ def party_thread():
             discord_claim_tick()
             i += 1
             slow = i % max(1, PARTY_TICK_SEC // ROOM_LIVE_SEC) == 0
-            if not _party["code"]:
-                if slow:
-                    everyone_tick()   # the everyone feed needs no code
-                continue
+            party_live_tick()   # takes PARTY_LOCK only around its own bookkeeping, never across the HTTP call (#43)
             with PARTY_LOCK:
-                party_live_tick()
                 watching = time.time() - _party["lastReq"] < PARTY_IDLE_SEC
-                fast = room_usable() and watching and (_party["inFight"] or bool(_party["live"]))
+                # The fast read is the room's alone (a code): while you fight, or a room member ticked in the last
+                # 20 s. The everyone feed's ticks are the whole world's, so they never speed anything up.
+                now_ms = time.time() * 1000
+                in_room = {m["who"] for m in _party["roomMembers"]}
+                room_live = any(t.get("who") in in_room and now_ms - (t.get("at") or 0) <= ROOM_LIVE_MAX_SEC * 1000
+                                for t in _party["live"].values())
+                fast = bool(_party["code"]) and room_usable() and watching and (_party["inFight"] or room_live)
             if slow:
                 party_tick()
             elif fast:
-                with PARTY_LOCK:
-                    party_poll()
+                party_poll(feed=False)
     t = threading.Thread(target=loop, name="party", daemon=True)
     _party["thread"] = t
     t.start()
+
+
+def party_mine(remote, roster, me, local_rows, area):
+    """Your party from the everyone feed (30 Oct): the received summaries that belong on this copy's Your party
+    page. A room row (the code is the consent) or a paste is always kept; a feed row when its poster is in the
+    chat log's hunting-party roster, or its own `party` names this character, or (in a party) it was fought in
+    the same area as this copy's current area and overlaps one of this copy's fights in time: that last kind
+    is tagged `nearby` (the page says "same cave, party not confirmed"), and so is a row kept only because its own
+    `party` names this character (`unconfirmed`: the poster's claim alone). Strangers' fights never show."""
+    members = set(roster.get("members") or [])
+    windows = [(iso_dt(r.get("at")), iso_dt(r.get("endAt"))) for r in local_rows]
+    windows = [(a, b) for a, b in windows if a and b]
+    out = {}
+    for k, s in remote.items():
+        if s.get("via") == "room" or s.get("pasted"):
+            out[k] = s
+        elif s.get("who") in members:
+            out[k] = s
+        elif me and me in (s.get("party") or []):
+            # Only the poster says so (anyone can post to the feed): kept, but its own party list never makes the
+            # "same party" chip; the group reads "party not confirmed" unless this copy's log names the poster.
+            out[k] = dict(s, nearby=True, unconfirmed=True)
+        elif roster.get("inParty") and area and s.get("area") == area:
+            st, en = iso_dt(s.get("start")), iso_dt(s.get("end"))
+            if st and en and any(st <= b and en >= a for a, b in windows):
+                out[k] = dict(s, nearby=True)
+    return out
+
+
+MIN_SHARING_APP = (0, 11, 0)   # the first app that posts to the everyone feed (v0.11.0, 29 Oct)
+
+
+def app_tuple(app):
+    """'gorgon-notes v0.9.0' -> (0, 9, 0); None for a dev build or no app (never called too old)."""
+    m = re.search(r"v\d+\.\d+\.\d+", app or "")
+    return version_parts(m.group(0)) if m else None
+
+
+def party_member_status(roster, me, remote, live, room_members, code=None):
+    """Honest status per roster name (30 Oct): "you"; "sharing" = a received fight row from that name that ended
+    in the last 24 h, or a live tick now; "too-old" = named in a joined room's members with an app below
+    MIN_SHARING_APP and not sharing; else "not-running". Never from the feed's members[].lastSeen (a read touches
+    it). Returns (status by name, the sorted sharing names (you included while your fights go out), the old apps)."""
+    cut = datetime.now().astimezone() - timedelta(hours=24)
+    sharing = {s["who"] for s in remote.values() if (iso_dt(s.get("end")) or cut) >= cut} | {t.get("who") for t in live}
+    old = {}
+    for m in room_members:
+        t = app_tuple(m.get("app"))
+        if t and t < MIN_SHARING_APP:
+            old[m["who"]] = m.get("app")
+    st = {}
+    for n in set(roster.get("members") or []) | ({me} if me else set()):
+        st[n] = "you" if n == me else "sharing" if n in sharing else "too-old" if n in old else "not-running"
+    out = sorted(n for n, s in st.items() if s == "sharing" or (s == "you" and (everyone_on() or code)))
+    return st, out, {n: old[n] for n in old if n in st}
 
 
 def party_merge(me, local_rows, remote, since=None):
     """Party fights: summaries whose time windows overlap, one per player per group. Enemy ids decide nothing
     yet (whether two clients log the same #id for one mob is unverified); `byIds` reports when they did match.
     The window shows fights since this copy joined: a remote fight that ended before `since`, or dealt no
-    damage, is left out, as the local ones are."""
+    damage, is left out, as the local ones are. Each member carries `via` ("local", "room", "feed", "paste");
+    a group is `nearby` when every received member in it was kept by party_mine's same-area rule alone."""
     items = []
     local_names = {me} | {r.get("character") for r in local_rows if r.get("character")}   # this log's characters (alts too)
     for r in local_rows:
         s = party_summary(r, r.get("character") or me, "local")
         s["mine"] = True
+        s["via"] = "local"
         items.append(s)
     for s in remote.values():
         if s.get("who") in local_names or not s.get("dmg"):
             continue
         if since is not None and (iso_dt(s.get("end")) or since) < since:
             continue
-        items.append(dict(s, mine=False))
+        items.append(dict(s, mine=False, via=s.get("via") or ("paste" if s.get("pasted") else "room")))
     def t(x):
         try:
             return datetime.fromisoformat(x).timestamp()
@@ -2171,8 +2366,9 @@ def party_merge(me, local_rows, remote, since=None):
     items.sort(key=lambda i: i["_s"])
     # Rosters (the hunting-party names each log saw, since 26 Oct) decide what time overlap alone cannot: two
     # summaries that both name a party and name neither player stay apart, however much they overlap.
-    def names(x, y):
-        return y["who"] in (x.get("party") or []) or x["who"] in (y.get("party") or [])
+    def names(x, y):   # an unconfirmed feed row's party list is the poster's own claim: it never confirms anything
+        claim = lambda a: [] if a.get("unconfirmed") else (a.get("party") or [])
+        return y["who"] in claim(x) or x["who"] in claim(y)
     def apart(x, y):
         return bool(x.get("party")) and bool(y.get("party")) and not names(x, y)
     groups = []
@@ -2195,10 +2391,12 @@ def party_merge(me, local_rows, remote, since=None):
         for m in members:
             m["share"] = round(m["dmg"] / total, 3) if total else 0
         first = min(g["items"], key=lambda i: i["_s"])
+        received = [i for i in g["items"] if not i.get("mine")]
+        nearby = bool(received) and all(i.get("nearby") for i in received) and not by_roster
         out.append({"id": first["start"], "start": first["start"], "end": max(g["items"], key=lambda i: i["_e"])["end"],
                     "dur": int(g["_e"] - g["_s"]) + 1, "area": next((i.get("area") for i in g["items"] if i.get("area")), None),
                     "total": total, "byIds": shared, "byRoster": by_roster, "members": members, "solo": len(members) == 1,
-                    "pasted": any(i.get("pasted") for i in g["items"])})
+                    "pasted": any(i.get("pasted") for i in g["items"]), "nearby": nearby})
     return out
 
 
@@ -2299,42 +2497,96 @@ def session_card(sess):
     return {"title": title, "columns": ["Player", "Health", "Armor", "Damage", "/s", "Share", "Kills"], "rows": rows, "facts": facts, "note": note}
 
 
+def party_open_fight(rep):
+    """The fight this character is in right now (the report's last row while open), else None."""
+    f = rep["fights"][-1] if rep and rep.get("fights") else None
+    return f if f and f.get("open") else None
+
+
+def party_view():
+    """Your party's fights exactly as the page shows them (party_state) and as Post this run / Post this fight
+    rebuild them (discord_fight), so a run or fight id from the page always finds the same fights: the whole day
+    of local fights, the received rows party_mine keeps (never a stranger's feed row), merged since the join
+    with a code. Call under PARTY_LOCK."""
+    try:
+        rep = party_local_report()
+    except Exception:
+        rep = None
+    me, rows = party_local_rows(all_day=True, rep=rep)
+    roster = party_roster()
+    area = rows[-1].get("area") if rows else (rep.get("_area") if rep else None)
+    kept = party_mine(_party["remote"], roster, me, rows, area)
+    fights = party_merge(me, rows, kept, iso_dt(_party["since"]) if _party["code"] else None)
+    return {"rep": rep, "me": me, "rows": rows, "roster": roster, "area": area, "kept": kept, "fights": fights}
+
+
 def party_state():
-    """GET /api/party: the code, the link's health and the merged party fights."""
+    """GET /api/party: the code, the link's health and the merged party fights. Since 30 Oct the fights come
+    from the everyone feed with no code (`source` "everyone"): this copy's whole day of closed fights merged with
+    the feed rows party_mine keeps for the chat log's hunting-party roster; with a code the room's rows merge in
+    (`source` "room"); "none" when the feed is off and no code is joined. Every field added then is additive."""
     with PARTY_LOCK:
         _party["lastReq"] = time.time()
         code = _party["code"]
+        party_thread()
         if code:
-            party_thread()
-            if not _party["lastPoll"] or (room_usable() and time.time() - _party["lastPoll"] > 3):
-                party_poll()  # first look after joining or starting (ntfy), or a room read at most every 3 s
+            read = "room" if not _party["lastPoll"] or (room_usable() and time.time() - _party["lastPoll"] > 3) else None
+        else:
+            # The first look only, tried once whatever it answers: an unreachable Worker must not hold every page
+            # load for ROOM_HTTP_SEC; after that the thread reads the feed every PARTY_TICK_SEC.
+            read = "feed" if feed_usable() and not _party["lastPoll"] and not _party.get("feedTried") else None
+            if read:
+                _party["feedTried"] = True
+    if read == "room":
+        party_poll(feed=False)  # first look after joining or starting (ntfy), or a room read at most every 3 s
+    elif read == "feed":
+        party_poll()   # the first look only; the thread reads the feed every PARTY_TICK_SEC while a view watches
+    with PARTY_LOCK:   # the read above ran without the lock (#43); the state below is one consistent snapshot
+        code = _party["code"]
         pasted = sum(1 for v in _party["remote"].values() if v.get("pasted"))
-        me, rows = party_local_rows() if code or pasted else (None, [])
-        fights = party_merge(me, rows, _party["remote"], iso_dt(_party["since"])) if code or pasted else []
+        v = party_view()
+        rep, me, rows, roster, area, kept, fights = (v[k] for k in ("rep", "me", "rows", "roster", "area", "kept", "fights"))
+        _party["me"] = me or _party.get("me")
         ok, err = _party["lastOkAt"], _party["lastErrAt"]
         reachable = bool(ok) and (not err or ok >= err)
-        pending = len([r for r in rows if f"{code}|{r['at']}" not in _party["posted"]]) if code else 0
-        _party["me"] = me or _party.get("me")
-        roster = party_roster()
+        since = iso_dt(_party["since"]) if code else None
+        pending = len([r for r in rows if (since is None or (iso_dt(r["endAt"]) or since) >= since)
+                       and f"{code}|{r['at']}" not in _party["posted"]]) if code else 0
         now_ms = time.time() * 1000
-        live = sorted((t for t in _party["live"].values() if now_ms - (t.get("at") or 0) <= ROOM_LIVE_MAX_SEC * 1000),
-                      key=lambda t: -(t.get("dps") or 0))
-        sharing = sorted({m["who"] for f in fights for m in f["members"]} | {v["who"] for v in _party["remote"].values()}
-                         | {m["who"] for m in _party["roomMembers"]})
-        not_sharing = [n for n in roster["members"] if n not in sharing and n != me]
+        fresh = [t for t in _party["live"].values() if now_ms - (t.get("at") or 0) <= ROOM_LIVE_MAX_SEC * 1000]
+        # Shown ticks: the roster's names and your own; with a party the log did not name, whoever fights in your
+        # area within 20 s of your own open fight. A stranger in the cave never shows.
+        unnamed = bool(roster["inParty"]) and not roster["members"]
+        open_fight = party_open_fight(rep)
+        my_start = iso_dt(open_fight["at"]) if open_fight else None
+        def shown(t):
+            if t.get("who") == me or t.get("who") in roster["members"]:
+                return True
+            if unnamed and area and t.get("area") == area and my_start:
+                ts = iso_dt(t.get("fightStart"))   # a tick with no UTC offset is not comparable with ours: not shown
+                return bool(ts and ts.tzinfo) and abs((ts - my_start).total_seconds()) <= ROOM_LIVE_MAX_SEC
+            return False
+        live = sorted((t for t in fresh if shown(t)), key=lambda t: -(t.get("dps") or 0))
+        status, sharing, apps = party_member_status(roster, me, kept, live, _party["roomMembers"], code)
+        not_sharing = [n for n in roster["members"] if status.get(n) != "sharing" and n != me]
+        source = "room" if code else "everyone" if feed_usable() else "none"
         return {"version": PARTY_VERSION, "code": code, "since": _party["since"], "character": me, "base": NTFY_BASE,
+                "source": source,
+                "feed": {"readAt": _party["feedOkAt"], "error": _party["feedErr"], "errorAt": _party["feedErrAt"],
+                         "rows": _party["feedRows"], "members": _party["feedMembers"]},
                 "ntfy": {"reachable": reachable, "lastOkAt": ok, "lastErrorAt": err, "lastError": _party["lastErr"],
                          "lastPostAt": _party["lastPostAt"], "lastMessageAt": _party["lastMsgAt"],
                          "posted": len([k for k in _party["posted"] if code and k.startswith(code + "|")]),
                          "pending": pending, "received": len(_party["remote"]) - pasted, "pasted": pasted},
-                "roster": dict(roster, notSharing=not_sharing), "discord": discord_info(), "everyone": everyone_info(),
+                "roster": dict(roster, notSharing=not_sharing, unnamed=unnamed, sharing=sharing, status=status, apps=apps),
+                "invite": {"repo": APP_REPO}, "area": area,
+                "discord": discord_info(), "everyone": everyone_info(),
                 "transport": {"kind": "room" if room_usable() else "ntfy", "name": link_name(), "base": ROOM_BASE or NTFY_BASE,
                               "roomOkAt": _party["roomOkAt"], "roomErrorAt": _party["roomErrAt"], "roomError": _party["roomErr"],
                               "fallback": bool(room_usable() and _party["roomErrAt"] and (not _party["roomOkAt"] or _party["roomErrAt"] > _party["roomOkAt"]))},
                 "live": live, "roomMembers": _party["roomMembers"],
                 "members": sorted({m["who"] for f in fights for m in f["members"]}), "fights": fights,
                 "sessions": party_sessions(fights)}
-
 
 def party_roster():
     """The hunting party as the newest chat log tells it now (DpsTracker's party lines)."""
@@ -2414,7 +2666,7 @@ def discord_connect(cancel=False):
         _discord["pending"] = None
         return {"ok": True, "discord": discord_info()}
     if not room_usable():
-        raise BadRequest("Connect Discord needs the party room, which this copy is not using (PG_ROOM is empty).")
+        raise BadRequest("This copy has no sharing address, so Discord can't be connected here.")
     state = secrets.token_urlsafe(24)
     now = datetime.now()
     _discord["pending"] = {"state": state, "startedAt": local_iso(now), "until": local_iso(now + timedelta(seconds=DISCORD_CONNECT_SEC)),
@@ -2619,7 +2871,7 @@ def discord_post(payload, image=None):
     """Send one webhook message: JSON, or multipart with the PNG card attached. Returns Discord's message id."""
     url = discord_webhook()
     if not url:
-        raise BadRequest("Discord isn't connected yet. Press Connect Discord in the Party window first.")
+        raise BadRequest("Discord isn't connected yet. Press Connect Discord in the Discord window first.")
     payload = dict(payload, username="Gorgon Notes", allowed_mentions={"parse": []})
     if image:
         body, ctype = multipart_body(payload, [("fight.png", "image/png", image)])
@@ -2632,7 +2884,7 @@ def discord_post(payload, image=None):
     except HTTPError as e:
         if e.code in (401, 403, 404):
             # Discord's rule: a webhook that answers 404 must not be tried again. Forget it; the Party window asks anew.
-            msg = "Discord removed that webhook (someone deleted it in the channel's Integrations). Connect Discord again in the Party window."
+            msg = "Discord removed that webhook (someone deleted it in the channel's Integrations). Connect Discord again."
             set_discord_webhook(None)
         elif e.code == 429:
             try:
@@ -2660,16 +2912,15 @@ def discord_fight(fight_id=None, party_id=None, image=None, preview=False, sessi
     embed: the table of players and pets, a few facts, the source note, and the client's PNG of the same table
     when it sent one. `preview` only answers the card, so the client can draw it first."""
     with PARTY_LOCK:
-        me, rows = party_local_rows()
+        me = None
         if session_id is not None:
-            fights = party_merge(me, rows, _party["remote"], iso_dt(_party["since"]))
+            fights = party_view()["fights"]   # the page's own fights, so the run id it sent matches (never a stranger's row)
             sess = next((x for x in party_sessions(fights) if x["id"] == session_id), None)
             if sess is None or not sess["rows"]:
                 raise BadRequest("That session has no fights to post.")
             card, party = session_card(sess), True
         elif party_id is not None:
-            pasted = sum(1 for v in _party["remote"].values() if v.get("pasted"))
-            fights = party_merge(me, rows, _party["remote"], iso_dt(_party["since"])) if _party["code"] or pasted else []
+            fights = party_view()["fights"]
             pf = next((f for f in fights if f["id"] == party_id), None)
             if pf is None:
                 raise BadRequest("That party fight isn't in the table any more.")
@@ -2995,7 +3246,8 @@ def log_summary(path):
     if hit and hit[0] == key:
         return hit[1]
     s = {"logins": [], "logouts": [], "areas": [], "sales": [], "favor": [], "searches": [],
-         "loot": [], "saved": [], "activity": [], "councils": [], "first": None, "last": None}
+         "loot": [], "saved": [], "activity": [], "councils": [], "first": None, "last": None,
+         "lines": 0, "loginLine": None}   # lines: timestamped lines; loginLine: the count at the last login line
     tracker = CombatTracker(resolve=lambda: last_login_before(path)[0])  # deaths/kills; see CombatTracker
     gaming = []  # Gaming XP datetimes; the councils receipts are flagged against them after the loop
     with path.open(encoding="utf-8", errors="replace") as f:
@@ -3006,9 +3258,11 @@ def log_summary(path):
             ts, msg = m.groups()
             s["first"] = s["first"] or ts
             s["last"] = ts
+            s["lines"] += 1
             tracker.feed(ts, msg)
             if lm := LOGIN_RE.match(msg):
                 s["logins"].append((ts, lm.group(1), lm.group(2)))
+                s["loginLine"] = s["lines"]
             elif LOGOUT_RE.match(msg):
                 s["logouts"].append(ts)
             elif am := AREA_RE.match(msg):
@@ -3041,6 +3295,27 @@ def log_summary(path):
     s["sales"] = [(ts, n) for ts, kind, n, who, g in s["councils"] if kind == "received" and n > 0 and not g]
     _logsum[path] = (key, s)
     return s
+
+
+# The seven "Log when…" rows of Settings → V.I.P. → Combat Logging, in the game's order and wording (typo included;
+# the user's screenshot of 27 Oct). Keys are the combatLog_* suffixes in the game's settings file. The health
+# evidence names rows by these labels so the sentence is right on every client.
+COMBAT_ROW_LABEL = {
+    "MeAttackEnemy": "Log when I attack enemies",
+    "PetAttackEnemy": "Log when my pets attack enemies",
+    "EnemyAttackMe": "Log when my enemies attack me",
+    "EnemyAttackPet": "Log when my enemies attack my pets",
+    "MeIndirectlyDamaged": "Log when I am healed or take indirect damage",
+    "PetIndirectlyDamaged": "Log when my pet is healed or takes indirect damage",
+    "EnemyIndirectlyDamaged": "Log when my others are healed or takes indirect damage",
+}
+COMBAT_ROWS = tuple(COMBAT_ROW_LABEL)
+
+
+def combat_row_labels(keys):
+    """The game's labels for combatLog_* keys, joined in the settings window's row order."""
+    keys = set(keys)
+    return join_names(COMBAT_ROW_LABEL[k] for k in COMBAT_ROWS if k in keys)
 
 
 def read_settings():
@@ -3167,7 +3442,11 @@ def health(character=None):
     running_known = running is not None
     effective_running = running if running_known else bool(logged_in and silence is not None and silence < 900)
     game_char = last_in[1] if last_in else None
-    character = character or game_char
+    reports = list_reports()
+    # #42 (30 Oct): with no "Logged In As" line in any recent log (a log rolled at midnight, a fresh install), the
+    # newest character export names the character, so its own verdicts match it instead of nothing
+    sheets = [r for r in reports if r["report"] == "CharacterSheet" and r["character"] not in (None, "???") and report_dt(r["timestamp"] or "")]
+    character = character or game_char or (max(sheets, key=lambda r: report_dt(r["timestamp"]))["character"] if sheets else None)
     game = {"running": running, "loggedIn": logged_in, "character": game_char,
             "loggedInAt": chat_iso(last_in[0]) if last_in else None,
             "loggedOutAt": chat_iso(last_out) if last_out else None,
@@ -3175,8 +3454,6 @@ def health(character=None):
             "lastLineAt": chat_iso(last_line), "log": newest.name if newest else None}
 
     # --- exports
-    reports = list_reports()
-
     def newest_report(kind, who):
         rs = [r for r in reports if r["report"] == kind and r["character"] == who and report_dt(r["timestamp"] or "")]
         return max(rs, key=lambda r: report_dt(r["timestamp"])) if rs else None
@@ -3310,29 +3587,41 @@ def health(character=None):
         add("game", "info", "Game", ev, views=[], server_only=True)
 
     # chat log
+    # A bad chat log is listed on the views that read it (Session, Combat, Statehelm, Files); the export views never
+    # needed it, so since 30 Oct it no longer marks them (health is scoped to the view).
+    chat_views = ["session", "combat", "statehelm", "files"]
+    try:
+        settings_saved = datetime.fromtimestamp(SETTINGS_FILE.stat().st_mtime).strftime("%H:%M")
+    except OSError:
+        settings_saved = None
+
+    def chat_log_data(short):
+        # `short` is the evidence without the "Looked in …" sentence: the margin note prints it, the Setup window's
+        # footer prints the path from `looked`.
+        return {"looked": str(CHATLOGS), "exists": CHATLOGS.is_dir(), "logChat": settings.get("LogChat"),
+                "settingsSavedAt": settings_saved, "readable": bool(settings.get("readable")), "short": short}
+
     if not newest:
         # Say exactly what was looked at, so a player on a new machine can tell a wrong folder from a setting
         # that is still off (seen on a friend's Windows PC, 2026-10-24: exports fine, no ChatLogs file).
         ev = "No chat log found. The game only writes one with Save Chat Logs on."
         looked = f" Looked in {CHATLOGS}" + ("" if CHATLOGS.is_dir() else ", which doesn't exist") + "."
+        rest = ""
         if settings.get("readable"):
             state = {1: "on", 0: "off"}.get(settings.get("LogChat"))
-            try:
-                saved = datetime.fromtimestamp(SETTINGS_FILE.stat().st_mtime).strftime("%H:%M")
-            except OSError:
-                saved = None
             if state:
-                looked += f" The game's settings file (saved {saved}) says chat logging is {state}."
+                rest += f" The game's settings file (saved {settings_saved}) says chat logging is {state}."
                 if state == "on":
-                    looked += " No log file has appeared yet: log out and back in, then check again."
+                    rest += " No log file has appeared yet: log out and back in, then check again."
         else:
-            looked += f" The game's settings file ({SETTINGS_FILE.name}) couldn't be read."
-        add("chat-log", "bad", "Chat log", ev + looked,
-            "chat-logging", views=["session", "combat", "vendors", "storage", "character"])
+            rest += " The game's settings file couldn't be read."
+        add("chat-log", "bad", "Chat log", ev + looked + rest,
+            "chat-logging", views=chat_views, evidence_data=chat_log_data(ev + rest))
     elif settings.get("readable") and settings.get("LogChat") == 0:
-        add("chat-log", "bad", "Chat log", "Chat logging is off in the game, so nothing new is recorded.",
-            "chat-logging", views=["session", "combat", "vendors", "storage", "character"], server_only=True,
-            at=chat_dt(last_line).astimezone() if last_line else None)
+        ev = "Chat logging is off in the game, so nothing new is recorded."
+        add("chat-log", "bad", "Chat log", ev,
+            "chat-logging", views=chat_views, server_only=True,
+            at=chat_dt(last_line).astimezone() if last_line else None, evidence_data=chat_log_data(ev))
     else:
         lat = chat_dt(last_line).astimezone() if last_line else None
         today = newest.name == now.strftime("Chat-%y-%m-%d.log")
@@ -3351,8 +3640,11 @@ def health(character=None):
 
     # character export
     if not char_rep:
+        # never seen: only the views whose Setup window asks for this export (the page's STAMP_SRC / NEEDS); Storage and
+        # Statehelm read it once it exists (#44, DESIGN.md Server contract -> GET /api/health)
         add("character-export", "bad", "Character export", f"No character export{' for ' + character if character else ''} yet.",
-            "export-character", views=["vendors", "character", "storage", "statehelm"], item_id=f"character-export:{character}")
+            "export-character", views=["vendors", "character"], item_id=f"character-export:{character}",
+            evidence_data={"looked": str(REPORTS), "exists": REPORTS.is_dir()})   # the Setup footer names the folder
     else:
         at = report_dt(char_rep["timestamp"])
         act = since(at, character)
@@ -3371,7 +3663,8 @@ def health(character=None):
     stor_act, stor_activity = None, False  # the storage export's since() result; whether searches or loot made it warn
     if not stor_rep:
         add("storage-export", "bad", "Storage export", f"No storage export{' for ' + character if character else ''} yet.",
-            "export-storage", views=["storage", "vendors", "statehelm"], item_id=f"storage-export:{character}")
+            "export-storage", views=["storage", "statehelm"], item_id=f"storage-export:{character}",   # never seen: not Vendors (#44)
+            evidence_data={"looked": str(REPORTS), "exists": REPORTS.is_dir()})
     else:
         at = report_dt(stor_rep["timestamp"])
         act = stor_act = since(at, character, vault_areas)
@@ -3461,37 +3754,71 @@ def health(character=None):
             f"{who} logged in {plural(logins30[who], 'time')} since {since_txt} and has no exports yet.",
             "alt-export", views=["character"], item_id=f"alt-missing:{who}", server_only=True, fix_args={"alt": who})
 
-    # combat logging
+    # combat logging (Settings → V.I.P. → Combat Logging): a warn on Combat when any "Log when…" row is Off or
+    # Log non-damaging abilities is off (30 Oct). Provisional, UNVERIFIED (30 Oct): a combatLog_* row at 1
+    # ("Chat Window (and log file if enabled)") is taken as writing the file like 2 does; only 2 was ever seen
+    # writing damage numbers (24 Oct). VIP_CombatLogging is reported in evidenceData and never read for the
+    # verdict: most likely the section's collapsed flag, like its sibling GUI_* keys, not a switch. One in-game
+    # look at each closes both (ROADMAP → decisions waiting on the user).
+    combat_logging_ok = False
     if settings.get("readable"):
         cl = settings.get("combatLog", {})
-        ok = settings.get("VIP_CombatLogging") == 1 and settings.get("LogNonAttacks") == 1 and cl and all(
-            isinstance(v, int) and v == 2 for v in cl.values())
-        # Listed on Session when the death tracker (deaths, kills, pet kills) would miss something, and on Combat
-        # (the DPS meter) whenever any category is below 2, the only level verified to write damage numbers.
+        lna = settings.get("LogNonAttacks")
         vip = settings.get("VIP_CombatLogging")
-        off = sorted(k for k, v in cl.items() if not (isinstance(v, int) and v > 0))
-        reduced = sorted(k for k, v in cl.items() if v == 1)
-        if ok:
-            ev, views = "On.", []
-        elif vip != 1:
-            ev = (f"Combat logging is off (VIP_CombatLogging {vip}), so kills, killers and damage aren't in the log. "
-                  "Deaths still count from the game's Dying XP line, without a killer.")
-            views = ["session", "combat"]
-        elif off or not cl:
-            keys = ", ".join("combatLog_" + k for k in off)
-            ev = (f"Some fights aren't logged: {keys} {'are' if len(off) > 1 else 'is'} 0 in GorgonSettings.txt. " if off
-                  else "Some fights aren't logged: no combatLog_* keys in GorgonSettings.txt. ") + \
-                "Deaths need EnemyAttackMe, kills MeAttackEnemy, pet kills PetAttackEnemy; the DPS meter needs them all."
-            views = ["session", "combat"]
-        elif reduced:
-            keys = ", ".join("combatLog_" + k for k in reduced)
-            ev = (f"{keys} {'are' if len(reduced) > 1 else 'is'} 1 in GorgonSettings.txt. Only 2 is verified to write damage "
-                  "numbers, so the DPS meter may miss hits. Deaths and kills don't need it.")
-            views = ["combat"]
+        on = lambda v: isinstance(v, int) and v > 0     # provisional: 1 counts as writing the file (unverified, see above)
+        off = sorted(k for k in COMBAT_ROWS if not on(cl.get(k)))   # a missing key counts as Off
+        combat_logging_ok = bool(cl) and not off and lna == 1
+        if combat_logging_ok:
+            sev, ev, views = "ok", "Every \"Log when…\" row is on, and so is Log non-damaging abilities.", []
         else:
-            ev, views = "LogNonAttacks is 0. Deaths, kills and damage don't need it.", []
-        add("combat-logging", "ok" if ok else "info", "Combat logging", ev, "combat-logging", views=views, server_only=True,
-            evidence_data={"off": off, "reduced": reduced, "vipCombatLogging": vip})
+            parts = []
+            if off:
+                parts.append(f"{combat_row_labels(off)} {'are' if len(off) > 1 else 'is'} Off, so those hits never reach the log.")
+            if lna != 1:
+                parts.append("Log non-damaging abilities is off, so buffs and heals won't be in the log.")
+            sev, ev, views = "warn", " ".join(parts) + " The meter counts what the log holds.", ["combat"]
+        add("combat-logging", sev, "Combat logging", ev, "combat-logging", views=views, server_only=True,
+            evidence_data={"off": off, "logNonAttacks": lna, "vipCombatLogging": vip})
+
+    # combat lines: whether today's log holds any [Combat] line. Settles the silent meter on Combat: ok with the first
+    # line's time, info while there is nothing to judge, warn when the log grew for 20 min and 200 lines after the
+    # login with no combat line although every Combat Logging row is on. Counts come from the same tracker
+    # /api/combat reads (dps_tracker caches it); the login time is the game state's.
+    today_log = bool(newest) and newest.name == now.strftime("Chat-%y-%m-%d.log")
+    n_combat, first_combat = 0, None
+    if today_log:
+        try:
+            tracker, _ = dps_tracker(newest)
+            n_combat, first_combat = tracker.lines, tracker.first_combat
+        except Exception:
+            n_combat, first_combat = 0, None
+    newest_sum = sums[-1][1] if (sums and newest is not None and sums[-1][0] == newest) else None
+    log_lines = newest_sum["lines"] if newest_sum else 0
+    # lines after the newest log's last login line; the whole log when the login sits in an older log (midnight rollover)
+    since_login = (log_lines - newest_sum["loginLine"]) if (newest_sum and newest_sum["loginLine"]) else log_lines
+    in_min = (now.replace(tzinfo=None) - chat_dt(last_in[0])).total_seconds() / 60 if (logged_in and last_in) else None
+    if n_combat and first_combat:
+        first_dt = chat_dt(first_combat).astimezone()
+        add("combat-lines", "ok", "Combat lines", f"First combat line {first_dt.strftime('%H:%M')} · {n_combat:,} so far today.",
+            views=["combat"], at=first_dt, server_only=True,
+            evidence_data={"combatLines": n_combat, "firstCombatAt": local_iso(first_dt), "lines": log_lines})
+    elif today_log and in_min is not None and in_min >= 20 and since_login >= 200 and combat_logging_ok:
+        # Hedged on purpose: that [Combat] lines need VIP is what every log tool says, not something seen (SPEC §5 #4).
+        add("combat-lines", "warn", "Combat lines",
+            f"The log grew by {since_login:,} lines since you logged in and none is a combat line. "
+            "The game writes combat lines for VIP accounts; if you have VIP, check the Combat Logging rows above.",
+            "combat-logging", views=["combat"], server_only=True,
+            evidence_data={"combatLines": 0, "lines": log_lines, "sinceLogin": since_login, "loggedInMin": int(in_min)})
+    else:
+        if today_log:
+            ev = f"No combat line yet today. The log holds {log_lines:,} lines."
+        elif newest is not None:
+            ev = "No combat line yet today. There's no chat log for today yet."
+        else:
+            ev = "No combat line yet today. There's no chat log yet."
+        add("combat-lines", "info", "Combat lines", ev, views=["combat"], server_only=True,
+            evidence_data={"combatLines": 0, "lines": log_lines if today_log else 0, "sinceLogin": since_login if today_log else 0,
+                           "loggedInMin": int(in_min) if in_min is not None else None})
 
     # live game events
     found = player_log_events()
@@ -3514,6 +3841,10 @@ def health(character=None):
     elif age_any is not None and age_any >= 14 * 86400 and logins_since >= 3:
         add("vip", "info", "VIP", f"No exports in {int(age_any // 86400)} days across {logins_since} logins. If the VIP menu is missing, VIP may have lapsed.",
             "vip", views=["session", "vendors", "storage", "character"], server_only=True, at=newest_any)
+    elif newest_any is None:
+        # ok, not info: the page lists a non-ok vip row on every view, which would put a second "1 note" beside the
+        # Setup window's own export step on a fresh install (#41)
+        add("vip", "ok", "VIP", "No export yet, so VIP can't be told. The VIP menu's Export buttons prove it.", "vip", views=[], server_only=True)
     else:
         add("vip", "ok", "VIP", "Exports are coming in.", "vip", views=[], server_only=True, at=newest_any)
 
@@ -3530,27 +3861,38 @@ def health(character=None):
     else:
         add("cdn", "ok", "Game data", f"Game data v{ver}, current.", views=[], server_only=True)
 
-    # the everyone feed (cloud/ GET /everyone): a warning only when it stopped taking fights and some wait
+    # the everyone feed (cloud/ GET /everyone): ok with today's count (folds into "Also checked"), info when sending
+    # is off (or this copy has no room to send to), warn only when it stopped taking fights and some wait
     with PARTY_LOCK:
         try:
             ev = everyone_info()
         except Exception:
             ev = None
-        if ev and ev["on"] and ev["down"] and ev["pending"]:
+        if ev and not ev["on"]:
+            add("everyone-feed", "info", "Everyone's fights", "Sending is off; nothing of yours goes to everyone's fights.",
+                "everyone-feed", views=[], server_only=True, evidence_data={"on": False, "available": ev["available"], "posted": ev["posted"]})
+        elif ev and ev["down"] and ev["pending"]:
             err_t = iso_dt(ev["lastErrorAt"])
             add("everyone-feed", "warn", "Everyone's fights",
-                f"The everyone page hasn't taken fights since {err_t.strftime('%H:%M') if err_t else 'a while'}; "
+                f"Nothing has reached everyone's fights since {err_t.strftime('%H:%M') if err_t else 'a while'}; "
                 f"{plural(ev['pending'], 'fight waits', 'fights wait')} and {'goes' if ev['pending'] == 1 else 'go'} out when it answers.",
-                "everyone-feed", views=["combat"], at=err_t.replace(tzinfo=None) if err_t else None, evidence_data={"pending": ev["pending"]})
-    # party sharing over ntfy.sh, only while joined (docs/SHARING.md)
+                "everyone-feed", views=["combat"], at=err_t,   # aware (iso_dt of a local_iso string); add() subtracts it from an aware now
+                evidence_data={"on": True, "posted": ev["posted"], "pending": ev["pending"], "lastPostAt": ev["lastPostAt"]})
+        elif ev:
+            last_t = iso_dt(ev["lastPostAt"])
+            txt = (f"{plural(ev['posted'], 'fight')} sent today" + (f", last {last_t.strftime('%H:%M')}" if last_t else "") + "."
+                   if ev["posted"] else "No fights sent today yet.")
+            add("everyone-feed", "ok", "Everyone's fights", txt, "everyone-feed", views=[], server_only=True,
+                evidence_data={"on": True, "posted": ev["posted"], "pending": ev["pending"], "lastPostAt": ev["lastPostAt"]})
+    # party sharing (the private room; ntfy.sh is the fallback), only while joined (docs/SHARING.md). Who in the party
+    # is not sharing is the Your party window's business (/api/party), not this verdict's (30 Oct).
     with PARTY_LOCK:
         pcode = _party["code"]
         if pcode:
             ok_at, err_at = _party["lastOkAt"], _party["lastErrAt"]
             reachable = bool(ok_at) and (not err_at or ok_at >= err_at)
-            tracker_char = None
             try:
-                tracker_char, prow = party_local_rows()
+                _, prow = party_local_rows()
                 pending = len([r for r in prow if f"{pcode}|{r['at']}" not in _party["posted"]])
             except Exception:
                 pending = 0
@@ -3560,19 +3902,12 @@ def health(character=None):
             if not reachable and err_at:
                 since_t = iso_dt(err_at)
                 add("party-sharing", "warn", "Party sharing",
-                    f"{link_name().capitalize() if not ROOM_BASE else 'The party room'} hasn't answered since {since_t.strftime('%H:%M') if since_t else 'a while'}; "
+                    f"The private room hasn't answered since {since_t.strftime('%H:%M') if since_t else 'a while'}; "
                     f"{plural(pending, 'fight waits', 'fights wait')} and {'goes' if pending == 1 else 'go'} out when it does.",
-                    "party-sharing", views=["combat"], at=since_t.replace(tzinfo=None) if since_t else None, evidence_data={"code": pcode, "pending": pending})
+                    "party-sharing", views=["combat"], at=since_t, evidence_data={"code": pcode, "pending": pending})
             else:
-                try:
-                    roster = party_roster()
-                    sharing = {v["who"] for v in _party["remote"].values()}
-                    quiet = [n for n in roster["members"] if n not in sharing and n != tracker_char]
-                except Exception:
-                    quiet = []
-                quiet_txt = f" {join_names(quiet)} {'is' if len(quiet) == 1 else 'are'} in your party per the chat log but not sharing: send them the code." if quiet else ""
-                add("party-sharing", "ok", "Party sharing", f"Topic {pcode}, {last_txt}, {plural(sent, 'fight')} sent{f', {pending} waiting' if pending else ''}.{quiet_txt}",
-                    "party-sharing", views=["combat"], evidence_data={"code": pcode, "pending": pending, "notSharing": quiet})
+                add("party-sharing", "ok", "Party sharing", f"Room {pcode}, {last_txt}, {plural(sent, 'fight')} sent{f', {pending} waiting' if pending else ''}.",
+                    "party-sharing", views=["combat"], evidence_data={"code": pcode, "pending": pending, "sent": sent})
 
     # summary
     counts = Counter(i["severity"] for i in items)

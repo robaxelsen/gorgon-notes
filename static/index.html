@@ -52,40 +52,47 @@
 
 <nav class="rail" aria-label="Views">
   <div class="rail-items">
-    <a class="ri" href="#session" data-view="session">
-      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6 2h12v2h-1v3.2c0 1.4-.8 2.7-2 3.4L13.6 12l1.4 1.4c1.2.7 2 2 2 3.4V20h1v2H6v-2h1v-3.2c0-1.4.8-2.7 2-3.4l1.4-1.4L9 10.6C7.8 9.9 7 8.6 7 7.2V4H6zm3 2v3.2c0 .7.4 1.4 1 1.7L12 10.6l2-1.7c.6-.3 1-1 1-1.7V4zm3 9.4-2 1.7c-.6.3-1 1-1 1.7V20h6v-3.2c0-.7-.4-1.4-1-1.7z"/></svg>
-      <span>Session</span><span class="mark" data-mark="session"></span>
-    </a>
-    <a class="ri" href="#combat" data-view="combat">
-      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><g fill="currentColor"><path d="M3 2.5h3.2L17 13.3l-1.6 1.6L3 5.7z"/><path d="M21 2.5h-3.2L7 13.3l1.6 1.6L21 5.7z"/><path d="M5.2 13.6l5.2 5.2-1.5 1.5-5.2-5.2z"/><path d="M18.8 13.6l-5.2 5.2 1.5 1.5 5.2-5.2z"/><path d="M4 17.6l2.4 2.4L4.6 21.8 2.2 19.4z"/><path d="M20 17.6l-2.4 2.4 1.8 1.8 2.4-2.4z"/></g></svg>
-      <span>Combat</span><span class="mark" data-mark="combat"></span>
-    </a>
-    <a class="ri" href="#vendors" data-view="vendors">
-      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9 2h6l-1.6 3.2C17 6.5 20 10.4 20 14.6 20 19 16.6 22 12 22s-8-3-8-7.4c0-4.2 3-8.1 6.6-9.4zm3 6.5c-.8 0-1.4.6-1.4 1.3v.4c-1.4.3-2.3 1.3-2.3 2.5 0 1.6 1.4 2.2 2.9 2.6 1 .3 1.3.5 1.3.9s-.4.7-1.2.7c-.7 0-1.4-.3-2-.8l-1 1.4c.6.5 1.4.9 2.3 1v.5h1.4v-.5c1.5-.3 2.4-1.3 2.4-2.6 0-1.7-1.4-2.3-2.9-2.7-1-.3-1.3-.4-1.3-.8 0-.3.3-.6 1-.6.6 0 1.2.2 1.7.6l.9-1.4c-.5-.4-1.1-.7-1.8-.8v-.4c0-.7-.6-1.3-1.4-1.3z"/></svg>
-      <span>Vendors</span><span class="mark" data-mark="vendors"></span>
-    </a>
-    <a class="ri" href="#storage" data-view="storage">
-      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 9.5C4 6.5 6.5 4 9.5 4h5C17.5 4 20 6.5 20 9.5V11H4zM3 12.5h7.5V14a1.5 1.5 0 0 0 3 0v-1.5H21V19a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></svg>
-      <span>Storage</span><span class="mark" data-mark="storage"></span>
-    </a>
-    <a class="ri" href="#character" data-view="character">
-      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2.5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9zM4 21c0-4.2 3.6-7.5 8-7.5s8 3.3 8 7.5v.5H4z"/></svg>
-      <span>Character</span><span class="mark" data-mark="character"></span>
-    </a>
-    <a class="ri" href="#files" data-view="files">
-      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M6 2h8l5 5v15H6zm8 1.5V7h3.5zM9 11.5h7v1.2H9zm0 3.5h7v1.2H9z"/></svg>
-      <span>Files</span><span class="mark" data-mark="files"></span>
-    </a>
-    <a class="ri" href="#teleports" data-view="teleports">
-      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 1.5 15 7v11H9V7zm-1.5 7.5v2h3V9zm0 4v2h3v-2zM6 19.5h12v2.5H6z"/></svg>
-      <span>Teleports</span><span class="mark" data-mark="teleports"></span>
-    </a>
-    <a class="ri" href="#statehelm" data-view="statehelm">
-      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 21v-1.5h18V21zm1.5-2.5V10h3v8.5zm5.25 0V10h4.5v8.5zm6.75 0V10h3v8.5zM2.5 8.5 12 2.5l9.5 6V10h-19zM12 5.2 6.3 8.5h11.4z"/></svg>
-      <span>Statehelm</span><span class="mark" data-mark="statehelm"></span>
-    </a>
+    <div class="rail-grp" role="group" aria-label="Play"><span class="rail-gl" aria-hidden="true">Play</span>
+      <a class="ri" href="#session" data-view="session" title="Session: what today earned">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6 2h12v2h-1v3.2c0 1.4-.8 2.7-2 3.4L13.6 12l1.4 1.4c1.2.7 2 2 2 3.4V20h1v2H6v-2h1v-3.2c0-1.4.8-2.7 2-3.4l1.4-1.4L9 10.6C7.8 9.9 7 8.6 7 7.2V4H6zm3 2v3.2c0 .7.4 1.4 1 1.7L12 10.6l2-1.7c.6-.3 1-1 1-1.7V4zm3 9.4-2 1.7c-.6.3-1 1-1 1.7V20h6v-3.2c0-.7-.4-1.4-1-1.7z"/></svg>
+        <span>Session</span><span class="mark" data-mark="session"></span>
+      </a>
+      <a class="ri" href="#combat" data-view="combat" title="Combat: the damage meter, yours and your party's">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><g fill="currentColor"><path d="M3 2.5h3.2L17 13.3l-1.6 1.6L3 5.7z"/><path d="M21 2.5h-3.2L7 13.3l1.6 1.6L21 5.7z"/><path d="M5.2 13.6l5.2 5.2-1.5 1.5-5.2-5.2z"/><path d="M18.8 13.6l-5.2 5.2 1.5 1.5 5.2-5.2z"/><path d="M4 17.6l2.4 2.4L4.6 21.8 2.2 19.4z"/><path d="M20 17.6l-2.4 2.4 1.8 1.8 2.4-2.4z"/></g></svg>
+        <span>Combat</span><span class="mark" data-mark="combat"></span>
+      </a>
+      <a class="ri" href="#vendors" data-view="vendors" title="Vendors: who can still pay you">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9 2h6l-1.6 3.2C17 6.5 20 10.4 20 14.6 20 19 16.6 22 12 22s-8-3-8-7.4c0-4.2 3-8.1 6.6-9.4zm3 6.5c-.8 0-1.4.6-1.4 1.3v.4c-1.4.3-2.3 1.3-2.3 2.5 0 1.6 1.4 2.2 2.9 2.6 1 .3 1.3.5 1.3.9s-.4.7-1.2.7c-.7 0-1.4-.3-2-.8l-1 1.4c.6.5 1.4.9 2.3 1v.5h1.4v-.5c1.5-.3 2.4-1.3 2.4-2.6 0-1.7-1.4-2.3-2.9-2.7-1-.3-1.3-.4-1.3-.8 0-.3.3-.6 1-.6.6 0 1.2.2 1.7.6l.9-1.4c-.5-.4-1.1-.7-1.8-.8v-.4c0-.7-.6-1.3-1.4-1.3z"/></svg>
+        <span>Vendors</span><span class="mark" data-mark="vendors"></span>
+      </a>
+      <a class="ri" href="#storage" data-view="storage" title="Storage: where there is room">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 9.5C4 6.5 6.5 4 9.5 4h5C17.5 4 20 6.5 20 9.5V11H4zM3 12.5h7.5V14a1.5 1.5 0 0 0 3 0v-1.5H21V19a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></svg>
+        <span>Storage</span><span class="mark" data-mark="storage"></span>
+      </a>
+      <button type="button" class="ri more" id="morebtn" aria-haspopup="dialog" aria-expanded="false" title="Character, Teleports, Statehelm, Files, About">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><g fill="currentColor"><circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/></g></svg>
+        <span>More</span><span class="mark" data-mark="more"></span>
+      </button>
+    </div>
+    <div class="rail-grp ref" role="group" aria-label="Reference"><span class="rail-gl" aria-hidden="true">Reference</span>
+      <a class="ri" href="#character" data-view="character" title="Character: skills, currencies, favor, quests">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2.5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9zM4 21c0-4.2 3.6-7.5 8-7.5s8 3.3 8 7.5v.5H4z"/></svg>
+        <span>Character</span><span class="mark" data-mark="character"></span>
+      </a>
+      <a class="ri" href="#teleports" data-view="teleports" title="Teleports: Teleportation Machine codes, from the wiki">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 1.5 15 7v11H9V7zm-1.5 7.5v2h3V9zm0 4v2h3v-2zM6 19.5h12v2.5H6z"/></svg>
+        <span>Teleports</span><span class="mark" data-mark="teleports"></span>
+      </a>
+      <a class="ri" href="#statehelm" data-view="statehelm" title="Statehelm: weekly gifts to trainers">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 21v-1.5h18V21zm1.5-2.5V10h3v8.5zm5.25 0V10h4.5v8.5zm6.75 0V10h3v8.5zM2.5 8.5 12 2.5l9.5 6V10h-19zM12 5.2 6.3 8.5h11.4z"/></svg>
+        <span>Statehelm</span><span class="mark" data-mark="statehelm"></span>
+      </a>
+    </div>
   </div>
-  <div class="rail-foot"><button type="button" id="aboutbtn" aria-haspopup="dialog" aria-expanded="false" data-fan-aria><span class="fan">fan-made</span><span class="ab">About</span></button></div>
+  <div class="rail-foot">
+    <a class="rf" href="#files" data-view="files" title="Files: the files the app reads, as they are"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M6 2h8l5 5v15H6zm8 1.5V7h3.5zM9 11.5h7v1.2H9zm0 3.5h7v1.2H9z"/></svg><span>Files</span></a>
+    <button type="button" id="aboutbtn" aria-haspopup="dialog" aria-expanded="false" data-fan-aria><span class="fan">fan-made</span><span class="ab">About</span></button>
+  </div>
 </nav>
 
 <main class="canvas" id="main">
@@ -113,14 +120,14 @@
     <section class="view" id="v-session" data-view="session" hidden>
       <div class="main-col">
         <div class="note-line" id="s-follow" hidden></div>
+        <section class="win" id="w-s-setup" aria-labelledby="t-s-setup" hidden>
+          <header class="win-bar primary"><h2 id="t-s-setup">Setup <span class="count" id="s-setup-count">0 of 1 done</span></h2></header>
+          <div class="win-body" id="s-setup"></div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
         <section class="win" id="w-s-glance" aria-labelledby="t-s-glance">
           <header class="win-bar"><h2 id="t-s-glance">At a glance</h2></header>
           <div class="win-body"><div class="glance" id="s-glance"></div></div>
-          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
-        </section>
-        <section class="win" id="w-s-zone" aria-labelledby="t-s-zone">
-          <header class="win-bar"><h2 id="t-s-zone" tabindex="-1">Here</h2><div class="tools" id="s-zone-tools"></div></header>
-          <div class="win-body" id="s-zone"></div>
           <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
         </section>
         <section class="win" id="w-s-xp" aria-labelledby="t-s-xp">
@@ -132,56 +139,58 @@
           <div class="win-body"><div id="s-xp"></div></div>
           <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
         </section>
-        <div class="grid2">
+        <div class="deck-h"><span>More from today</span><button type="button" class="linkbtn" data-deckall="open" aria-label="Open all of More from today">Open all</button> · <button type="button" class="linkbtn" data-deckall="fold" aria-label="Fold all of More from today">Fold all</button></div>
+        <div class="deck" id="s-deck">
           <section class="win" id="w-s-skill" aria-labelledby="t-s-skill">
-            <header class="win-bar"><h2 id="t-s-skill">XP by skill</h2></header>
+            <header class="win-bar"><h2 id="t-s-skill"><button type="button" class="foldh" data-deck="w-s-skill" aria-expanded="false" aria-controls="s-skill"><span class="tri" aria-hidden="true"></span><span class="t">XP by skill</span></button></h2><span class="count sum"></span></header>
             <div class="win-body" id="s-skill"></div>
             <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
           </section>
-          <section class="win" id="w-s-lvl" aria-labelledby="t-s-lvl">
-            <header class="win-bar"><h2 id="t-s-lvl">Level-ups</h2></header>
-            <div class="win-body" id="s-lvl"></div>
+          <section class="win" id="w-s-what" aria-labelledby="t-s-what">
+            <header class="win-bar"><h2 id="t-s-what"><button type="button" class="foldh" data-deck="w-s-what" aria-expanded="false" aria-controls="s-what"><span class="tri" aria-hidden="true"></span><span class="t">What happened</span></button></h2><span class="count sum"></span></header>
+            <div class="win-body" id="s-what"></div>
             <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
           </section>
-        </div>
-        <div class="grid2" id="s-pair-cc">
-          <section class="win" id="w-s-coin" aria-labelledby="t-s-coin">
-            <header class="win-bar"><h2 id="t-s-coin">Councils</h2></header>
-            <div class="win-body" id="s-coin"></div>
+          <section class="win" id="w-s-zone" aria-labelledby="t-s-zone">
+            <header class="win-bar"><h2 id="t-s-zone" tabindex="-1"><button type="button" class="foldh" data-deck="w-s-zone" aria-expanded="false" aria-controls="s-zone"><span class="tri" aria-hidden="true"></span><span class="t">Here</span></button></h2><span class="count sum"></span><div class="tools" id="s-zone-tools"></div></header>
+            <div class="win-body" id="s-zone"></div>
             <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
           </section>
           <section class="win" id="w-s-combat" aria-labelledby="t-s-combat">
-            <header class="win-bar"><h2 id="t-s-combat">Combat</h2></header>
+            <header class="win-bar"><h2 id="t-s-combat"><button type="button" class="foldh" data-deck="w-s-combat" aria-expanded="false" aria-controls="s-combat"><span class="tri" aria-hidden="true"></span><span class="t">Deaths and kills</span></button></h2><span class="count sum"></span></header>
             <div class="win-body" id="s-combat"></div>
             <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
           </section>
-        </div>
-        <div class="grid2" id="s-pair2">
+          <section class="win" id="w-s-lvl" aria-labelledby="t-s-lvl">
+            <header class="win-bar"><h2 id="t-s-lvl"><button type="button" class="foldh" data-deck="w-s-lvl" aria-expanded="false" aria-controls="s-lvl"><span class="tri" aria-hidden="true"></span><span class="t">Level-ups</span></button></h2><span class="count sum"></span></header>
+            <div class="win-body" id="s-lvl"></div>
+            <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+          </section>
+          <section class="win" id="w-s-coin" aria-labelledby="t-s-coin">
+            <header class="win-bar"><h2 id="t-s-coin"><button type="button" class="foldh" data-deck="w-s-coin" aria-expanded="false" aria-controls="s-coin"><span class="tri" aria-hidden="true"></span><span class="t">Councils</span></button></h2><span class="count sum"></span></header>
+            <div class="win-body" id="s-coin"></div>
+            <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+          </section>
           <section class="win" id="w-s-loot" aria-labelledby="t-s-loot">
-            <header class="win-bar"><h2 id="t-s-loot">Loot</h2></header>
-            <div class="win-body">
+            <header class="win-bar"><h2 id="t-s-loot"><button type="button" class="foldh" data-deck="w-s-loot" aria-expanded="false" aria-controls="b-s-loot"><span class="tri" aria-hidden="true"></span><span class="t">Loot</span></button></h2><span class="count sum"></span></header>
+            <div class="win-body" id="b-s-loot">
               <div class="toolbar"><label class="sr" for="lootq">Search loot</label><input type="search" id="lootq" class="grow" placeholder="Item name, e.g. Spider Leg" autocomplete="off"></div>
               <div id="s-loot"></div>
             </div>
             <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
           </section>
-          <section class="win" id="w-s-what" aria-labelledby="t-s-what">
-            <header class="win-bar"><h2 id="t-s-what">What happened</h2></header>
-            <div class="win-body" id="s-what"></div>
+          <section class="win" id="w-s-chat" aria-labelledby="t-s-chat">
+            <header class="win-bar"><h2 id="t-s-chat"><button type="button" class="foldh" data-deck="w-s-chat" aria-expanded="false" aria-controls="b-s-chat"><span class="tri" aria-hidden="true"></span><span class="t">Chat log</span></button></h2><span class="count sum"></span></header>
+            <div class="win-body flush darkzone" id="b-s-chat">
+              <div class="chips-wrap" id="chips-wrap"><div class="chips" id="chips" aria-label="Channels"></div><button type="button" class="chip more" id="chips-more" hidden></button></div>
+              <div class="feed-wrap">
+                <div class="feed" id="feed" role="log" aria-live="off" aria-label="Chat log lines"></div>
+                <button type="button" class="pill newpill" id="newpill" hidden></button>
+              </div>
+            </div>
             <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
           </section>
         </div>
-        <section class="win darkzone" id="w-s-chat" aria-labelledby="t-s-chat">
-          <header class="win-bar"><h2 id="t-s-chat">Chat log</h2></header>
-          <div class="win-body flush">
-            <div class="chips-wrap" id="chips-wrap"><div class="chips" id="chips" aria-label="Channels"></div><button type="button" class="chip more" id="chips-more" hidden></button></div>
-            <div class="feed-wrap">
-              <div class="feed" id="feed" role="log" aria-live="off" aria-label="Chat log lines"></div>
-              <button type="button" class="pill newpill" id="newpill" hidden></button>
-            </div>
-          </div>
-          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
-        </section>
       </div>
     </section>
 
@@ -189,9 +198,28 @@
     <section class="view" id="v-combat" data-view="combat" hidden>
       <div class="main-col">
         <div class="note-line" id="d-follow" hidden></div>
+        <section class="win" id="w-d-setup" aria-labelledby="t-d-setup" hidden>
+          <header class="win-bar primary"><h2 id="t-d-setup">Setup <span class="count" id="d-setup-count">0 of 3 done</span></h2></header>
+          <div class="win-body" id="d-setup"></div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
         <section class="win" id="w-d-glance" aria-labelledby="t-d-glance">
           <header class="win-bar"><h2 id="t-d-glance">At a glance</h2></header>
           <div class="win-body"><div class="glance" id="d-glance"></div></div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
+        <section class="win" id="w-d-party" aria-labelledby="t-d-party">
+          <header class="win-bar"><h2 id="t-d-party"><button type="button" class="foldh" data-deck="w-d-party" aria-expanded="true" aria-controls="d-party"><span class="tri" aria-hidden="true"></span><span class="t">Your party</span></button><span class="count" id="d-party-count"></span></h2>
+            <div class="tools"><a class="btn" id="d-everyone-open" href="#" target="_blank" rel="noopener" title="Opens in a new tab" hidden>Open everyone's fights</a></div>
+          </header>
+          <div class="win-body" id="d-party">
+            <div class="party-tools-m" id="d-party-tools" hidden><a class="btn" id="d-everyone-open-m" href="#" target="_blank" rel="noopener" title="Opens in a new tab">Everyone's fights</a></div>
+            <div id="d-party-head"></div>
+            <p class="small party-live" id="d-live" aria-live="polite" hidden></p>
+            <div id="d-party-state"></div>
+            <div class="small dim party-ystate" id="d-ystate" aria-live="polite"></div>
+            <div id="d-party-rest"></div>
+          </div>
           <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
         </section>
         <section class="win" id="w-d-fights" aria-labelledby="t-d-fights">
@@ -204,36 +232,36 @@
           <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
         </section>
         <section class="win" id="w-d-break" aria-labelledby="t-d-break">
-          <header class="win-bar"><h2 id="t-d-break" tabindex="-1">Breakdown <span class="count" id="d-break-sub"></span></h2>
-            <div class="tools"><button type="button" class="btn" id="d-copy" disabled><span class="d-only">Copy for Discord</span><span class="m-only">Copy</span></button><button type="button" class="btn" id="d-post" disabled><span class="d-only">Post fight to Discord</span><span class="m-only">Post</span></button></div>
+          <header class="win-bar"><h2 id="t-d-break" tabindex="-1"><button type="button" class="foldh" data-deck="w-d-break" aria-expanded="true" aria-controls="d-break"><span class="tri" aria-hidden="true"></span><span class="t">Breakdown</span></button><span class="count" id="d-break-sub"></span></h2>
+            <div class="tools"><button type="button" class="linkbtn" id="d-copy" disabled><span class="d-only">Copy as text</span><span class="m-only">Copy</span></button><button type="button" class="btn" id="d-post" disabled><span class="d-only">Post fight to Discord</span><span class="m-only">Post</span></button></div>
           </header>
           <div class="win-body" id="d-break"></div>
           <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
         </section>
-        <section class="win" id="w-d-party" aria-labelledby="t-d-party">
-          <header class="win-bar"><h2 id="t-d-party">Party <span class="count" id="d-party-count"></span></h2>
-            <div class="tools"><button type="button" class="btn" id="d-pnew">New code</button></div>
-          </header>
-          <div class="win-body">
+        <section class="win folded" id="w-d-room" aria-labelledby="t-d-room">
+          <header class="win-bar"><h2 id="t-d-room"><button type="button" class="foldh" data-deck="w-d-room" aria-expanded="false" aria-controls="d-room"><span class="tri" aria-hidden="true"></span><span class="t">Private room</span></button></h2><span class="count sum" id="d-room-count"></span></header>
+          <div class="win-body" id="d-room">
+            <p class="empty room-why">Your party already shows above with no code. A private room is for a group that would rather stay off everyone's fights (press Stop sending too), or for two parties that share a cave. One of you presses New code and pastes it into party chat; the others paste it here.</p>
             <form class="toolbar" id="d-pform">
-              <label class="sr" for="pcode">Party code</label>
+              <label class="sr" for="pcode">Room code</label>
               <input type="text" id="pcode" class="code" placeholder="gn-…" autocomplete="off" autocapitalize="off" spellcheck="false">
               <button type="submit" class="btn" id="d-pjoin">Join</button>
+              <button type="button" class="btn" id="d-pnew">New code</button>
               <button type="button" class="btn" id="d-pcopy" hidden>Copy code</button>
-              <button type="button" class="btn" id="d-pleave" hidden>Leave</button>
+              <button type="button" class="btn" id="d-pleave" hidden>Leave the room</button>
               <span class="small dim" id="d-pstate" aria-live="polite"></span>
             </form>
+          </div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
+        <section class="win folded" id="w-d-discord" aria-labelledby="t-d-discord">
+          <header class="win-bar"><h2 id="t-d-discord"><button type="button" class="foldh" data-deck="w-d-discord" aria-expanded="false" aria-controls="d-discord"><span class="tri" aria-hidden="true"></span><span class="t">Discord</span></button></h2><span class="count sum" id="d-discord-count"></span></header>
+          <div class="win-body" id="d-discord">
             <div class="toolbar" id="d-dform" role="group" aria-label="Discord">
-              <button type="button" class="btn primary" id="d-dconnect">Connect Discord</button>
+              <button type="button" class="btn" id="d-dconnect">Connect Discord</button>
               <button type="button" class="btn" id="d-dcancel" hidden>Cancel</button>
-              <button type="button" class="btn" id="d-dremove" hidden>Remove</button>
+              <button type="button" class="btn" id="d-dremove" hidden>Disconnect Discord</button>
               <span class="small dim" id="d-dstate" aria-live="polite"></span>
-            </div>
-            <div id="d-party"></div>
-            <div id="d-pastebox" hidden>
-              <label class="small dim" for="d-pastetext">A fight from a Gorgon Notes post on Discord, with its json block</label>
-              <textarea id="d-pastetext" rows="4" spellcheck="false"></textarea>
-              <div class="toolbar"><button type="button" class="btn" id="d-pasteadd">Add</button><button type="button" class="linkbtn" id="d-pastecancel">Cancel</button><span class="small dim" id="d-pastestate" aria-live="polite"></span></div>
             </div>
           </div>
           <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
@@ -244,30 +272,14 @@
     <!-- ===================== VENDORS ===================== -->
     <section class="view" id="v-vendors" data-view="vendors" hidden>
       <div class="main-col">
+        <section class="win" id="w-v-setup" aria-labelledby="t-v-setup" hidden>
+          <header class="win-bar primary"><h2 id="t-v-setup">Setup <span class="count" id="v-setup-count">0 of 1 done</span></h2></header>
+          <div class="win-body" id="v-setup"></div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
         <section class="win" id="w-v-glance" aria-labelledby="t-v-glance">
           <header class="win-bar"><h2 id="t-v-glance">At a glance</h2></header>
           <div class="win-body"><div class="glance" id="v-glance"></div></div>
-          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
-        </section>
-        <div class="grid2">
-          <section class="win" id="w-v-where" aria-labelledby="t-v-where">
-            <header class="win-bar"><h2 id="t-v-where">Where to sell</h2></header>
-            <div class="win-body" id="v-where"></div>
-            <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
-          </section>
-          <section class="win" id="w-v-buy" aria-labelledby="t-v-buy">
-            <header class="win-bar"><h2 id="t-v-buy">What they buy</h2></header>
-            <div class="win-body" id="v-buy"></div>
-            <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
-          </section>
-        </div>
-        <section class="win" id="w-v-sell" aria-labelledby="t-v-sell">
-          <header class="win-bar"><h2 id="t-v-sell">Sell<span class="count" id="v-sell-count"></span></h2>
-            <div class="tools" id="vsmode-wrap"><div class="tabs" role="tablist" aria-label="Sell layout" id="vsmode">
-              <button role="tab" type="button" id="vs-stops" data-m="stops" aria-controls="v-sell-stops">By stop</button><button role="tab" type="button" id="vs-items" data-m="items" aria-controls="v-sell-items">By item</button>
-            </div></div>
-          </header>
-          <div class="win-body" id="v-sell"></div>
           <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
         </section>
         <section class="win" id="w-v-pane" aria-labelledby="t-v-pane">
@@ -277,12 +289,12 @@
             </div></div>
           </header>
           <div class="win-body">
-            <div class="toolbar">
-              <label class="sr" for="vq">Search vendors</label>
-              <input type="search" id="vq" class="grow" placeholder="Vendor, what they buy, or an item, e.g. figurine" autocomplete="off">
-              <label class="sr" for="varea">Area</label><select id="varea"><option value="">All areas</option></select>
+            <div class="toolbar sticky">
+              <div class="tb-main"><label class="sr" for="vq">Search vendors</label>
+              <input type="search" id="vq" class="grow" placeholder="Vendor, what they buy, or an item, e.g. figurine" autocomplete="off"></div>
+              <div class="tb-more"><label class="sr" for="varea">Area</label><select id="varea"><option value="">All areas</option></select>
               <label class="check"><input type="checkbox" id="vhide"> Hide drained</label>
-              <label class="sr" for="vsortm">Sort</label><select id="vsortm" class="m-sort"></select>
+              <label class="sr" for="vsortm">Sort</label><select id="vsortm" class="m-sort"></select></div>
             </div>
             <p class="small dim" id="vq-note" hidden></p>
             <div class="chips wrap" id="vfilters"></div>
@@ -290,38 +302,67 @@
           </div>
           <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
         </section>
+        <div class="deck-h"><span>More</span><button type="button" class="linkbtn" data-deckall="open" aria-label="Open all of More">Open all</button> · <button type="button" class="linkbtn" data-deckall="fold" aria-label="Fold all of More">Fold all</button></div>
+        <div class="deck" id="v-deck">
+          <section class="win" id="w-v-where" aria-labelledby="t-v-where">
+            <header class="win-bar"><h2 id="t-v-where"><button type="button" class="foldh" data-deck="w-v-where" aria-expanded="false" aria-controls="v-where"><span class="tri" aria-hidden="true"></span><span class="t">Where to sell</span></button></h2><span class="count sum"></span></header>
+            <div class="win-body" id="v-where"></div>
+            <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+          </section>
+          <section class="win" id="w-v-buy" aria-labelledby="t-v-buy">
+            <header class="win-bar"><h2 id="t-v-buy"><button type="button" class="foldh" data-deck="w-v-buy" aria-expanded="false" aria-controls="v-buy"><span class="tri" aria-hidden="true"></span><span class="t">What they buy</span></button></h2><span class="count sum"></span></header>
+            <div class="win-body" id="v-buy"></div>
+            <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+          </section>
+          <section class="win" id="w-v-sell" aria-labelledby="t-v-sell">
+            <header class="win-bar"><h2 id="t-v-sell"><button type="button" class="foldh" data-deck="w-v-sell" aria-expanded="false" aria-controls="v-sell"><span class="tri" aria-hidden="true"></span><span class="t">Sell</span></button></h2><span class="count sum" id="v-sell-count"></span>
+              <div class="tools" id="vsmode-wrap"><div class="tabs" role="tablist" aria-label="Sell layout" id="vsmode">
+                <button role="tab" type="button" id="vs-stops" data-m="stops" aria-controls="v-sell-stops">By stop</button><button role="tab" type="button" id="vs-items" data-m="items" aria-controls="v-sell-items">By item</button>
+              </div></div>
+            </header>
+            <div class="win-body" id="v-sell"></div>
+            <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+          </section>
+        </div>
       </div>
     </section>
 
     <!-- ===================== STORAGE ===================== -->
     <section class="view" id="v-storage" data-view="storage" hidden>
       <div class="main-col">
+        <section class="win" id="w-t-setup" aria-labelledby="t-t-setup" hidden>
+          <header class="win-bar primary"><h2 id="t-t-setup">Setup <span class="count" id="t-setup-count">0 of 1 done</span></h2></header>
+          <div class="win-body" id="t-setup"></div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
         <section class="win" id="w-t-glance" aria-labelledby="t-t-glance">
           <header class="win-bar"><h2 id="t-t-glance">At a glance</h2></header>
           <div class="win-body"><div class="glance" id="t-glance"></div></div>
           <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
         </section>
-        <section class="win" id="w-t-room" aria-labelledby="t-t-room">
-          <header class="win-bar"><h2 id="t-t-room">Where there's room</h2></header>
-          <div class="win-body" id="t-room"></div>
-          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
-        </section>
         <section class="win" id="w-t-pane" aria-labelledby="t-t-pane">
           <header class="win-bar primary"><h2 id="t-t-pane">Vaults</h2></header>
           <div class="win-body">
-            <div class="toolbar">
-              <label class="sr" for="sq">Search vaults</label>
-              <input type="search" id="sq" class="grow" placeholder="Vault or area, e.g. Serbule" autocomplete="off">
-              <label class="check"><input type="checkbox" id="shide"> Hide empty, unused vaults</label>
-              <label class="sr" for="ssortm">Sort</label><select id="ssortm" class="m-sort"></select>
+            <div class="toolbar sticky">
+              <div class="tb-main"><label class="sr" for="sq">Search vaults</label>
+              <input type="search" id="sq" class="grow" placeholder="Vault or area, e.g. Serbule" autocomplete="off"></div>
+              <div class="tb-more"><label class="check"><input type="checkbox" id="shide"> Hide empty, unused vaults</label>
+              <label class="sr" for="ssortm">Sort</label><select id="ssortm" class="m-sort"></select></div>
             </div>
             <div class="chips wrap" id="sfilters"></div>
             <div id="t-pane"></div>
           </div>
           <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
         </section>
+        <div class="deck-h"><span>More</span><button type="button" class="linkbtn" data-deckall="open" aria-label="Open all of More">Open all</button> · <button type="button" class="linkbtn" data-deckall="fold" aria-label="Fold all of More">Fold all</button></div>
+        <div class="deck" id="t-deck">
+          <section class="win" id="w-t-room" aria-labelledby="t-t-room">
+            <header class="win-bar"><h2 id="t-t-room"><button type="button" class="foldh" data-deck="w-t-room" aria-expanded="false" aria-controls="t-room"><span class="tri" aria-hidden="true"></span><span class="t">Where there's room</span></button></h2><span class="count sum"></span></header>
+            <div class="win-body" id="t-room"></div>
+            <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+          </section>
         <section class="win" id="w-t-merge" aria-labelledby="t-t-merge">
-          <header class="win-bar"><h2 id="t-t-merge">Stacks to merge<span class="count" id="t-merge-count"></span></h2>
+          <header class="win-bar"><h2 id="t-t-merge"><button type="button" class="foldh" data-deck="w-t-merge" aria-expanded="false" aria-controls="t-merge"><span class="tri" aria-hidden="true"></span><span class="t">Stacks to merge</span></button></h2><span class="count sum" id="t-merge-count"></span>
             <div class="tools" id="tmode-wrap"><div class="tabs" role="tablist" aria-label="Merge layout" id="tmode">
               <button role="tab" type="button" id="tm-items" data-m="items" aria-controls="t-merge-items">By item</button><button role="tab" type="button" id="tm-stops" data-m="stops" aria-controls="t-merge-stops">By stop</button>
             </div></div>
@@ -330,12 +371,12 @@
           <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
         </section>
         <section class="win" id="w-t-items" aria-labelledby="t-t-items">
-          <header class="win-bar"><h2 id="t-t-items">Items</h2>
+          <header class="win-bar"><h2 id="t-t-items"><button type="button" class="foldh" data-deck="w-t-items" aria-expanded="false" aria-controls="b-t-items"><span class="tri" aria-hidden="true"></span><span class="t">Items</span></button></h2><span class="count sum"></span>
             <div class="tools m-only"><div class="tabs" role="tablist" aria-label="Items layout" id="imode">
               <button role="tab" type="button" data-m="items">Items</button><button role="tab" type="button" data-m="loc">By location</button>
             </div></div>
           </header>
-          <div class="win-body">
+          <div class="win-body" id="b-t-items">
             <div class="toolbar">
               <label for="itemsel" class="small dim">Export</label><select id="itemsel"></select>
               <span class="small dim" id="iteminfo"></span>
@@ -357,15 +398,21 @@
           </div>
           <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
         </section>
+        </div>
       </div>
     </section>
 
     <!-- ===================== CHARACTER ===================== -->
-    <section class="view cview" id="v-character" data-view="character" hidden>
+    <section class="view" id="v-character" data-view="character" hidden>
       <div class="main-col">
         <section class="win" id="w-c-broken" aria-labelledby="t-c-broken" hidden>
           <header class="win-bar"><h2 id="t-c-broken">This export came out partial</h2></header>
           <div class="win-body" id="c-broken"></div>
+          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+        </section>
+        <section class="win" id="w-c-setup" aria-labelledby="t-c-setup" hidden>
+          <header class="win-bar primary"><h2 id="t-c-setup">Setup <span class="count" id="c-setup-count">0 of 1 done</span></h2></header>
+          <div class="win-body" id="c-setup"></div>
           <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
         </section>
         <section class="win" id="w-c-glance" aria-labelledby="t-c-glance">
@@ -373,52 +420,46 @@
           <div class="win-body"><div class="glance" id="c-glance"></div></div>
           <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
         </section>
-        <div class="fade-edge"><div class="tabs ctabs" role="tablist" aria-label="Character windows" id="ctabs">
-          <button role="tab" type="button" data-w="w-c-skills">Skills</button><button role="tab" type="button" data-w="w-c-cur">Currencies</button><button role="tab" type="button" data-w="w-c-favor">Favor</button><button role="tab" type="button" data-w="w-c-quests">Quests</button><button role="tab" type="button" data-w="w-c-stats">Stats</button>
-        </div></div>
-        <section class="win cwin" id="w-c-skills" aria-labelledby="t-c-skills">
+        <section class="win" id="w-c-skills" aria-labelledby="t-c-skills">
           <header class="win-bar primary"><h2 id="t-c-skills">Skills</h2></header>
           <div class="win-body">
-            <div class="toolbar"><label class="sr" for="skillq">Search skills</label><input type="search" id="skillq" class="grow" placeholder="Skill, e.g. Mycology" autocomplete="off">
-              <label class="sr" for="ksortm">Sort</label><select id="ksortm" class="m-sort"></select></div>
+            <div class="toolbar sticky"><div class="tb-main"><label class="sr" for="skillq">Search skills</label><input type="search" id="skillq" class="grow" placeholder="Skill, e.g. Mycology" autocomplete="off"></div>
+              <div class="tb-more"><label class="sr" for="ksortm">Sort</label><select id="ksortm" class="m-sort"></select></div></div>
             <div id="c-skills"></div>
           </div>
           <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
         </section>
-        <div class="grid2">
-          <div class="mcol">
-            <section class="win cwin" id="w-c-cur" aria-labelledby="t-c-cur">
-              <header class="win-bar"><h2 id="t-c-cur">Currencies</h2></header>
-              <div class="win-body" id="c-cur"></div>
-              <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
-            </section>
-            <section class="win cwin" id="w-c-stats" aria-labelledby="t-c-stats">
-              <header class="win-bar"><h2 id="t-c-stats">Stats</h2></header>
-              <div class="win-body">
-                <div class="toolbar"><label class="sr" for="statq">Search stats</label><input type="search" id="statq" class="grow" placeholder="Stat, e.g. Max health" autocomplete="off"></div>
-                <div id="c-stats"></div>
-              </div>
-              <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
-            </section>
-          </div>
-          <div class="mcol">
-            <section class="win cwin" id="w-c-quests" aria-labelledby="t-c-quests">
-              <header class="win-bar"><h2 id="t-c-quests">Active quests <span class="count" id="questcount"></span></h2></header>
-              <div class="win-body">
-                <div class="toolbar"><label class="sr" for="questq">Search quests</label><input type="search" id="questq" class="grow" placeholder="Quest name" autocomplete="off"></div>
-                <div id="c-quests"></div>
-              </div>
-              <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
-            </section>
-            <section class="win cwin" id="w-c-favor" aria-labelledby="t-c-favor">
-              <header class="win-bar"><h2 id="t-c-favor">NPC favor</h2></header>
-              <div class="win-body">
-                <div class="toolbar"><label class="sr" for="favq">Search NPCs</label><input type="search" id="favq" class="grow" placeholder="NPC or tier, e.g. Kib" autocomplete="off"></div>
-                <div id="c-favor"></div>
-              </div>
-              <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
-            </section>
-          </div>
+        <div class="deck-h"><span>More</span><button type="button" class="linkbtn" data-deckall="open" aria-label="Open all of More">Open all</button> · <button type="button" class="linkbtn" data-deckall="fold" aria-label="Fold all of More">Fold all</button></div>
+        <div class="deck" id="c-deck">
+          <section class="win" id="w-c-cur" aria-labelledby="t-c-cur">
+            <header class="win-bar"><h2 id="t-c-cur"><button type="button" class="foldh" data-deck="w-c-cur" aria-expanded="false" aria-controls="c-cur"><span class="tri" aria-hidden="true"></span><span class="t">Currencies</span></button></h2><span class="count sum"></span></header>
+            <div class="win-body" id="c-cur"></div>
+            <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+          </section>
+          <section class="win" id="w-c-quests" aria-labelledby="t-c-quests">
+            <header class="win-bar"><h2 id="t-c-quests"><button type="button" class="foldh" data-deck="w-c-quests" aria-expanded="false" aria-controls="b-c-quests"><span class="tri" aria-hidden="true"></span><span class="t">Active quests</span></button></h2><span class="count sum" id="questcount"></span></header>
+            <div class="win-body" id="b-c-quests">
+              <div class="toolbar"><label class="sr" for="questq">Search quests</label><input type="search" id="questq" class="grow" placeholder="Quest name" autocomplete="off"></div>
+              <div id="c-quests"></div>
+            </div>
+            <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+          </section>
+          <section class="win" id="w-c-stats" aria-labelledby="t-c-stats">
+            <header class="win-bar"><h2 id="t-c-stats"><button type="button" class="foldh" data-deck="w-c-stats" aria-expanded="false" aria-controls="b-c-stats"><span class="tri" aria-hidden="true"></span><span class="t">Stats</span></button></h2><span class="count sum"></span></header>
+            <div class="win-body" id="b-c-stats">
+              <div class="toolbar"><label class="sr" for="statq">Search stats</label><input type="search" id="statq" class="grow" placeholder="Stat, e.g. Max health" autocomplete="off"></div>
+              <div id="c-stats"></div>
+            </div>
+            <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+          </section>
+          <section class="win" id="w-c-favor" aria-labelledby="t-c-favor">
+            <header class="win-bar"><h2 id="t-c-favor"><button type="button" class="foldh" data-deck="w-c-favor" aria-expanded="false" aria-controls="b-c-favor"><span class="tri" aria-hidden="true"></span><span class="t">NPC favor</span></button></h2><span class="count sum"></span></header>
+            <div class="win-body" id="b-c-favor">
+              <div class="toolbar"><label class="sr" for="favq">Search NPCs</label><input type="search" id="favq" class="grow" placeholder="NPC or tier, e.g. Kib" autocomplete="off"></div>
+              <div id="c-favor"></div>
+            </div>
+            <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
+          </section>
         </div>
       </div>
     </section>
@@ -466,7 +507,7 @@
           <header class="win-bar primary"><h2 id="t-tp-find">Teleportation Machine <span class="count" id="tp-count"></span></h2></header>
           <div class="win-body">
             <p class="small dim" id="tp-req">The one working machine is in Windy View Cave (Gazluk). It takes Teleportation 25 and 2 Aquamarine per trip, can't reach the Fae Realm, and its codes are relative to the sender, so they only work from that machine.</p>
-            <div class="toolbar">
+            <div class="toolbar sticky">
               <label class="sr" for="tpq">Search zones, landmarks and codes</label>
               <input type="search" id="tpq" class="grow" placeholder="Zone, landmark or code, e.g. Serbule or 0055" autocomplete="off" disabled>
             </div>
@@ -493,11 +534,11 @@
             <p class="small dim">Each Statehelm trainer takes five gifts a week, and the week turns Monday at midnight US Eastern. Close Friends unlocks Prodigy Potential. The count comes from this week's chat log; set it with − and + when the game says otherwise.</p>
             <div id="sh-mine"></div>
           </div>
-          <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
         </section>
+        <div class="deck" id="sh-deck">
         <section class="win" id="w-sh-pick" aria-labelledby="t-sh-pick">
-          <header class="win-bar"><h2 id="t-sh-pick">Pick trainers <span class="count" id="sh-pick-count"></span></h2></header>
-          <div class="win-body">
+          <header class="win-bar"><h2 id="t-sh-pick"><button type="button" class="foldh" data-deck="w-sh-pick" aria-expanded="false" aria-controls="b-sh-pick"><span class="tri" aria-hidden="true"></span><span class="t">Pick trainers</span></button></h2><span class="count sum" id="sh-pick-count"></span></header>
+          <div class="win-body" id="b-sh-pick">
             <div class="toolbar">
               <label class="sr" for="shq">Search trainers, skills and gifts</label>
               <input type="search" id="shq" class="grow" placeholder="Trainer, skill or gift, e.g. Sword or Brooker" autocomplete="off" disabled>
@@ -507,6 +548,7 @@
           </div>
           <footer class="win-foot"><span class="fl"></span><span class="fr"></span></footer>
         </section>
+        </div>
       </div>
     </section>
 
@@ -516,6 +558,7 @@
        <header class="win-bar"><h2>Where these numbers come from</h2></header>
        <div class="mhead" id="mhead"></div>
        <div class="notes" id="mnotes"></div>
+       <div class="elsewhere" id="melse" hidden></div>
        <div class="also" id="malso" hidden></div>
        <footer class="win-foot"><span class="fl" id="mfoot"></span><span class="fr"><button type="button" class="linkbtn" id="mremind">Reminders</button></span></footer>
      </section>
@@ -526,6 +569,7 @@
 
 <div class="pop" id="rempanel" role="dialog" aria-labelledby="rem-title" hidden></div>
 <div class="pop about" id="aboutpop" role="dialog" aria-labelledby="about-title" hidden></div>
+<div class="pop more-sheet" id="morepop" role="dialog" aria-labelledby="more-title" hidden></div>
 <div class="toasts" id="toasts"></div>
 
 <script src="app.js"></script>
