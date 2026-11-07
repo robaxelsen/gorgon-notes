@@ -19,6 +19,7 @@ import time
 from array import array
 from collections import Counter, OrderedDict, defaultdict
 from datetime import datetime, timedelta, timezone, tzinfo
+from html.parser import HTMLParser
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -312,6 +313,8 @@ def vendors(character=None):
     sheet = load_report(head["file"])
     npcs = cdn_data("npcs")
     now = datetime.now(timezone.utc)
+    form = player_form(sheet, head.get("character"))
+    talk = beast_talk()
     rows = []
     for key, mine in sheet.get("NPCs", {}).items():
         info = npcs.get(key)
@@ -343,10 +346,12 @@ def vendors(character=None):
             "resetsAt": reset if spent else None, "next": nxt,
             "exportResetAt": local_iso(reset_dt), "spentAtExport": spent_at_export,
             "resetSinceExport": reset_since, "restored": min(spent_at_export, cap) if reset_since else 0,
+            "access": vendor_access(info.get("Name", key), form, talk),
         })
     rows.sort(key=lambda r: -r["remaining"])
     reset_rows = [r for r in rows if r["resetSinceExport"]]
-    return {"source": head, "vendors": rows, "cdnVersion": cdn_version(),
+    return {"source": head, "vendors": rows, "cdnVersion": cdn_version(), "form": form,
+            "beastTalk": {k: v for k, v in talk.items() if k not in ("talks", "animalTown")} | {"talkers": len(talk["talks"]), "animalTown": len(talk["animalTown"])},
             "resetSummary": {"count": len(reset_rows), "restored": sum(r["restored"] for r in reset_rows)}}
 
 
@@ -609,6 +614,108 @@ def consolidation(character=None):
             "skipped": skipped,
         },
         "items": out, "vaults": vaults, "stops": stop_rows, "spread": sorted(spread, key=lambda r: (-r["value"], r["name"])),
+    }
+
+
+def putaway(character=None):
+    """Where to put what you carry (GET /api/putaway): every inventory stack in the newest storage export, grouped by
+    the area to stand in and the vault to open. Export-only. A stack gets a destination only on evidence: a vault that
+    already holds the same TypeID (so it is known to accept it), the one holding most of it first, then the one with
+    the most room. Stacks no vault holds are listed apart with the vaults that have room and no restriction in game
+    data, never assigned: what a vault accepts is only a sentence in the game data (user decision 26 Oct, ROADMAP).
+    Transfer chests are never destinations (is_transfer_chest). Worn gear cannot be told from carried gear in the
+    export, so gear rows carry `gear` and the page says so."""
+    st = storage(character)
+    if st.get("error"):
+        return {"error": "no items export"}
+    head = st["source"]
+    items = load_report(head["file"]).get("Items") or []
+    vmap = {v["vault"]: v for v in st["vaults"]}
+    cdn = cdn_data("items")
+
+    def loc_of(it):
+        return it.get("StorageVault") or ("Inventory" if it.get("IsInInventory") else "Unknown")
+
+    def vname(loc):
+        return vmap.get(loc, {}).get("name") or loc
+
+    def varea(loc):
+        return vmap.get(loc, {}).get("area") or ""
+
+    bag, held, nstacks = [], defaultdict(Counter), defaultdict(Counter)   # held[tid][vault] = qty; nstacks[tid][vault] = stacks
+    for it in items:
+        loc = loc_of(it)
+        if loc == "Inventory":
+            bag.append(it)
+        elif loc not in ("Saddlebag", "Unknown") and not is_transfer_chest(loc):
+            held[it.get("TypeID")][loc] += it.get("StackSize") or 1
+            nstacks[it.get("TypeID")][loc] += 1
+    room = {k: v.get("free") for k, v in vmap.items()}   # free slots per vault as the plan runs
+    placed, homeless = [], []
+    by_tid = defaultdict(list)
+    for it in bag:
+        by_tid[it.get("TypeID")].append(it)
+    for tid, its in sorted(by_tid.items(), key=lambda kv: -sum((i.get("Value") or 0) * (i.get("StackSize") or 1) for i in kv[1])):
+        name = Counter(i.get("Name") for i in its).most_common(1)[0][0]
+        qty = sum(i.get("StackSize") or 1 for i in its)
+        value = sum((i.get("Value") or 0) * (i.get("StackSize") or 1) for i in its)
+        gear = any(i.get("Slot") for i in its)
+        entry = cdn.get(f"item_{tid}") if tid is not None else None
+        max_stack = (entry or {}).get("MaxStackSize") or 1
+        stackable = max_stack > 1 and not any(f in i for i in its for f in PER_ITEM_FIELDS)
+        rowbase = {"typeId": tid, "name": name, "qty": qty, "stacks": len(its), "value": value, "gear": gear, "stackable": stackable}
+        homes = held.get(tid)
+        if homes:
+            def rank(l):
+                free = room.get(l)
+                return (homes[l], free if free is not None else -1)
+            dest = max(homes, key=rank)
+            # Slots the deposit takes there: stackables top up the stacks already in that vault first.
+            if stackable:
+                after = -(-(homes[dest] + qty) // max_stack)
+                extra = max(0, after - nstacks[tid][dest])
+            else:
+                extra = len(its)
+            free = room.get(dest)
+            short = 0 if free is None else max(0, extra - free)
+            if free is not None:
+                room[dest] = free - extra
+            placed.append({**rowbase, "to": {"vault": dest, "name": vname(dest), "area": varea(dest), "there": homes[dest],
+                                              "slots": extra, "short": short, "roomUnknown": free is None},
+                           "elsewhere": [{"vault": l, "name": vname(l), "area": varea(l), "qty": n} for l, n in homes.most_common() if l != dest]})
+        else:
+            homeless.append(rowbase)
+    # Group the placed stacks by area, then by vault, the fullest stop first.
+    stops = defaultdict(lambda: defaultdict(list))
+    for r in placed:
+        stops[r["to"]["area"] or "Anywhere"][r["to"]["vault"]].append(r)
+    stop_rows = []
+    for area, vaults_ in stops.items():
+        rows = []
+        for key, lines in vaults_.items():
+            v = vmap.get(key, {})
+            after = room.get(key)
+            rows.append({"vault": key, "name": vname(key), "accepts": v.get("accepts") or "", "free": v.get("free"),
+                         "after": None if after is None else max(0, after), "short": 0 if after is None else max(0, -after),
+                         "stacks": sum(l["stacks"] for l in lines), "lines": lines})
+        rows.sort(key=lambda g: (-g["stacks"], g["name"]))
+        stop_rows.append({"area": area, "stacks": sum(g["stacks"] for g in rows), "items": sum(len(g["lines"]) for g in rows), "vaults": rows})
+    stop_rows.sort(key=lambda s: (-s["stacks"], s["area"]))
+    # Vaults with room and no restriction sentence: the only honest offer for stacks no vault holds.
+    open_rooms = sorted([{"vault": v["vault"], "name": v["name"], "area": v["area"], "free": room.get(v["vault"])}
+                         for v in st["vaults"] if v["vault"] != "Inventory" and not is_transfer_chest(v["vault"])
+                         and not v.get("accepts") and (room.get(v["vault"]) or 0) > 0],
+                        key=lambda r: (-r["free"], r["name"]))
+    return {
+        "character": head.get("character"),
+        "source": {"file": head["file"], "timestamp": head.get("timestamp"), "at": local_iso(report_dt(head.get("timestamp") or ""))},
+        "cdnVersion": st.get("cdnVersion"),
+        "summary": {"stacks": len(bag), "items": len(by_tid), "placedStacks": sum(r["stacks"] for r in placed), "placedItems": len(placed),
+                    "homelessStacks": sum(r["stacks"] for r in homeless), "homelessItems": len(homeless),
+                    "stops": len(stop_rows), "gear": sum(1 for r in placed + homeless if r["gear"]),
+                    "short": sum(g["short"] for s in stop_rows for g in s["vaults"]),
+                    "inventoryFree": vmap.get("Inventory", {}).get("free"), "inventoryCapacity": vmap.get("Inventory", {}).get("capacity")},
+        "stops": stop_rows, "homeless": homeless, "openRooms": open_rooms[:6],
     }
 
 
@@ -1552,8 +1659,302 @@ def save_mark(type_id, mark):
         return marks
 
 
+# Beast form (7 Nov). Which vendors will talk to the player depends on their form: Animal Town in Sun Vale (Kodan,
+# Norbert, Spot, Yavazek and the rest) talks to animals only, and only after 180 real minutes played as an animal
+# (Norbert tells you how long; a lycanthrope in wolf form may talk to Kodan at any time), while many human vendors
+# (Joeh, Marna, Tadion, Elahil in Serbule) shun animals. The form comes from the character export's CurrentStats
+# IS_BEAST (1 in a beast form; IS_LYCANTHROPE marks a werewolf), and the player may say otherwise in the app
+# (POST /api/form, kept in form.json beside marks.json): the newer of the two wins, so a fresh export takes over
+# from an older answer. Who talks to animals is the wiki's "Talks to Animals" category and who lives in Animal Town
+# its "Animal Town NPCs" category, both cached a day under cache/wiki/ like the merchant caps; while the wiki has
+# never answered, Animal Town falls back to the list read on 7 Nov 2026 and nobody is marked as shunning animals.
+FORM_FILE = STATE_DIR / "form.json"
+FORM_LOCK = threading.Lock()
+FORM_VALUES = ("animal", "humanoid")
+ANIMAL_TOWN_WAIT_MIN = 180
+ANIMAL_TOWN_FALLBACK = ["Cinnamon the rabbit", "Daisy (NPC)", "Elaina", "Jumper", "Kodan", "Legs", "Norbert", "Raul", "Spot", "Yavazek"]
+BEAST_TALK_URL = "https://wiki.projectgorgon.com/wiki/Category:Talks_to_Animals"
+BEAST_TALK_CACHE = CACHE / "wiki" / "talks-to-animals.json"
+BEAST_TALK_MAX_AGE = 86400
+BEAST_TALK_RETRY_SEC = 3600
+BEAST_TALK_LOCK = threading.Lock()
+_beast_talk = {"data": None, "failedAt": 0.0}
+
+
+def load_form():
+    try:
+        d = json.loads(FORM_FILE.read_text(encoding="utf-8"))
+        if isinstance(d, dict) and d.get("form") in FORM_VALUES and iso_dt(d.get("setAt")):
+            return {"form": d["form"], "setAt": d["setAt"], "character": d.get("character")}
+    except Exception:
+        pass
+    return None
+
+
+def save_form(form, character=None):
+    """The player's answer to "are you an animal right now?"; None clears it so the export decides again."""
+    if form is not None and form not in FORM_VALUES:
+        raise BadRequest("form must be animal, humanoid or null")
+    with FORM_LOCK:
+        if form is None:
+            try:
+                FORM_FILE.unlink()
+            except FileNotFoundError:
+                pass
+            return None
+        data = {"form": form, "setAt": local_iso(datetime.now()), "character": character or None}
+        tmp = FORM_FILE.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(data, indent=1), encoding="utf-8")
+        os.replace(tmp, FORM_FILE)
+        return data
+
+
+def wiki_category(name):
+    """Every page title in a wiki category (the API pages 500 at a time)."""
+    titles, cont = [], ""
+    while True:
+        raw = fetch(f"{WIKI_API}?action=query&list=categorymembers&cmtitle=Category:{name}&cmlimit=500&format=json{cont}", timeout=8)
+        d = json.loads(raw)
+        titles += [m["title"] for m in d.get("query", {}).get("categorymembers", []) if m.get("ns") == 0]
+        nxt = d.get("continue", {}).get("cmcontinue")
+        if not nxt:
+            return titles
+        cont = "&cmcontinue=" + nxt
+
+
+def beast_talk():
+    """The wiki's lists of NPCs who talk to animals and who live in Animal Town, cached a day (the merchant caps'
+    pattern): a failed fetch is retried after an hour and the cached copy answers meanwhile with `error` set."""
+    with BEAST_TALK_LOCK:
+        cached = _beast_talk["data"]
+        if cached is None and BEAST_TALK_CACHE.is_file():
+            try:
+                cached = _beast_talk["data"] = json.loads(BEAST_TALK_CACHE.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                cached = None
+        age = None
+        if cached and cached.get("fetchedAt"):
+            try:
+                age = time.time() - datetime.fromisoformat(cached["fetchedAt"]).timestamp()
+            except ValueError:
+                age = None
+        error = None
+        if (cached is None or age is None or age >= BEAST_TALK_MAX_AGE) and time.time() - _beast_talk["failedAt"] >= BEAST_TALK_RETRY_SEC:
+            try:
+                talks = wiki_category("Talks_to_Animals")
+                town = wiki_category("Animal_Town_NPCs")
+                if len(talks) < 50 or len(town) < 5:
+                    raise ValueError(f"only {len(talks)} talkers and {len(town)} Animal Town pages in the categories")
+                cached = {"fetchedAt": local_iso(datetime.now()), "talks": talks, "animalTown": town}
+                BEAST_TALK_CACHE.parent.mkdir(parents=True, exist_ok=True)
+                BEAST_TALK_CACHE.write_text(json.dumps(cached, ensure_ascii=False), encoding="utf-8")
+                _beast_talk["data"] = cached
+                _beast_talk["failedAt"] = 0.0
+            except Exception as e:
+                _beast_talk["failedAt"] = time.time()
+                reason = getattr(e, "reason", None) or e
+                error = f"The wiki didn't answer: {reason}" if isinstance(e, (OSError, HTTPError)) else f"Couldn't read the wiki: {e}"
+        return {"source": BEAST_TALK_URL, "fetchedAt": cached.get("fetchedAt") if cached else None, "error": error,
+                "talks": (cached or {}).get("talks") or [], "animalTown": (cached or {}).get("animalTown") or ANIMAL_TOWN_FALLBACK,
+                "fallback": not cached}
+
+
+def wiki_names(titles):
+    """Page titles as the game spells NPC names: "Daisy (NPC)" -> "Daisy", "Norbert/Strange Pig" -> "Norbert"."""
+    out = set()
+    for t in titles:
+        t = t.split("/")[0]
+        out.add(re.sub(r"\s*\(NPC\)$", "", t).strip())
+    return out
+
+
+def in_wiki_list(name, names):
+    """Game name against wiki names: exact, else the wiki's longer title that starts with it ("Ashk" vs "Ashk the
+    Answerer", "Hulon" vs "Hulon the Hoarder" the other way round)."""
+    if not name:
+        return False
+    if name in names:
+        return True
+    return any(n.startswith(name + " ") or name.startswith(n + " ") for n in names)
+
+
+def player_form(sheet, character=None):
+    """Animal or humanoid, from the export's IS_BEAST or the player's newer answer (POST /api/form)."""
+    stats = (sheet or {}).get("CurrentStats") or {}
+    is_beast = stats.get("IS_BEAST")
+    export_form = None if is_beast is None else ("animal" if is_beast else "humanoid")
+    export_at = report_dt((sheet or {}).get("Timestamp") or "")
+    ov = load_form()
+    if ov and ov.get("character") and character and ov["character"] != character:
+        ov = None   # an answer given for another character does not carry over
+    ov_at = iso_dt(ov["setAt"]) if ov else None
+    ov_newer = bool(ov) and (export_at is None or ov_at is None or ov_at.tzinfo is None or ov_at > export_at)
+    if ov_newer:
+        form, source = ov["form"], "you"
+    elif export_form:
+        form, source = export_form, "export"
+    elif ov:
+        form, source = ov["form"], "you"
+    else:
+        form, source = "humanoid", "default"
+    return {"form": form, "source": source,
+            "export": {"form": export_form, "at": local_iso(export_at), "isBeast": is_beast, "lycanthrope": bool(stats.get("IS_LYCANTHROPE"))},
+            "override": {"form": ov["form"], "setAt": ov["setAt"], "superseded": not ov_newer} if ov else None,
+            "waitMinutes": ANIMAL_TOWN_WAIT_MIN}
+
+
+def vendor_access(name, form, talk):
+    """What stands between the player and this vendor: None (nothing), "animals-only" (Animal Town, and the player is
+    humanoid), "shuns-animals" (not on the wiki's Talks to Animals list, and the player is an animal) or "wait"
+    (Animal Town talks to an animal only after 180 minutes played as one; a lycanthrope may talk to Kodan at once)."""
+    town = in_wiki_list(name, wiki_names(talk["animalTown"]))
+    if form["form"] == "humanoid":
+        return "animals-only" if town else None
+    if town:
+        return None if (form["export"]["lycanthrope"] and name == "Kodan") else "wait"
+    if talk["talks"] and not in_wiki_list(name, wiki_names(talk["talks"])):
+        return "shuns-animals"
+    return None
+
+
 def item_keywords(entry):
     return {k.split("=")[0] for k in (entry or {}).get("Keywords") or []}
+
+
+# Per-item price caps (1 Nov). A vendor pays an item's export `Value` in full, but never more than its cap per item at
+# the player's favor level, and that cap is scaled by NPC_MOD_MAXSALESVALUE (the "NPC Max Purchase Caps" stat the
+# wiki names): Kalaba at Best Friends paid 1,230 for items valued 1,837 / 1,620 / 1,346 and paid 1,040 / 1,043 in
+# full (the user's screenshot, 1 Nov; the multiplier 1.23). The caps are not in the game data. The wiki's Merchants
+# page lists them per vendor and favor level (player-kept, with gaps: 86 of 103 vendors had some, 21 all, on 1 Nov);
+# where it has a number it is used, else the rule that fits 271 of its 339 filled cells exactly: 2% of the vendor's
+# weekly pool (the Vendors view's cap). The exceptions the wiki covers are the small "limited pool" vendors (Marna,
+# Spot, Baroness Marith Felgard at 25%) and Cleo Conyer. Cached a day under cache/wiki/ like the teleport codes.
+MERCHANTS_PAGE = "Merchants"
+MERCHANTS_URL = f"https://wiki.projectgorgon.com/wiki/{MERCHANTS_PAGE}"
+MERCHANTS_CACHE = CACHE / "wiki" / "merchant-caps.json"
+MERCHANTS_MAX_AGE = 86400
+MERCHANTS_RETRY_SEC = 3600
+MERCHANTS_LOCK = threading.Lock()
+_merchants = {"data": None, "failedAt": 0.0}
+CAP_PER_ITEM_RATE = 0.02
+WIKI_FAVOR = {"Neutral": "Neutral", "Comfortable": "Comfortable", "Friends": "Friends", "Close Friends": "CloseFriends",
+              "Best Friends": "BestFriends", "Like Family": "LikeFamily", "Soul Mates": "SoulMates"}
+
+
+class _MerchantsHTML(HTMLParser):
+    """The Merchants page as parsed HTML: one outer table row per vendor (NPC | Items Purchased | Spending Limits |
+    Small Talk | Edit), the Spending Limits cell a nested table Favor Level | Cap Per Item | Weekly Pool."""
+
+    def __init__(self):
+        super().__init__()
+        self.depth, self.rows = 0, []
+        self.row = self.cell = self.inner = self.irow = self.icell = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "table":
+            self.depth += 1
+            if self.depth == 2:
+                self.inner = []
+        elif tag == "tr":
+            if self.depth == 1:
+                self.row = []
+            elif self.depth == 2:
+                self.irow = []
+        elif tag in ("td", "th"):
+            if self.depth == 1:
+                self.cell = []
+            elif self.depth == 2:
+                self.icell = []
+
+    def handle_endtag(self, tag):
+        if tag in ("td", "th"):
+            if self.depth == 2 and self.icell is not None and self.irow is not None:
+                self.irow.append(" ".join("".join(self.icell).split()))
+                self.icell = None
+            elif self.depth == 1 and self.cell is not None and self.row is not None:
+                self.row.append((" ".join("".join(self.cell).split()), self.inner))
+                self.cell = self.inner = None
+        elif tag == "tr":
+            if self.depth == 2 and self.irow is not None and self.inner is not None:
+                self.inner.append(self.irow)
+                self.irow = None
+            elif self.depth == 1 and self.row is not None:
+                self.rows.append(self.row)
+                self.row = None
+        elif tag == "table":
+            self.depth -= 1
+
+    def handle_data(self, data):
+        if self.depth == 2 and self.icell is not None:
+            self.icell.append(data)
+        elif self.depth == 1 and self.cell is not None:
+            self.cell.append(data)
+
+
+def parse_merchants_html(markup):
+    """Vendor name (as the game data spells it) -> {favor key: cap per item}; blank and "WON'T BUY" cells skipped."""
+    p = _MerchantsHTML()
+    p.feed(markup)
+    out = {}
+    for row in p.rows:
+        if len(row) < 3 or not row[2][1]:
+            continue
+        name = row[0][0].replace("_", " ").strip()
+        caps = {}
+        for r in row[2][1]:
+            if len(r) >= 2 and r[0] in WIKI_FAVOR:
+                n = r[1].replace(",", "").strip()
+                if n.isdigit() and int(n) > 0:
+                    caps[WIKI_FAVOR[r[0]]] = int(n)
+        if name and caps:
+            out[name] = caps
+    return out
+
+
+def merchant_caps():
+    """The wiki's caps per item by vendor name, cached a day (the teleport codes' pattern); a failed fetch is retried
+    after an hour and the cached copy, or nothing, answers meanwhile with `error` set."""
+    with MERCHANTS_LOCK:
+        cached = _merchants["data"]
+        if cached is None and MERCHANTS_CACHE.is_file():
+            try:
+                cached = _merchants["data"] = json.loads(MERCHANTS_CACHE.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                cached = None
+        age = None
+        if cached and cached.get("fetchedAt"):
+            try:
+                age = time.time() - datetime.fromisoformat(cached["fetchedAt"]).timestamp()
+            except ValueError:
+                age = None
+        error = None
+        if (cached is None or age is None or age >= MERCHANTS_MAX_AGE) and time.time() - _merchants["failedAt"] >= MERCHANTS_RETRY_SEC:
+            try:
+                raw = fetch(f"{WIKI_API}?action=parse&page={MERCHANTS_PAGE}&prop=text|revid&format=json", timeout=8)
+                page = json.loads(raw)["parse"]
+                found = parse_merchants_html(page["text"]["*"])
+                if len(found) < 20:
+                    raise ValueError(f"only {len(found)} vendors with caps on the page")
+                cached = {"fetchedAt": local_iso(datetime.now()), "revid": page.get("revid"), "vendors": found}
+                MERCHANTS_CACHE.parent.mkdir(parents=True, exist_ok=True)
+                MERCHANTS_CACHE.write_text(json.dumps(cached, ensure_ascii=False), encoding="utf-8")
+                _merchants["data"] = cached
+                _merchants["failedAt"] = 0.0
+            except Exception as e:
+                _merchants["failedAt"] = time.time()
+                reason = getattr(e, "reason", None) or e
+                error = f"The wiki didn't answer: {reason}" if isinstance(e, (OSError, HTTPError)) else f"Couldn't read the wiki page: {e}"
+        return {"source": MERCHANTS_URL, "fetchedAt": cached.get("fetchedAt") if cached else None, "revid": cached.get("revid") if cached else None,
+                "vendors": (cached or {}).get("vendors") or {}, "rate": CAP_PER_ITEM_RATE, "error": error}
+
+
+def vendor_item_cap(v, caps, mult):
+    """The most a vendor pays for one item: the wiki's cap at the player's favor level, else 2% of the weekly pool,
+    both scaled by NPC_MOD_MAXSALESVALUE. Returns (cap, "wiki" | "rule")."""
+    base = (caps.get("vendors") or {}).get(v.get("name") or "", {}).get(v.get("favor") or "")
+    if base:
+        return int(round(base * mult)), "wiki"
+    return int(round((v.get("cap") or 0) * CAP_PER_ITEM_RATE * mult)), "rule"
 
 
 def plan(character=None):
@@ -1568,20 +1969,32 @@ def plan(character=None):
     cdn = cdn_data("items")
     vend = vendors(character) if sheet_head else {"vendors": []}
     # Vendors with councils left, their types as sets; remaining is spent down as stacks are assigned.
-    vrows = [dict(v, typeset=set((v.get("buys") or "").split(",")) - {""}, left=v["remaining"]) for v in vend.get("vendors", []) if v.get("remaining")]
+    caps = merchant_caps() if sheet_head else {"vendors": {}, "rate": CAP_PER_ITEM_RATE, "error": None, "fetchedAt": None, "revid": None, "source": MERCHANTS_URL}
+    # Vendors the player's form keeps them from (Animal Town while humanoid, animal-shunning vendors while an animal)
+    # are left out of every figure and listed in `excluded`; "wait" (Animal Town before 3 hours as an animal) is a note.
+    excluded = [{"npc": v["npc"], "name": v["name"], "area": v["area"], "why": v["access"], "remaining": v["remaining"]}
+                for v in vend.get("vendors", []) if v.get("remaining") and v.get("access") in ("animals-only", "shuns-animals")]
+    vrows = [dict(v, typeset=set((v.get("buys") or "").split(",")) - {""}, left=v["remaining"]) for v in vend.get("vendors", [])
+             if v.get("remaining") and v.get("access") not in ("animals-only", "shuns-animals")]
+    for v in vrows:
+        v["itemCap"], v["capSource"] = vendor_item_cap(v, caps, mult)
     marks = load_marks()
     inv = [it for it in items if it.get("IsInInventory")]
     out, areas_used = [], Counter()
 
-    def best_vendor(kws, price, prefer_areas):
-        cands = [v for v in vrows if v["typeset"] & kws]
+    def unit_at(v, value):
+        return min(value, v["itemCap"])   # what this vendor pays for one: the value, or its cap per item
+
+    def best_vendor(kws, value, qty, prefer_areas):
+        """The vendor who pays the most per unit and takes the whole stack (ties: an area the route already visits,
+        then the most councils left), else the best-paying one who takes part of it. Returns (vendor, whole, unit)."""
+        cands = [v for v in vrows if v["typeset"] & kws and unit_at(v, value) > 0]
         if not cands:
-            return None, False
-        whole = [v for v in cands if v["left"] >= price]
+            return None, False, 0
+        whole = [v for v in cands if v["left"] >= unit_at(v, value) * qty]
         pool = whole or cands
-        # a vendor in an area the route already visits first, then the most councils left
-        v = max(pool, key=lambda v: (v["area"] in prefer_areas, v["left"]))
-        return v, bool(whole)
+        v = max(pool, key=lambda v: (unit_at(v, value), v["area"] in prefer_areas, v["left"]))
+        return v, bool(whole), unit_at(v, value)
 
     def classify(it):
         e = cdn.get(f"item_{it.get('TypeID')}") or {}
@@ -1599,19 +2012,22 @@ def plan(character=None):
         return "keep", kws, sellable
     rows = [(it, *classify(it)) for it in inv]
     rows.sort(key=lambda r: {"sell": 0, "gear": 1, "keep": 2}[r[1]])
+    kw_of = []   # the keywords of each row in out, for the per-area pass below
     for it, kind, kws, sellable in rows:
         qty = it.get("StackSize") or 1
-        unit = int(round((it.get("Value") or 0) * mult))
-        row = {"typeId": it.get("TypeID"), "name": it.get("Name"), "qty": qty, "value": it.get("Value") or 0, "unit": unit,
-               "price": unit * qty, "kind": kind, "action": kind, "sellTo": None, "storeAt": None, "note": None,
+        value = int(it.get("Value") or 0)   # paid in full unless the vendor's cap per item is lower (1 Nov)
+        row = {"typeId": it.get("TypeID"), "name": it.get("Name"), "qty": qty, "value": value, "unit": value,
+               "price": value * qty, "kind": kind, "action": kind, "sellTo": None, "storeAt": None, "note": None,
                "mark": marks.get(str(it.get("TypeID"))), "sellable": sellable,
                "doc": bool(kws & PLAN_DOCS), "recipe": "Recipe" in kws}
         prefer = {a for a, n in areas_used.items() if n}
         if sellable:
-            v, whole = best_vendor(kws, unit * qty, prefer)
+            v, whole, unit = best_vendor(kws, value, qty, prefer)
             if v is not None:
                 n = qty if whole else max(0, v["left"] // unit) if unit else 0
-                row["sellTo"] = {"npc": v["npc"], "name": v["name"], "area": v["area"], "qty": n, "councils": unit * n, "left": v["left"], "whole": whole}
+                row["unit"], row["price"] = unit, unit * qty
+                row["sellTo"] = {"npc": v["npc"], "name": v["name"], "area": v["area"], "qty": n, "unit": unit, "councils": unit * n, "left": v["left"], "whole": whole,
+                                 "cap": v["itemCap"], "capSource": v["capSource"], "capped": unit < value, "wait": v.get("access") == "wait"}
         if kind == "sell":
             if row["sellTo"] and row["sellTo"]["qty"] > 0:
                 v = next(x for x in vrows if x["npc"] == row["sellTo"]["npc"])
@@ -1624,6 +2040,7 @@ def plan(character=None):
                 row["sellTo"] = None
                 row["note"] = "no vendor with councils left buys it" if vrows else None
         out.append(row)
+        kw_of.append(kws)
     # Stops: one per area, selling grouped by vendor.
     stops = {}
     for r in out:
@@ -1631,7 +2048,7 @@ def plan(character=None):
             continue
         t = r["sellTo"]
         stop = stops.setdefault(t["area"] or "Elsewhere", {"area": t["area"] or "Elsewhere", "sell": {}, "stacks": 0, "councils": 0})
-        g = stop["sell"].setdefault(t["npc"], {"id": t["npc"], "name": t["name"], "items": [], "councils": 0, "stacks": 0, "left": t["left"]})
+        g = stop["sell"].setdefault(t["npc"], {"id": t["npc"], "name": t["name"], "items": [], "councils": 0, "stacks": 0, "left": t["left"], "wait": t.get("wait", False)})
         g["items"].append({"typeId": r["typeId"], "name": r["name"], "qty": t["qty"], "councils": t["councils"]})
         g["stacks"] += 1
         g["councils"] += t["councils"]
@@ -1647,6 +2064,45 @@ def plan(character=None):
     sell_rows = [r for r in out if r["action"] == "sell"]
     gear_rows = [r for r in out if r["action"] == "gear"]
     keep_rows = [r for r in out if r["action"] == "keep"]
+    # Where to sell (1 Nov): what the offered stacks (sell rows and gear) would fetch in each area on its own, every
+    # area priced from a fresh copy of its vendors' councils. The old window summed every vendor's councils per area,
+    # so Serbule read 302,452 to a player carrying only gear while Joeh and Marna, its gear buyers, were drained.
+    # Same greedy rule as the route: the richest vendor here who takes the whole stack, else the richest partial.
+    offered = sorted(((r, kws) for r, kws in zip(out, kw_of) if r["action"] in ("sell", "gear")),
+                     key=lambda rk: (rk[0]["action"] != "sell", -rk[0]["price"]))
+    by_area = {}
+    for v in vrows:
+        by_area.setdefault(v.get("area") or "Elsewhere", []).append(v)
+    area_rows = []
+    for area, vlist in by_area.items():
+        vs = [dict(v, left=v["remaining"]) for v in vlist]
+        groups, taken = {}, 0
+        for r, kws in offered:
+            cands = [v for v in vs if v["typeset"] & kws and unit_at(v, r["value"]) > 0]
+            if not cands:
+                continue
+            whole = [v for v in cands if v["left"] >= unit_at(v, r["value"]) * r["qty"]]
+            v = max(whole or cands, key=lambda v: (unit_at(v, r["value"]), v["left"]))
+            unit = unit_at(v, r["value"])
+            n = r["qty"] if whole else (v["left"] // unit if unit else 0)
+            if n <= 0:
+                continue
+            c = unit * n
+            v["left"] -= c
+            g = groups.setdefault(v["npc"], {"npc": v["npc"], "name": v["name"], "left": v["remaining"], "cap": v["itemCap"], "capSource": v["capSource"], "stacks": 0, "gear": 0, "councils": 0, "items": [], "wait": v.get("access") == "wait"})
+            g["items"].append({"typeId": r["typeId"], "name": r["name"], "qty": n, "of": r["qty"], "unit": unit, "councils": c, "capped": unit < r["value"], "gear": r["action"] == "gear"})
+            g["stacks"] += 1
+            g["gear"] += r["action"] == "gear"
+            g["councils"] += c
+            taken += 1
+        if not groups:
+            continue
+        gs = sorted(groups.values(), key=lambda g: -g["councils"])
+        for g in gs:
+            g["after"] = g["left"] - g["councils"]
+        area_rows.append({"area": area, "councils": sum(g["councils"] for g in gs), "stacks": taken,
+                          "gear": sum(g["gear"] for g in gs), "vendors": gs})
+    area_rows.sort(key=lambda a: (a["area"] in ("Anywhere", "Elsewhere"), -a["councils"]))
     summary = {
         "stacks": len(inv), "inventoryFree": next((v.get("free") for v in st["vaults"] if v["vault"] == "Inventory"), None),
         "sell": {"stacks": len(sell_rows), "councils": sum(r["sellTo"]["councils"] for r in sell_rows), "vendors": len({r["sellTo"]["npc"] for r in sell_rows})},
@@ -1654,10 +2110,13 @@ def plan(character=None):
         "keep": {"stacks": len(keep_rows), "sellable": sum(1 for r in keep_rows if r["sellable"])},
         "recipes": sum(1 for r in sell_rows if r["recipe"]),
         "stops": len(stop_rows),
+        "offered": {"stacks": len(offered), "councils": sum(r["sellTo"]["councils"] for r in sell_rows + gear_rows if r["sellTo"])},
     }
     summary["marked"] = sum(1 for r in out if r["mark"])
     return {"character": st["vaults"] and (head.get("character")), "source": head, "sheet": sheet_head, "cdnVersion": cdn_version(),
-            "multiplier": mult, "summary": summary, "stops": stop_rows, "items": out, "marks": marks}
+            "multiplier": mult, "caps": {k: v for k, v in caps.items() if k != "vendors"} | {"vendors": len(caps.get("vendors") or {})},
+            "form": vend.get("form"), "beastTalk": vend.get("beastTalk"), "excluded": sorted(excluded, key=lambda e: -e["remaining"]),
+            "summary": summary, "stops": stop_rows, "areas": area_rows, "items": out, "marks": marks}
 
 
 # ---------------------------------------------------------------------------
@@ -5311,6 +5770,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(consolidation(q.get("character")))
             if url.path == "/api/plan":
                 return self.send_json(plan(q.get("character")))
+            if url.path == "/api/putaway":
+                return self.send_json(putaway(q.get("character")))
             if url.path == "/api/session":
                 log = latest_chatlog()
                 return self.send_json(parse_session(log, q.get("scope", "day"), q.get("character") or None) if log else {})
@@ -5381,6 +5842,20 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error": repr(e)}, 500)
             return self.send_json({"ok": True, "slots": slots})
+        if url.path == "/api/form":
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                if not isinstance(body, dict):
+                    raise BadRequest("body must be a JSON object")
+                who = body.get("character") or None
+                head = latest_report("CharacterSheet", who)
+                save_form(body.get("form"), who or (head or {}).get("character"))
+                sheet = load_report(head["file"]) if head else {}
+                return self.send_json({"ok": True, "form": player_form(sheet, (head or {}).get("character"))})
+            except (BadRequest, json.JSONDecodeError) as e:
+                return self.send_json({"error": str(e) if isinstance(e, BadRequest) else "body must be JSON"}, 400)
+            except Exception as e:
+                return self.send_json({"error": repr(e)}, 500)
         if url.path == "/api/mark":
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")

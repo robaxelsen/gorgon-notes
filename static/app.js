@@ -27,7 +27,8 @@ const lastHTML = new WeakMap();
 const FOCUS_ATTRS = ['data-sort', 'data-zarea', 'data-zback', 'data-zmore', 'data-table', 'data-area', 'data-npc', 'data-vault', 'data-loc', 'data-type', 'data-sec', 'data-fold',
   'data-fix', 'data-chan', 'data-clear', 'data-sclear', 'data-newest', 'data-notnow', 'data-retry', 'data-w', 'data-m', 'data-s',
   'data-path', 'data-file', 'data-fmore', 'data-crumb', 'data-copy', 'data-hit', 'data-fight', 'data-dminor', 'data-shpick', 'data-shinc', 'data-shdec', 'data-shfold', 'data-shlog', 'data-shunpick',
-  'data-deck', 'data-deckall', 'data-pinvite', 'data-psplit', 'data-once', 'data-dall', 'data-pall', 'data-psolo', 'data-pev', 'data-psess-post', 'data-tpzone', 'data-step', 'data-more-view'];
+  'data-deck', 'data-deckall', 'data-pinvite', 'data-psplit', 'data-once', 'data-dall', 'data-pall', 'data-psolo', 'data-pev', 'data-psess-post', 'data-tpzone', 'data-step', 'data-more-view',
+  'data-where', 'data-whereall', 'data-form', 'data-formreset'];
 function focusKey(el, root) {
   if (el.id) return '#' + CSS.escape(el.id);
   const attrs = FOCUS_ATTRS.filter(a => el.hasAttribute(a)).map(a => `[${a}="${CSS.escape(el.getAttribute(a))}"]`);
@@ -184,6 +185,7 @@ const S = {
   storage: null, storageAt: null,
   merge: null, mergeAt: null, mergeOld: false, // /api/consolidation (split stacks); mergeOld = the server has no such endpoint
   plan: null, planAt: null, planOld: false,    // /api/plan (the Sell window in Vendors); planOld = the server has no such endpoint
+  put: null, putAt: null, putOld: false,       // /api/putaway (Where to put your inventory, Storage); putOld = the server has no such endpoint
   charFile: null, charPicked: false, charData: null,
   itemsFile: null, itemsPicked: false, itemsData: null,
   icons: { base: null, byName: {}, byTypeId: {}, byType: {} },
@@ -2377,7 +2379,8 @@ function renderParty() {
   const feedLine = st.feed ? `<p class="small dim party-feed">${esc(st.feed)}</p>` : '';
   const hint = st.button ? '<p class="small dim party-hint">Paste it in party chat or Discord. It says what to install and which two settings to turn on.</p>' : '';
   const rows = st.rows ? memberRows(p) : '';
-  const showTable = shared.length > 0 || !!st.table;
+  // the run table shows whenever there are fights, solo ones too: it is the only place to pick a run (the 31 Oct fix)
+  const showTable = all.length > 0 || !!st.table;
   const shown = pUI.all ? shared : shared.slice(0, PARTY_SHOW);
   const more = shared.length > PARTY_SHOW ? `<button type="button" class="linkbtn" data-pall="1" aria-expanded="${pUI.all}">${pUI.all ? `Show the last ${PARTY_SHOW}` : `Show all ${fmt(shared.length)} fights`}</button>` : '';
   const fold = showTable && solo.length ? `<button type="button" class="linkbtn" data-psolo="1" aria-expanded="${pUI.solo}">${pUI.solo ? 'Hide' : 'Show'} ${plural(solo.length, 'fight')} nobody else was in</button>` : '';
@@ -2872,19 +2875,27 @@ const vUI = {
   moreTypes: false,  // What they buy: the types past the first twelve are shown
   pmode: 'stops',    // Sell: 'stops' (the route) or 'items' (one row per stack); not persisted
   unsoldAll: false, // Sell: the folded "other stacks stay" list is open
+  whereOpen: null,   // Where to sell: the area whose stop is open under its row (null = the best one, '' = none); not persisted
+  whereAll: false,   // Where to sell: every area shown, not only the WHERE_TOP best
   sort: (store.json('pgdash.sort', {}).vendors) || { key: 'remaining', dir: 'desc' },
   open: (store.json('pgdash.open', {}).vendors) || null,
 };
 
 async function loadVendors() {
   const who = S.character ? `?character=${encodeURIComponent(S.character)}` : '';
-  const [v, st, m, pl] = await Promise.all([
+  const [v, st, m, pl, pa] = await Promise.all([
     api('/api/vendors' + who).then(x => { S.errors.vendors = null; return x; }, e => { if (isNetworkError(e)) throw e; S.errors.vendors = e; return S.vendors; }),
     api('/api/storage' + who).then(x => { S.errors.storage = null; return x; }, e => { if (isNetworkError(e)) throw e; S.errors.storage = e; return S.storage; }),
     // Split stacks: a 404 means an older copy without the endpoint, not an error.
     api('/api/consolidation' + who).then(x => { S.errors.merge = null; S.mergeOld = false; return x; }, e => { if (isNetworkError(e)) throw e; if (e.status === 404) { S.mergeOld = true; return null; } S.errors.merge = e; return S.merge; }),
     api('/api/plan' + who).then(x => { S.errors.plan = null; S.planOld = false; return x; }, e => { if (isNetworkError(e)) throw e; if (e.status === 404) { S.planOld = true; return null; } S.errors.plan = e; return S.plan; }),
+    api('/api/putaway' + who).then(x => { S.errors.put = null; S.putOld = false; return x; }, e => { if (isNetworkError(e)) throw e; if (e.status === 404) { S.putOld = true; return null; } S.errors.put = e; return S.put; }),
   ]);
+  if (pa && !S.errors.put) {
+    S.put = pa; S.putAt = NOW(); S.lastGood.put = NOW();
+    const ids = (pa.stops || []).flatMap(st => st.vaults.flatMap(g => g.lines.map(l => String(l.typeId)))).concat((pa.homeless || []).map(h => String(h.typeId)));
+    if (ids.length) needIcons({ typeIds: ids });
+  }
   if (v && !S.errors.vendors) { S.vendors = v; S.vendorsAt = NOW(); S.lastGood.vendors = NOW(); }
   if (st && !S.errors.storage) { S.storage = st; S.storageAt = NOW(); S.lastGood.storage = NOW(); }
   if (m && !S.errors.merge) {
@@ -2992,22 +3003,63 @@ function renderVendors() {
   const footL = srcAge('character-export', 'Character export');
   const footR = srcFix('character-export', 'After selling:');
 
-  // Where to sell
+  // Your form (7 Nov): animal or humanoid decides who will talk to you (Animal Town talks to animals only, after 3 hours
+  // as one; Joeh, Marna and the like shun animals), so it heads Where to sell and the Sell route follows it.
+  const formHtml = (missing || err || (S.loading && !S.vendors)) ? '' : formCtl();
+
+  // Where to sell: what the offered stacks (gear, books, documents, scrolls, any type marked Sell) would fetch in each
+  // area on its own, from the plan's areas[] (1 Nov). The old list summed every vendor's councils per area, so Serbule
+  // read 302,452 to a player carrying only gear while its gear buyers were nearly drained; it stays as the fallback
+  // while the bags are unknown (no storage export, an older server). Pressing an area opens that stop here, under the
+  // row; it no longer filters the pane above (the jump confused the user; the Area select still does that).
   const filtered = applyVendorFilters(live, { skipArea: true });
   const vSum = (S.loading && !S.vendors) ? 'reading…' : missing ? 'needs a character export' : err ? 'not loaded' : '';
+  const pl = S.plan, bagsMissing = storageMissing() || pl?.error === 'no items export';
+  const planOk = !S.planOld && !!pl && !pl.error && !bagsMissing && Array.isArray(pl.areas);
+  let whereL = footL, whereR = footR;
   if (S.loading && !S.vendors) $('#v-where').html = '<p class="needs">Reading the character export…</p>';
   else if (missing || err) $('#v-where').html = `<p class="needs">${missing ? 'Needs a character export.' : 'Not loaded.'}</p>`;
-  else {
+  else if (planOk) {
+    const off = pl.summary?.offered || { stacks: 0 }, gearN = pl.summary?.gear?.stacks || 0, sellN = pl.summary?.sell?.stacks || 0;
+    const areas = pl.areas, here = loggedIn() ? S.health?.game?.area : null;
+    const what = [gearN ? `<em class="n">${fmt(gearN)}</em> ${gearN === 1 ? 'piece' : 'pieces'} of gear (your call)` : '',
+      sellN ? `<em class="n">${fmt(sellN)}</em> ${sellN === 1 ? 'stack' : 'stacks'} of books, documents, scrolls or types marked Sell` : ''].filter(Boolean).join(' and ');
+    whereL = `${srcAge('storage-export', 'Storage export')} · ${srcAge('character-export', 'Character export')}${capsNote(pl)}`;
+    whereR = srcFix(SEV_RANK[sevOf('storage-export')] > SEV_RANK[sevOf('character-export')] ? 'storage-export' : 'character-export', 'After selling:');
+    if (!off.stacks) {
+      $('#v-where').html = formHtml + '<p class="empty">Nothing in your bags is offered for sale: no gear, books, documents or scrolls, and no type marked Sell (Sell, By item). Councils left per area are in the Vendors list above.</p>';
+      deckSum('vendors', 'w-v-where', 'nothing in your bags to sell');
+    } else if (!areas.length) {
+      $('#v-where').html = formHtml + `<p class="empty">No vendor with councils left buys what you carry: ${what}.</p>`;
+      deckSum('vendors', 'w-v-where', 'no vendor can pay for your bags');
+    } else {
+      const max = areas[0].councils || 1;
+      const openA = vUI.whereOpen == null ? areas[0].area : vUI.whereOpen;   // '' = none open
+      const shown = vUI.whereAll ? areas : areas.slice(0, WHERE_TOP);
+      const stopHtml = a => `<div class="stop" id="v-where-stop">${a.vendors.map(g => `<p class="from">Sell to <em class="t">${esc(g.name)}</em>${waitTag(g)} · ${g.gear === g.stacks ? `${plural(g.stacks, 'piece')} of gear` : g.gear ? `${plural(g.stacks, 'stack')}, ${fmt(g.gear)} of them gear` : plural(g.stacks, 'stack')} · about <em class="n">${fmt(g.councils)}</em> councils <span class="dim">(can still pay ${fmt(g.left)}, ${fmt(g.after)} after)</span></p>
+          <ul class="list feed-what">${g.items.map(i => `<li>${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span class="what">${i.qty > 1 ? `<em class="n">${fmt(i.qty)}</em> ` : ''}${esc(i.name)}${i.qty < i.of ? ` <span class="tag">${fmt(i.qty)} of ${fmt(i.of)}; the rest stays</span>` : ''}${i.capped ? ' <span class="tag" title="This vendor pays at most its cap per item">capped</span>' : ''}</span><span class="n">${fmt(i.councils)}</span></li>`).join('')}</ul>`).join('')}${a.stacks < off.stacks ? `<p class="small dim" style="margin-top:6px">${plural(off.stacks - a.stacks, 'offered stack')} ${off.stacks - a.stacks === 1 ? 'has' : 'have'} no buyer with councils here.</p>` : ''}</div>`;
+      const row = a => {
+        const open = a.area === openA;
+        return `<button type="button" class="barrow" data-where="${esc(a.area)}" aria-expanded="${open}"><span class="nm">${esc(a.area)}${a.area === here ? ' <span class="tag">you\'re here</span>' : ''}</span><span class="sr">, </span><div class="bar"><i style="width:${Math.max(1, a.councils / max * 100)}%"></i></div><span class="v">${COIN}${fmt(a.councils)}<span class="sr"> councils</span><span class="dim">${fmt(a.stacks)} of ${fmt(off.stacks)}</span></span></button>${open ? stopHtml(a) : ''}`;
+      };
+      const more = areas.length > WHERE_TOP ? `<p style="margin-top:8px"><button type="button" class="linkbtn" data-whereall="1" aria-expanded="${vUI.whereAll}">${vUI.whereAll ? `Show the ${WHERE_TOP} best` : `Show all ${fmt(areas.length)} areas`}</button></p>` : '';
+      $('#v-where').html = `${formHtml}<p>What your bags would fetch in each area: ${what}.</p><p class="small dim" style="margin:4px 0 8px">Each area on its own, at its vendors with councils left; the best stack goes to the richest buyer first. Press an area for whom to sell what.</p><div class="barlist">${shown.map(row).join('')}</div>${more}`;
+      deckSum('vendors', 'w-v-where', `${areas.slice(0, 2).map(a => `${esc(a.area)} ${fmt(a.councils)}`).join(' · ')}${areas.length > 2 ? ` · ${areas.length - 2} more` : ''}`);
+    }
+  } else {
+    // Fallback: councils left per area, whatever the bags hold (the list from before 1 Nov), with the reason it is not priced on the bags.
     const byArea = {};
     filtered.forEach(r => { byArea[r.area] = (byArea[r.area] || 0) + r.remaining; });
     const areas = Object.entries(byArea).sort((a, b) => b[1] - a[1]);
     const max = areas[0]?.[1] || 1;
-    deckSum('vendors', 'w-v-where', areas.length ? `${areas.slice(0, 2).map(([a, n]) => `${esc(a)} ${fmt(n)}`).join(' · ')}${areas.length > 2 ? ` · ${areas.length - 2} more` : ''}` : 'no vendors match');
-    $('#v-where').html = areas.length ? `<div class="barlist">${areas.slice(0, WHERE_TOP).map(([a, n]) => `<button type="button" class="barrow" data-area="${esc(a)}" aria-pressed="${vUI.area === a}"><span class="nm">${esc(a)}</span><span class="sr">, </span><div class="bar"><i style="width:${Math.max(1, n / max * 100)}%"></i></div><span class="v">${COIN}${fmt(n)}<span class="sr"> councils</span></span></button>`).join('')}</div>${areas.length > WHERE_TOP ? `<p class="small dim" style="margin:6px 8px 0">${plural(areas.length - WHERE_TOP, 'more area')} in the Vendors list below.</p>` : ''}`
-      : '<p class="empty">No vendors match these filters.</p>';
+    const why = S.planOld ? `that needs a newer ${APP_NAME}` : bagsMissing ? `export your storage once (${esc(fixText('export-storage', {}, { short: true }))})` : "the sell plan didn't load";
+    deckSum('vendors', 'w-v-where', areas.length ? `councils left: ${areas.slice(0, 2).map(([a, n]) => `${esc(a)} ${fmt(n)}`).join(' · ')}${areas.length > 2 ? ` · ${areas.length - 2} more` : ''}` : 'no vendors match');
+    $('#v-where').html = formHtml + `<p class="small dim" style="margin-bottom:8px">Councils left per area, whatever you carry. To see what your bags would fetch where, ${why}.</p>` + (areas.length ? `<div class="barlist">${areas.slice(0, WHERE_TOP).map(([a, n]) => `<div class="barrow"><span class="nm">${esc(a)}</span><span class="sr">, </span><div class="bar"><i style="width:${Math.max(1, n / max * 100)}%"></i></div><span class="v">${COIN}${fmt(n)}<span class="sr"> councils</span></span></div>`).join('')}</div>${areas.length > WHERE_TOP ? `<p class="small dim" style="margin:6px 8px 0">${plural(areas.length - WHERE_TOP, 'more area')} in the Vendors list above.</p>` : ''}`
+      : '<p class="empty">No vendors match these filters.</p>');
+    if (bagsMissing) { whereL = `${footL} · Storage export · ${shape('bad', 's13')}<span class="age bad">missing</span>`; whereR = esc(fixText('export-storage')); }
   }
   if (vSum) deckSum('vendors', 'w-v-where', vSum);
-  setFoot('w-v-where', footL, footR);
+  setFoot('w-v-where', whereL, whereR);
 
   // What they buy
   if (vSum) deckSum('vendors', 'w-v-buy', vSum);
@@ -3122,6 +3174,12 @@ function thSort(col, sort, table) {
   const on = sort.key === col.k;
   return `<th class="${col.num ? 'num' : ''}" aria-sort="${on ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}"><button type="button" class="sortbtn" data-sort="${col.k}" data-table="${table}">${col.label}${on ? ARR(sort.dir) : ''}</button></th>`;
 }
+function accessTag(a) {
+  if (a === 'animals-only') return ' <span class="tag" title="Animal Town: talks to animals only">animals only</span>';
+  if (a === 'shuns-animals') return ' <span class="tag" title="Won\'t talk to you while you\'re an animal (the wiki\'s Talks to Animals list)">shuns animals</span>';
+  if (a === 'wait') return waitTag({ wait: true });
+  return '';
+}
 function vendorRow(r, list, compact = false) {
   const sel = vUI.selected === r.npc;
   const icon = iconImg(S.icons.byType[r.types.find(t => S.icons.byType[t] != null) || r.types[0]], 28, '', r.name);
@@ -3130,7 +3188,7 @@ function vendorRow(r, list, compact = false) {
     : r.resetT ? `<span title="${dateTime(r.resetT)}">${dur(r.resetT - NOW())}</span>` : '';
   const line2 = [r.drained ? 'drained' : `of ${fmt(r.cap)}`, r.area, favorLabel(r.favor), r.types.map(typeLabel).join(', '), r.resetSinceExport ? `reset, +${fmt(r.restored)} back` : r.resetT ? `resets ${dur(r.resetT - NOW())}` : ''].filter(Boolean).join(' · ');
   return `<tr class="row selectable${r.drained ? ' drained' : ''}" tabindex="0" data-npc="${esc(r.npc)}" aria-selected="${sel}">
-    <td class="m1"><span class="cell-name">${icon}<span><span class="nm">${esc(r.name)}</span>${compact ? `<span class="small qty-sub buys-sub">${esc([list ? r.area : '', r.types.map(typeLabel).join(', ')].filter(Boolean).join(' · '))}</span>` : ''}</span></span></td>
+    <td class="m1"><span class="cell-name">${icon}<span><span class="nm">${esc(r.name)}</span>${accessTag(r.access)}${compact ? `<span class="small qty-sub buys-sub">${esc([list ? r.area : '', r.types.map(typeLabel).join(', ')].filter(Boolean).join(' · '))}</span>` : ''}</span></span></td>
     ${list && !compact ? `<td>${esc(r.area)}</td>` : ''}
     <td><div>${esc(favorLabel(r.favor))}</div>${r.next ? `<div class="small">${esc(nextLine(r))}</div>` : ''}</td>
     ${compact ? '' : `<td><div class="buys">${esc(r.types.map(typeLabel).join(', '))}</div></td>`}
@@ -3221,7 +3279,24 @@ function initVendors() {
   $('#vhide').addEventListener('change', e => { vUI.hide = e.target.checked; renderVendors(); });
   $('#vmode').addEventListener('click', e => { const b = e.target.closest('[role=tab]'); if (!b) return; vUI.mode = b.dataset.m; renderVendors(); });
   tabKeys($('#vmode'));
-  $('#v-where').addEventListener('click', e => { const b = e.target.closest('[data-area]'); if (!b) return; vUI.area = vUI.area === b.dataset.area ? '' : b.dataset.area; renderVendors(); });
+  $('#v-where').addEventListener('click', e => {
+    const fb = e.target.closest('.seg.form [role=radio]');
+    if (fb) { if (fb.getAttribute('aria-checked') !== 'true') setForm(fb.dataset.form); return; }
+    if (e.target.closest('[data-formreset]')) { setForm(null); return; }
+    if (e.target.closest('[data-whereall]')) { vUI.whereAll = !vUI.whereAll; renderVendors(); $('#v-where [data-whereall]')?.focus(); return; }
+    const b = e.target.closest('[data-where]'); if (!b) return;
+    const cur = vUI.whereOpen == null ? (S.plan?.areas?.[0]?.area ?? '') : vUI.whereOpen;
+    vUI.whereOpen = cur === b.dataset.where ? '' : b.dataset.where;
+    renderVendors(); $(`#v-where [data-where="${CSS.escape(b.dataset.where)}"]`)?.focus();
+  });
+  $('#v-where').addEventListener('keydown', e => {
+    const m = e.target.closest('.seg.form [role=radio]');
+    if (!m || !['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+    e.preventDefault();
+    const other = m.dataset.form === 'animal' ? 'humanoid' : 'animal';
+    m.parentElement.querySelector(`[data-form="${other}"]`)?.focus();
+    setForm(other);
+  });
   $('#v-buy').addEventListener('click', e => {
     if (e.target.closest('[data-more]')) { vUI.moreTypes = !vUI.moreTypes; renderVendors(); $('#v-buy [data-more]')?.focus(); return; }
     const b = e.target.closest('[data-type]'); if (!b) return; vUI.type = vUI.type === b.dataset.type ? '' : b.dataset.type; renderVendors();
@@ -3272,6 +3347,7 @@ const sUI = {
   msgs: {}, // vault -> {kind, text}
   iq: '', iloc: '', isort: (store.json('pgdash.sort', {}).items) || { key: 'value', dir: 'desc' }, ilimit: 200, ifold: new Set(), imode: 'items',
   mmode: 'items', // Stacks to merge: 'items' (by item) or 'stops' (pickup plan); not persisted
+  putAll: false,  // Where to put your inventory: the "no vault holds this yet" list unfolded
   spreadAll: false, // the "held in several places" list unfolded
 };
 const PROV = { favor: 'from favor', stat: 'from your stats', fixed: 'fixed size', manual: 'typed in by you' };
@@ -3378,10 +3454,11 @@ function renderStorage() {
   setFoot('w-t-pane', missing ? missL : `${footL} · ${sizeSrc}`, missing ? missR : footR);
 
   renderMerge();
+  renderPutaway();
   renderItems();
-  // The lower deck: Where there's room · Stacks to merge · Items, folded by default; a missing export keeps their footers;
-  // an Items search holds that window open.
-  deckKeepFoot(['w-t-room', 'w-t-merge', 'w-t-items'], missing);
+  // The lower deck: Where there's room · Stacks to merge · Where to put your inventory · Items, folded by default;
+  // a missing export keeps their footers; an Items search holds that window open.
+  deckKeepFoot(['w-t-room', 'w-t-merge', 'w-t-put', 'w-t-items'], missing);
   applyDeck('storage');
   deckHold('w-t-items', !!sUI.iq.trim());
 }
@@ -3497,11 +3574,158 @@ function mergeByStop(m) {
   }).join('');
 }
 
+/* Where to put your inventory: every stack in the bags under the area to stand in and the vault to open
+   (/api/putaway, export-only). A stack is sent only to a vault that already holds the same item, so the vault is
+   known to accept it; the rest are listed apart with the vaults that have room and no restriction in game data.
+   What a vault accepts is only a sentence in the game data, so the app never guesses (user decision 26 Oct). */
+function renderPutaway() {
+  const box = $('#t-put');
+  if (!box) return;
+  const p = S.put;
+  const missing = storageMissing() || p?.error === 'no items export';
+  const err = !missing && ((S.errors.put && !p?.stops) || !!p?.error);
+  const footL = `${srcAge('storage-export', 'Storage export')} · stack sizes from game data v${esc(p?.cdnVersion || cdnVersion())}`;
+  const footR = srcFix('storage-export', 'After putting things away:');
+  let count = '';
+  if (S.putOld) {
+    box.html = `<p class="needs">${esc(NEEDS_NEWER)}</p>`;
+    count = NEEDS_NEWER.replace(/\.$/, '').toLowerCase();
+    setFoot('w-t-put', footL, `Where to put your inventory needs a newer ${APP_NAME}`);
+  } else if (missing) {
+    box.html = '<p class="needs">Needs a storage export.</p>';
+    count = 'needs a storage export';
+    setFoot('w-t-put', `Storage export · ${shape('bad', 's13')}<span class="age bad">missing</span>`, esc(fixText('export-storage')));
+  } else if (S.loading && !p && !S.errors.put) {
+    box.html = '<div class="loading-bar" style="width:100%;height:120px"></div>';
+    count = 'reading…';
+    setFoot('w-t-put', 'Loading the storage export…', '');
+  } else if (err) {
+    box.html = blockError('where to put your inventory', S.lastGood.put);
+    count = "couldn't load";
+    setFoot('w-t-put', footL, footR);
+  } else if (!p.summary?.stacks) {
+    box.html = '<p class="empty">Your inventory is empty in this export. Nothing to put away.</p>';
+    count = 'bags empty in this export';
+    setFoot('w-t-put', footL, footR);
+  } else {
+    const s = p.summary;
+    count = `${plural(s.stacks, 'stack')} · ${plural(s.stops, 'stop')} · ${plural(s.homelessStacks, 'stack')} with no home yet`;
+    box.html = putLead(p) + putByStop(p) + putHomeless(p);
+    setFoot('w-t-put', footL, footR);
+  }
+  deckSum('storage', 'w-t-put', count);
+}
+function putLead(p) {
+  const s = p.summary;
+  let html = `<p>Your inventory holds <em class="n">${fmt(s.stacks)}</em> ${s.stacks === 1 ? 'stack' : 'stacks'}`;
+  if (s.inventoryFree != null) html += ` (${fmt(s.inventoryFree)} of ${fmt(s.inventoryCapacity)} slots free)`;
+  html += '.';
+  if (s.placedStacks) html += ` <em class="n">${fmt(s.placedStacks)}</em> ${s.placedStacks === 1 ? 'has' : 'have'} a vault that already holds the same item, at <em class="n">${fmt(s.stops)}</em> ${s.stops === 1 ? 'stop' : 'stops'}.`;
+  else html += ' No vault holds any of them yet.';
+  if (s.homelessStacks && s.placedStacks) html += ` The other <em class="n">${fmt(s.homelessStacks)}</em> ${s.homelessStacks === 1 ? 'is' : 'are'} listed below: no vault holds ${s.homelessStacks === 1 ? 'it' : 'them'} yet.`;
+  if (s.short > 0) html += ` <span class="tag">${plural(s.short, 'slot')} short</span> in all: some vaults fill up on the way.`;
+  if (s.gear) html += ` Worn gear can't be told from carried gear in the export, so gear here may be on you.`;
+  html += '</p>';
+  return html;
+}
+/* One section per area to stand in, the area you're in first; under it one group per vault to open. */
+function putByStop(p) {
+  const here = loggedIn() ? S.health?.game?.area : null;
+  const stops = [...(p.stops || [])].sort((a, b) => (b.area === here) - (a.area === here));
+  const name = (s, cls = 't') => `<em class="${cls}">${esc(s)}</em>`;
+  return stops.map(st => {
+    const head = st.area === 'Anywhere' ? 'Anywhere (area unknown)' : st.area || 'Elsewhere';
+    const groups = (st.vaults || []).map(g => {
+      const room = g.free == null ? ' · size unknown' : ` · ${fmt(g.free)} free now, ${fmt(g.after)} after${g.short > 0 ? ` <span class="tag">${plural(g.short, 'slot')} short</span>` : ''}`;
+      const acc = g.accepts ? ` · takes ${esc(g.accepts.toLowerCase())}` : '';
+      const lead = `${esc(g.name)} · ${plural(g.stacks, 'stack')} to put in${room}${acc}`;
+      const lines = g.lines.map(l => {
+        const there = l.to.there ? ` <span class="small dim">(${fmt(l.to.there)} there already)</span>` : '';
+        const chips = `${l.gear ? ' <span class="tag">gear, may be worn</span>' : ''}${l.to.short > 0 ? ` <span class="tag">${plural(l.to.short, 'slot')} short</span>` : ''}${l.to.roomUnknown ? ' <span class="tag">size unknown</span>' : ''}`;
+        const also = l.elsewhere?.length ? ` <span class="small dim">· also in ${esc(l.elsewhere.map(e => `${e.name} ×${fmt(e.qty)}`).join(', '))}</span>` : '';
+        return `<li>${iconImg(S.icons.byTypeId[String(l.typeId)], 24)}<span class="what">Put <em class="n">${fmt(l.qty)}</em> ${esc(l.name)} into ${name(l.to.name)}${there}${chips}${also}</span></li>`;
+      }).join('');
+      return `<p class="from">${lead}</p><ul class="list feed-what">${lines}</ul>`;
+    }).join('');
+    return `<section class="stop"><h3>${esc(head)} · ${plural(st.stacks, 'stack')}${st.area === here ? ' <span class="tag">you\'re here</span>' : ''}</h3>${groups}</section>`;
+  }).join('');
+}
+/* Stacks no vault holds: listed, never assigned. The vaults with room and no restriction sentence are named once. */
+function putHomeless(p) {
+  const h = Array.isArray(p.homeless) ? p.homeless : [];
+  if (!h.length) return '';
+  const shown = sUI.putAll ? h : h.slice(0, 12);
+  const rooms = (p.openRooms || []).map(r => `<em class="t">${esc(r.name)}</em> (${esc(r.area || 'area unknown')}, ${fmt(r.free)} free)`).join(', ');
+  const rows = shown.map(r => `<tr class="row"><td class="m1"><span class="cell-name">${iconImg(S.icons.byTypeId[String(r.typeId)], 24)}<span>${esc(r.name)}</span>${r.gear ? ' <span class="tag">gear</span>' : ''}</span></td>
+    <td class="num">${fmt(r.qty)}</td><td class="num m2">${fmt(r.value)}</td><td class="m-line2">${fmt(r.qty)} · worth ${fmt(r.value)}</td></tr>`).join('');
+  const more = h.length > 12 ? `<p style="margin-top:8px"><button type="button" class="linkbtn" data-putall="1" style="text-decoration:underline">${sUI.putAll ? 'Show the first 12' : `Show all ${fmt(h.length)}`}</button></p>` : '';
+  return `<h3 class="small dim" style="margin:16px 0 4px">No vault holds ${h.length === 1 ? 'this' : 'these'} yet</h3>
+    <p>${plural(h.length, 'item')} in ${plural(p.summary.homelessStacks, 'stack')} with no copy in any vault, so the export can't say which vault takes ${h.length === 1 ? 'it' : 'them'}. ${rooms ? `Room with no restriction listed in game data: ${rooms}.` : 'No vault with room and no restriction in game data.'} Vaults with a restriction (potions, equipment, food…) take only those; the app doesn't match items to them.</p>
+    <table class="tbl resp-plain" style="margin-top:8px"><thead><tr><th scope="col">Item</th><th scope="col" class="num">Qty</th><th scope="col" class="num">Worth</th></tr></thead><tbody>${rows}</tbody></table>${more}`;
+}
+
 /* ===================== Sell (Vendors) ===================== */
 /* GET /api/plan: what the bags hold that a vendor would pay for. Sell = vendor trash (or a type marked Sell) to the
    vendor with the most councils left who buys it; gear is the player's call (worn gear can't be told from carried in
    the export) and is shown, not counted; everything else is kept (Keep: it stays in the bags, where it goes is up to
    you; the app no longer suggests a vault, since it never knew what a vault accepts). */
+/* The price footnote (1 Nov): a vendor pays the export's Value in full up to its cap per item, from the wiki's
+   Merchants page where it has one, else 2% of the vendor's weekly pool; the cap is scaled by NPC_MOD_MAXSALESVALUE
+   (×1.23). Checked on Kalaba 1 Nov: 1,230 for three items valued above it, 1,040 and 1,043 paid in full. */
+function capsNote(p) {
+  if (!p) return '';
+  const m = p.multiplier ? ` ×${(+p.multiplier).toFixed(2)} from your stats` : '';
+  const c = p.caps;
+  if (!c) return p.multiplier ? ` · prices${m}, not checked in game` : '';   // an older server priced Value × multiplier
+  const at = c.fetchedAt ? parseIso(c.fetchedAt) : null;
+  const wiki = at ? `the wiki (${ageWord((NOW() - at) / 1000)} old)` : 'the wiki (not reached yet)';
+  return ` · caps per item from ${wiki} or 2% of the pool${m}`;
+}
+/* Your form: the two-option control (Humanoid / Animal) with where the answer comes from, and the vendors it rules out.
+   The export's IS_BEAST decides until the player says otherwise; a newer export takes over from an older answer. */
+function formCtl() {
+  const f = S.vendors?.form || S.plan?.form;
+  if (!f) return oldServerVendors() || S.vendors ? `<p class="small dim formline">Animal or humanoid? Telling vendors apart by your form needs a newer ${APP_NAME}.</p>` : '';
+  const animal = f.form === 'animal';
+  const exportAt = f.export?.at ? parseIso(f.export.at) : null;
+  const ovAt = f.override?.setAt ? parseIso(f.override.setAt) : null;
+  let src;
+  if (f.source === 'you') src = `you said so${ovAt ? ' ' + ago(ovAt) : ''}${f.export?.form && f.export.form !== f.form ? ` · the character export (${exportAt ? ago(exportAt) : 'older'}) says ${f.export.form}; the next export takes over` : f.export?.form ? ' · the next character export takes over' : ''} · <button type="button" class="linkbtn" data-formreset="1">Use the export</button>`;
+  else if (f.source === 'export') src = `from your character export${exportAt ? ', ' + ago(exportAt) : ''}${f.override?.superseded ? ` (your earlier answer, ${f.override.form}, is older than the export)` : ''}`;
+  else src = 'nothing says otherwise: no form stat in the export yet';
+  const opt = (v, label) => `<button type="button" role="radio" aria-checked="${(v === 'animal') === animal}" data-form="${v}">${label}</button>`;
+  const seg = `<span class="seg form" role="radiogroup" aria-label="Your form">${opt('humanoid', 'Humanoid')}${opt('animal', 'Animal')}</span>`;
+  const you = `You're ${animal ? 'an <em class="t">animal</em>' : '<em class="t">humanoid</em>'}`;
+  return `<div class="formline"><p>${you} <span class="small dim">· ${src}</span></p>${seg}</div>${formNote()}`;
+}
+function formNote() {
+  const p = S.plan, f = S.vendors?.form || p?.form, bt = S.vendors?.beastTalk || p?.beastTalk;
+  if (!f) return '';
+  const ex = p?.excluded || [];
+  const names = l => l.length <= 3 ? l.map(e => esc(e.name)).join(', ') : `${l.slice(0, 3).map(e => esc(e.name)).join(', ')} and ${l.length - 3} more`;
+  const parts = [];
+  if (f.form === 'humanoid') {
+    const town = ex.filter(e => e.why === 'animals-only');
+    if (town.length) parts.push(`Not counted: ${names(town)} in Animal Town, who talk to animals only.`);
+  } else {
+    const shun = ex.filter(e => e.why === 'shuns-animals');
+    const wikiAge = bt?.fetchedAt ? `the wiki's list, ${ageWord((NOW() - parseIso(bt.fetchedAt)) / 1000)} old` : "the wiki's list";
+    if (shun.length) parts.push(`Not counted: ${names(shun)}, who shun animals (${wikiAge}).`);
+    else if (bt && !bt.talkers) parts.push(`Who shuns animals isn't known yet (${bt.error ? 'the wiki didn\'t answer' : 'the wiki not reached'}), so every vendor is counted.`);
+    parts.push(`Animal Town vendors talk to you after ${f.waitMinutes || 180} minutes played as an animal; Norbert there tells you how long${f.export?.lycanthrope ? ' (Kodan talks to a werewolf at once)' : ''}.`);
+  }
+  if (!parts.length) return '';
+  return `<p class="small dim" style="margin:0 0 8px">${parts.join(' ')}</p>`;
+}
+function waitTag(g) {
+  return g?.wait ? ' <span class="tag" title="Animal Town talks to an animal only after 180 minutes played as one; Norbert tells you how long">after 3 h as an animal</span>' : '';
+}
+async function setForm(form) {
+  try {
+    await api('/api/form', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ form, character: S.character || null }) });
+    await loadVendors(); computeVerdicts(); renderVendors();
+  } catch (e) { sysLine('error', `Couldn't save your form: ${e?.message || 'the server didn\'t answer'}.`); }
+}
 function renderSell() {
   const box = $('#v-sell');
   if (!box) return;
@@ -3509,8 +3733,7 @@ function renderSell() {
   const missing = storageMissing() || p?.error === 'no items export';
   const noSheet = !missing && vendorsMissing();
   const err = !missing && ((S.errors.plan && !p?.items) || !!p?.error);
-  const mult = p?.multiplier ? `×${(+p.multiplier).toFixed(2)}` : '';
-  const footL = `${srcAge('storage-export', 'Storage export')} · ${srcAge('character-export', 'Character export')}${mult && !noSheet ? ` · prices ${mult} from your stats, not checked in game` : ''}`;
+  const footL = `${srcAge('storage-export', 'Storage export')} · ${srcAge('character-export', 'Character export')}${noSheet ? '' : capsNote(p)}`;
   const footR = srcFix('storage-export', 'After selling:');
   let tabsOn = false, count = '';
   if (S.planOld) {
@@ -3564,6 +3787,11 @@ function sellLead(p) {
   if (s.recipes) notes.push(`${plural(s.recipes, 'recipe scroll')} among the documents: one you haven't learned is worth more learned`);
   if (s.marked) notes.push(`${plural(s.marked, 'type')} marked by you (Sell / Keep in By item; a mark applies to every stack of the type, now and later)`);
   if (gear.stacks) notes.push("worn gear can't be told from carried in the export");
+  const ex = p.excluded || [];
+  if (ex.length && p.form) {
+    const l = ex.slice(0, 3).map(e => e.name).join(', ') + (ex.length > 3 ? ` and ${ex.length - 3} more` : '');
+    notes.push(p.form.form === 'animal' ? `${l} shun animals and are left out (you're an animal; change that in Where to sell)` : `${l} in Animal Town talk to animals only and are left out (you're humanoid; change that in Where to sell)`);
+  }
   html += `<p class="small dim" style="margin-top:4px">${esc(notes.join('. '))}.</p>`;
   return html;
 }
@@ -3573,10 +3801,10 @@ function sellByStop(p) {
   const name = (t, cls = 't') => `<em class="${cls}">${esc(t)}</em>`;
   const html = stops.map(st => {
     const head = st.area === 'Anywhere' ? 'Anywhere (carried, or area unknown)' : st.area;
-    const sells = (st.sell || []).map(g => `<p class="from">Sell to ${name(g.name)} · ${plural(g.stacks, 'stack')} · about <em class="n">${fmt(g.councils)}</em> councils <span class="dim">(can still pay ${fmt(g.left)}, ${fmt(g.after)} after)</span></p>
-      <ul class="list feed-what">${g.items.map(i => `<li>${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span class="what">${i.qty > 1 ? `<em class="n">${fmt(i.qty)}</em> ` : ''}${esc(i.name)}</span><span class="n">${fmt(i.councils)}</span></li>`).join('')}</ul>`).join('');
+    const sells = (st.sell || []).map(g => `<p class="from">Sell to ${name(g.name)}${waitTag(g)} · ${plural(g.stacks, 'stack')} · about <em class="n">${fmt(g.councils)}</em> councils <span class="dim">(can still pay ${fmt(g.left)}, ${fmt(g.after)} after)</span></p>
+      <ul class="list feed-what">${g.items.map(i => `<li>${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span class="what">${i.qty > 1 ? `<em class="n">${fmt(i.qty)}</em> ` : ''}${esc(i.name)}</span><span class="n">${fmt(i.councils)}</span></li>`).join('')}</ul>`).join('');   // stop items carry no capped flag: the By item row does
     return `<section class="stop"><h3>${esc(head)} · ${plural(st.stacks, 'stack')}${st.councils ? ` · about ${fmt(st.councils)} councils` : ''}${st.area === here ? ' <span class="tag">you\'re here</span>' : ''}</h3>${sells}</section>`;
-  }).join('') || '<p class="empty">No stops: nothing in your bags sells right now.</p>';
+  }).join('') || `<p class="empty">${p.summary?.gear?.stacks ? `No books, documents or scrolls to sell. Your ${plural(p.summary.gear.stacks, 'piece')} of gear ${p.summary.gear.stacks === 1 ? 'is' : 'are'} your call: Where to sell, above, says what each area pays for them.` : 'No stops: nothing in your bags sells right now.'}</p>`;
   return html;
 }
 /* The keep list control: Sell / Keep per item type. Only sellable types get it (nothing can be sold otherwise);
@@ -3601,8 +3829,9 @@ function sellByItem(p) {
   const listed = all.filter(i => i.action !== 'keep');
   const row = i => {
     let doText, about = '';
-    if (i.action === 'sell') { doText = `Sell to <em class="t">${esc(i.sellTo.name)}</em> · ${esc(i.sellTo.area)}${i.recipe ? ' <span class="tag" title="A recipe scroll: learn it first if you have not">recipe</span>' : ''}${i.note ? ` <span class="tag">${esc(i.note)}</span>` : ''}`; about = fmt(i.sellTo.councils); }
-    else if (i.action === 'gear') { doText = `Your call${i.sellTo ? ` · ${esc(i.sellTo.name)} pays about ${fmt(i.sellTo.councils)}` : ''}`; about = i.sellTo ? fmt(i.sellTo.councils) : ''; }
+    const capped = i.sellTo?.capped ? ' <span class="tag" title="This vendor pays at most its cap per item">capped</span>' : '';
+    if (i.action === 'sell') { doText = `Sell to <em class="t">${esc(i.sellTo.name)}</em> · ${esc(i.sellTo.area)}${waitTag(i.sellTo)}${i.recipe ? ' <span class="tag" title="A recipe scroll: learn it first if you have not">recipe</span>' : ''}${i.note ? ` <span class="tag">${esc(i.note)}</span>` : ''}${capped}`; about = fmt(i.sellTo.councils); }
+    else if (i.action === 'gear') { doText = `Your call${i.sellTo ? ` · ${esc(i.sellTo.name)} pays about ${fmt(i.sellTo.councils)}${capped}` : ''}`; about = i.sellTo ? fmt(i.sellTo.councils) : ''; }
     else doText = `Keep${i.note ? ` <span class="tag">${esc(i.note)}</span>` : ''}${i.sellTo ? ` <span class="small dim">or ${esc(i.sellTo.name)} pays about ${fmt(i.sellTo.councils)}</span>` : i.sellable ? '' : ' <span class="small dim">no vendor buys it</span>'}`;
     return `<tr class="row"><td class="m1"><span class="cell-name">${iconImg(S.icons.byTypeId[String(i.typeId)], 24)}<span>${esc(i.name)}</span></span></td><td class="num">${fmt(i.qty)}</td><td>${doText}</td><td class="num m2">${about}</td><td class="markcell">${markSeg(i)}</td><td class="m-line2">${fmt(i.qty)} · ${doText}${about ? ` · about ${about}` : ''}</td></tr>`;
   };
@@ -3932,6 +4161,9 @@ function initStorage() {
     if (e.target.closest('[data-spreadall]')) { sUI.spreadAll = !sUI.spreadAll; renderMerge(); $('#t-merge [data-spreadall]')?.focus(); }
   });
   tabKeys($('#tmode'));
+  $('#w-t-put').addEventListener('click', e => {
+    if (e.target.closest('[data-putall]')) { sUI.putAll = !sUI.putAll; renderPutaway(); $('#t-put [data-putall]')?.focus(); }
+  });
   $('#itemq').addEventListener('input', e => { sUI.iq = e.target.value; sUI.ilimit = 200; renderItems(); });
   $('#vaultf').addEventListener('change', e => { sUI.selected = null; sUI.iloc = e.target.value; sUI.ilimit = 200; renderVaultPane(vaultRows()); renderItems(); });
   $('#isortm').addEventListener('change', e => { const [k, d] = e.target.value.split(':'); sUI.isort = { key: k, dir: d }; saveSort('items', sUI.isort); renderItems(); });

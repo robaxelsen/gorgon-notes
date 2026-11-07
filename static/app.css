@@ -343,10 +343,14 @@ button.barrow:hover { background: var(--row-hover); }
 .barrow .v { text-align: right; white-space: nowrap; color: var(--text); font-variant-numeric: tabular-nums lining-nums; }
 #s-skill { --bar-v: 20ch; }
 .barrow .v .dim { margin-left: 4px; }
-.barrow[aria-pressed="true"] { background: var(--sel-bg); color: var(--sel-text); border-color: var(--sel-focus); }
-.barrow[aria-pressed="true"] .v, .barrow[aria-pressed="true"] .dim { color: var(--sel-text); }
-.barrow[aria-pressed="true"] .bar { background: var(--rust-lo); }
-.barrow[aria-pressed="true"] .bar > i { background: var(--sel-bar); }
+.barrow[aria-pressed="true"], .barrow[aria-expanded="true"] { background: var(--sel-bg); color: var(--sel-text); border-color: var(--sel-focus); }
+.barrow[aria-pressed="true"] .v, .barrow[aria-pressed="true"] .dim, .barrow[aria-expanded="true"] .v, .barrow[aria-expanded="true"] .dim { color: var(--sel-text); }
+.barrow[aria-pressed="true"] .bar, .barrow[aria-expanded="true"] .bar { background: var(--rust-lo); }
+.barrow[aria-pressed="true"] .bar > i, .barrow[aria-expanded="true"] .bar > i { background: var(--sel-bar); }
+/* Where to sell (Vendors): "63,343  31 of 31" in the value column; the open area's stop sits under its row. */
+#v-where { --bar-v: 17ch; }
+#v-where .stop { margin: 4px 0 10px 8px; }
+@media (max-width: 640px) { #v-where { --bar-v: 10ch; } #v-where .barrow .v .dim { display: block; margin: 0; } #v-where .barrow .nm { white-space: normal; } }
 
 /* At a glance */
 .glance { display: flex; flex-wrap: wrap; }
@@ -757,12 +761,17 @@ tr[aria-selected="true"] .sizein { border-color: var(--sel-text); color: var(--s
 }
 
 /* Storage: Stacks to merge and Vendors: Sell (plain dark tables; the stop heads are small titles) */
-#t-merge .stop, #v-sell .stop { margin-top: 12px; }
-#t-merge .stop:first-child, #v-sell .stop:first-child { margin-top: 0; }
-#t-merge .stop h3, #v-sell .stop h3 { font-size: 17px; font-weight: 700; color: var(--title); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-#t-merge .stop .from, #v-sell .stop .from { margin: 8px 0 2px; }
-#t-merge .list li, #v-sell .list li { justify-content: flex-start; }
-#v-sell .list li .n { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+#t-merge .stop, #t-put .stop, #v-sell .stop { margin-top: 12px; }
+#t-merge .stop:first-child, #t-put .stop:first-child, #v-sell .stop:first-child { margin-top: 0; }
+#t-merge .stop h3, #t-put .stop h3, #v-sell .stop h3 { font-size: 17px; font-weight: 700; color: var(--title); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#t-merge .stop .from, #t-put .stop .from, #v-sell .stop .from, #v-where .stop .from { margin: 8px 0 2px; }
+#t-merge .list li, #v-sell .list li, #v-where .list li { justify-content: flex-start; }
+#v-sell .list li .n, #v-where .list li .n { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.formline { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 0 0 6px; }
+.formline p { margin: 0; }
+.seg.form { padding: 1px 2px; }
+.seg.form button { height: 26px; padding: 0 12px; font-size: 14px; }
+#v-where .seg.form { display: inline-flex; }  /* the shell hides .seg on a phone; this one stays */
 .seg.mark { padding: 1px 2px; }
 .seg.mark button { height: 24px; padding: 0 10px; font-size: 14px; }
 .plan-items .markcell { white-space: nowrap; width: 1%; }
