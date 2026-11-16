@@ -3786,7 +3786,7 @@ function sellLead(p) {
   const notes = ['only gear, books, documents and scrolls are offered for sale; materials, ingredients and the like are assumed to have a use (mark a type Sell in By item to sell it anyway)'];
   if (s.recipes) notes.push(`${plural(s.recipes, 'recipe scroll')} among the documents: one you haven't learned is worth more learned`);
   if (s.marked) notes.push(`${plural(s.marked, 'type')} marked by you (Sell / Keep in By item; a mark applies to every stack of the type, now and later)`);
-  if (gear.stacks) notes.push("worn gear can't be told from carried in the export");
+  if (keep.attuned) notes.push(`${plural(keep.attuned, 'attuned piece')} ${keep.attuned === 1 ? 'is' : 'are'} never offered for sale; unattuned gear is your call`);
   const ex = p.excluded || [];
   if (ex.length && p.form) {
     const l = ex.slice(0, 3).map(e => e.name).join(', ') + (ex.length > 3 ? ` and ${ex.length - 3} more` : '');
@@ -3811,7 +3811,7 @@ function sellByStop(p) {
    the current state is the row's action, a mark shows as the checked option. Keep is sent as "store" (the mark's
    name in marks.json since 26 Oct morning; the UI never says Store). */
 function markSeg(i) {
-  if (!i.sellable) return '';
+  if (!i.sellable || i.attuned) return '';   // attuned pieces are never offered, so a Sell mark would do nothing
   const cur = i.mark || (i.kind === 'sell' ? 'sell' : 'store');
   const opt = (v, label) => `<button type="button" role="radio" aria-checked="${cur === v}" data-mark="${v}" data-tid="${esc(String(i.typeId))}" ${cur === v ? 'tabindex="0"' : 'tabindex="-1"'}>${label}</button>`;
   return `<span class="seg mark" role="radiogroup" aria-label="${esc(i.name)}: sell or keep">${opt('sell', 'Sell')}${opt('store', 'Keep')}</span>`;

@@ -2001,6 +2001,8 @@ def plan(character=None):
         kws = item_keywords(e)
         sellable = bool(kws & buy_words()) and (it.get("Value") or 0) > 0
         mark = marks.get(str(it.get("TypeID")))
+        if it.get("AttunedTo"):                 # attuned decides (user, 15 Nov): never offered, whatever the mark. The export
+            return "keep", kws, sellable        # can't say what is worn; Kalaba's Sell tab showed no attuned piece either
         if mark == "sell" and sellable:
             return "sell", kws, sellable       # the keep list wins, gear included
         if it.get("Slot") or it.get("TSysPowers"):
@@ -2019,9 +2021,11 @@ def plan(character=None):
         row = {"typeId": it.get("TypeID"), "name": it.get("Name"), "qty": qty, "value": value, "unit": value,
                "price": value * qty, "kind": kind, "action": kind, "sellTo": None, "storeAt": None, "note": None,
                "mark": marks.get(str(it.get("TypeID"))), "sellable": sellable,
-               "doc": bool(kws & PLAN_DOCS), "recipe": "Recipe" in kws}
+               "doc": bool(kws & PLAN_DOCS), "recipe": "Recipe" in kws, "attuned": bool(it.get("AttunedTo"))}
+        if row["attuned"]:
+            row["note"] = "attuned"
         prefer = {a for a, n in areas_used.items() if n}
-        if sellable:
+        if sellable and not row["attuned"]:     # no price for attuned pieces: a price reads as a suggestion to sell
             v, whole, unit = best_vendor(kws, value, qty, prefer)
             if v is not None:
                 n = qty if whole else max(0, v["left"] // unit) if unit else 0
@@ -2107,7 +2111,7 @@ def plan(character=None):
         "stacks": len(inv), "inventoryFree": next((v.get("free") for v in st["vaults"] if v["vault"] == "Inventory"), None),
         "sell": {"stacks": len(sell_rows), "councils": sum(r["sellTo"]["councils"] for r in sell_rows), "vendors": len({r["sellTo"]["npc"] for r in sell_rows})},
         "gear": {"stacks": len(gear_rows), "councils": sum(r["sellTo"]["councils"] for r in gear_rows if r["sellTo"])},
-        "keep": {"stacks": len(keep_rows), "sellable": sum(1 for r in keep_rows if r["sellable"])},
+        "keep": {"stacks": len(keep_rows), "sellable": sum(1 for r in keep_rows if r["sellable"]), "attuned": sum(1 for r in keep_rows if r["attuned"])},
         "recipes": sum(1 for r in sell_rows if r["recipe"]),
         "stops": len(stop_rows),
         "offered": {"stacks": len(offered), "councils": sum(r["sellTo"]["councils"] for r in sell_rows + gear_rows if r["sellTo"])},
