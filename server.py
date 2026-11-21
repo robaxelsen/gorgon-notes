@@ -1096,6 +1096,7 @@ class Fight:
         self.hits_on = defaultdict(list)                         # "name#id" -> [(dt, attacker)] every logged hit on it, "Dmg: none" too
         self.tick_list = defaultdict(list)                       # "name#id" -> [(dt, health, armor)] its "Suffered indirect dmg" lines
         self.tick_name = {}                                      # "name#id" -> name
+        self.drops = []                                          # corpse loot of this fight's mobs: (ts, from name, item name, TypeId, stack)
 
 
 class DpsTracker:
@@ -1125,6 +1126,8 @@ class DpsTracker:
         self.last_damage = None     # ts of the last direct-damage line
         self.first_ts = self.last_ts = None
         self.seeded_from = None     # the previous day's log fed first, so a run across midnight stays one (dps_tracker)
+        self.id_fight = {}          # entity id -> the last fight it appeared in (corpse loot finds its fight by FromEntityId)
+        self.drops_unmatched = 0    # corpse loot whose mob was in none of your fights (killed by others, or before this log)
 
     def begin_log(self, prev_name):
         """Called after the previous day's log was fed: its lines gave this tracker the area, the character, the
@@ -1195,6 +1198,9 @@ class DpsTracker:
         if msg.startswith("[Status] ") and "party" in msg:
             self._party_line(msg)
             return
+        if msg.startswith("[JSON:AddItem] "):
+            self._loot(ts, msg)
+            return
         if not msg.startswith("[Combat] "):
             return
         if self.first_combat is None:
@@ -1212,6 +1218,7 @@ class DpsTracker:
                     self.cur.indirect[m["who"]] += h + a
                     if m["id"]:
                         self.cur.others.add(m["who"])
+                        self.id_fight[m["id"]] = self.cur
                         key = f"{m['who']}#{m['id']}"
                         self.cur.tick_list[key].append((dt, h, a))
                         self.cur.tick_name[key] = m["who"]
@@ -1263,8 +1270,10 @@ class DpsTracker:
             f.target_ids[att].add(vid)
             f.ids.add(vid)
             f.hits_on[f"{vic}#{vid}"].append((dt, att))
+            self.id_fight[vid] = f
         if aid:
             f.ids.add(aid)
+            self.id_fight[aid] = f
         tk = f.taken[vic][att][key]
         if dmg >= INSTAKILL_DMG:
             tk["instakill"] = tk.get("instakill", 0) + 1  # listed, never summed into damage taken
@@ -1294,6 +1303,23 @@ class DpsTracker:
             else:
                 st["fatal"] += 1
                 f.kills.append((att, vic))
+
+    def _loot(self, ts, msg):
+        """A gameplay AddItem line (16 Nov update) with FromEntityId is loot from a corpse; the id is the mob's #id in
+        the [Combat] lines (verified 20 Nov, 12 of 13 ids), so the loot joins the fight that mob was in."""
+        jl = json_line(msg)
+        if not jl:
+            return
+        d = jl[1]
+        eid = d.get("FromEntityId")
+        if eid is None:
+            return
+        f = self.id_fight.get(str(eid))
+        if f is None:
+            self.drops_unmatched += 1
+            return
+        stack = d.get("Stack") if isinstance(d.get("Stack"), int) and d.get("Stack") > 0 else 1
+        f.drops.append((ts, str(d.get("FromName") or ""), str(d.get("Name") or "?"), d.get("TypeId"), stack))
 
     def _party_line(self, msg):
         """The hunting-party roster as the log tells it: a new party empties it, members are added as they join or
@@ -1526,6 +1552,12 @@ class DpsTracker:
         indirect_me = f.indirect.get(me, 0) if me else 0
         indirect_pet = sum(f.indirect.get(p, 0) for p in pets)
         indirect_other = max(0, sum(d for n, d in f.indirect.items() if n != me and n not in pets) - attributed)
+        # Your share of the damage the mobs you hit took: your and your pets' damage against the ticks on those mobs
+        # that no line names a source for (other players' hits and their damage over time reach the log only as an
+        # enemy's "Suffered indirect dmg", seen 20 Nov). Your own unattributed ticks land there too, so it can read low.
+        unnamed = max(0, sum(ticks[n] for n in targets) - attributed)
+        share = round(dmg / (dmg + unnamed), 3) if dmg and unnamed else None
+        drops, drop_value = drops_json(f.drops)
         others = sorted(n for n in f.others if n not in enemies and n not in pets and n != me)
         # Timeline: [[second offset, you, pets]] per bucket of `step` seconds, dense from 0 to the fight's end.
         step = max(1, -(-dur // DPS_TIMELINE_POINTS))
@@ -1554,16 +1586,20 @@ class DpsTracker:
             "dotMe": dot_me, "dotPet": dot_pet, "byTarget": by_target, "ticks": tick_out, "byTargetMore": max(0, len(targets) - len(top)),
             "inParty": f.in_party, "party": sorted(f.roster)[:12],
             "timeline": tl, "timelineStep": step,
+            "unnamed": unnamed, "share": share, "drops": drops, "dropValue": drop_value,
+            "dropStacks": len(f.drops),
         }
 
     def totals(self, rows, fights, me, pets, enemies):
         t = {"fights": len(rows), "dmg": 0, "me": 0, "pet": 0, "health": 0, "armor": 0, "hits": 0, "crit": 0,
              "taken": 0, "takenMe": 0, "indirectMe": 0, "takenPet": 0, "kills": 0, "petKills": 0, "deaths": 0, "instakills": 0,
-             "activeSec": 0, "indirectUnattributed": 0, "dotMe": 0, "dotPet": 0, "best": None, "minor": 0}
+             "activeSec": 0, "indirectUnattributed": 0, "dotMe": 0, "dotPet": 0, "best": None, "minor": 0,
+             "unnamed": 0, "dropValue": 0, "dropStacks": 0}
         merged = {}
         for r in rows:
             for k in ("dmg", "me", "pet", "health", "armor", "hits", "crit", "taken", "takenMe", "indirectMe", "takenPet",
-                      "kills", "petKills", "deaths", "instakills", "indirectUnattributed", "dotMe", "dotPet"):
+                      "kills", "petKills", "deaths", "instakills", "indirectUnattributed", "dotMe", "dotPet",
+                      "unnamed", "dropValue", "dropStacks"):
                 t[k] += r[k]
             t["activeSec"] += r["dur"]
             t["minor"] += 1 if r["minor"] else 0
@@ -1576,8 +1612,37 @@ class DpsTracker:
                     m[k] += a[k]
                 m["max"] = max(m["max"], a["max"])
         t["dps"] = round(t["dmg"] / t["activeSec"], 1) if t["activeSec"] else 0
+        t["share"] = round(t["dmg"] / (t["dmg"] + t["unnamed"]), 3) if t["dmg"] and t["unnamed"] else None
+        t["dropsUnmatched"] = self.drops_unmatched
+        # Loot per mob over these fights: kills you looted, and what they dropped (corpse loot by FromEntityId).
+        per_mob = {}
+        for r in rows:
+            for d in r["drops"]:
+                frm = d["from"][0] if d["from"] else "?"   # one item comes from one mob name almost always; the first one counts
+                m = per_mob.setdefault(frm, {"mob": frm, "items": Counter(), "value": 0})
+                m["items"][d["name"]] += d["count"]
+                m["value"] += d["value"]
+        t["dropsByMob"] = sorted(({"mob": m["mob"], "value": m["value"], "items": [{"name": n, "count": c} for n, c in m["items"].most_common(8)]}
+                                  for m in per_mob.values()), key=lambda m: -m["value"])[:12]
         t["abilities"] = sorted(merged.values(), key=lambda r: -r["dmg"])
         return t
+
+
+def drops_json(drops):
+    """A fight's corpse loot grouped by item: [{name, typeId, icon, count, from[], value}] (value = items.json Value × count,
+    0 when the game data has no price), and the total value."""
+    items = cdn_data("items")
+    out = {}
+    for ts, frm, name, tid, stack in drops:
+        entry = items.get(f"item_{tid}") or {} if tid is not None else {}
+        r = out.setdefault((name, tid), {"name": name, "typeId": tid, "icon": entry.get("IconId"), "count": 0, "from": [], "value": 0})
+        r["count"] += stack
+        if frm and frm not in r["from"]:
+            r["from"].append(frm)
+        v = entry.get("Value")
+        r["value"] += int(v * stack) if isinstance(v, (int, float)) else 0
+    rows = sorted(out.values(), key=lambda r: (-r["value"], -r["count"], r["name"]))
+    return rows, sum(r["value"] for r in rows)
 
 
 _dps = {}
@@ -4333,7 +4398,7 @@ def health(character=None):
     # 16 Nov 2026 update and on by default; the label and its place beside "Log non-damaging abilities" are the client's
     # strings, docs/DATA-SOURCES.md). It writes the [JSON:<Type>] lines. Warn when it reads 0, or when it reads 1 and
     # the loot picked up since the login came with no gameplay line (every text loot line has a JSON twin, 20 Nov).
-    # Listed on Session only while nothing else reads these lines; loot per kill will add Combat (ROADMAP step 5).
+    # Listed on Session and Combat (loot per kill reads these lines) when warn.
     if settings.get("readable"):
         gl = settings.get("LogMiscNoncombatData")
         jsum = newest_sum if today_log else None
@@ -4348,7 +4413,7 @@ def health(character=None):
         if gl == 0:
             add("gameplay-logging", "warn", "Gameplay logging",
                 f"{label} is off, so the log has no loot sources, crafting, quest or favor lines.",
-                "gameplay-logging", views=["session"], server_only=True, evidence_data=ed)
+                "gameplay-logging", views=["session", "combat"], server_only=True, evidence_data=ed)
         elif gl is None:
             add("gameplay-logging", "info", "Gameplay logging",
                 f"The game hasn't saved {label} yet. It came with the 16 Nov update and is on by default.",
@@ -4356,7 +4421,7 @@ def health(character=None):
         elif loot_since_login >= 5 and json_since_login == 0:
             add("gameplay-logging", "warn", "Gameplay logging",
                 f"{label} reads on, but none of the {plural(loot_since_login, 'stack')} you picked up since you logged in "
-                "came with a gameplay line.", "gameplay-logging", views=["session"], server_only=True, evidence_data=ed)
+                "came with a gameplay line.", "gameplay-logging", views=["session", "combat"], server_only=True, evidence_data=ed)
         elif n_json:
             add("gameplay-logging", "ok", "Gameplay logging",
                 f"On · {n_json:,} gameplay lines today, last {last_json.strftime('%H:%M')}.",
@@ -5486,6 +5551,11 @@ def teleports(refresh=False):
 # ---------------------------------------------------------------------------
 STATEHELM_AREAS = {"AreaStatehelm", "AreaStatehelmCaves"}
 GIFTS_PER_WEEK = 5
+# Since the Thanksgiving Update the character export carries NPCs.NPC_<key>.GiftsThisWeek, on the NPCs gifted this week
+# only (absent = 0; docs/DATA-SOURCES.md, seen 20 Nov). An export made before the update has no such key anywhere, so
+# its silence means nothing: exports older than this (the update's client build landed 17 Nov 03:35 CET) are not read
+# for gifts. A usable export (made this week, after the update) is the base count; gifts logged after it are added.
+GIFTS_IN_EXPORT_SINCE = datetime(2026, 11, 17, 2, 35, tzinfo=timezone.utc)
 PRODIGY_FAVOR = "CloseFriends"
 RARITY_RANK = {r: i for i, r in enumerate(["Common", "Uncommon", "Rare", "Epic", "Legendary"])}
 STATEHELM_LOCK = threading.Lock()
@@ -5727,6 +5797,10 @@ def statehelm(character=None):
     picked = [k for k in (sh.get("picked") or []) if isinstance(k, str)]
     counts = (sh.get("counts") or {}).get(start.isoformat()) or {}
     gifts, logs_read = statehelm_gifts(trainers, who, start)
+    export_at = report_dt(head["timestamp"]) if head and head.get("timestamp") else None
+    export_ok = bool(export_at and export_at >= start and export_at >= GIFTS_IN_EXPORT_SINCE)
+    export_why = None if export_ok else ("none" if not export_at else "before the update" if export_at < GIFTS_IN_EXPORT_SINCE
+                                          else "last week")
     out = []
     for t in trainers:
         mine = met.get(t["npc"]) or {}
@@ -5755,15 +5829,24 @@ def statehelm(character=None):
             matches.extend(found)
         g = gifts.get(t["npc"], {"logged": 0, "times": [], "quests": 0})
         manual = counts.get(t["npc"]) if isinstance(counts.get(t["npc"]), int) else None
-        given = manual if manual is not None else g["logged"]
+        if export_ok:
+            n_export = mine.get("GiftsThisWeek") if isinstance(mine.get("GiftsThisWeek"), int) else 0
+            after = [x for x in g["times"] if x["at"] and datetime.fromisoformat(x["at"]) > export_at]
+            auto, source, since_export = n_export + len(after), "export", len(after)
+        else:
+            n_export, auto, source, since_export = None, g["logged"], "log", None
+        given = manual if manual is not None else auto
         out.append({**t, "picked": t["npc"] in picked, "favor": favor_level, "favorPoints": mine.get("Favor"),
                     "met": bool(mine), "notes": mine.get("PlayerNotes") or "",
                     "prodigyAt": PRODIGY_FAVOR, "prodigyReady": FAVOR_RANK.get(favor_level, -1) >= FAVOR_RANK[PRODIGY_FAVOR],
                     "items": matches, "unchecked": unchecked,
                     "gifts": {"given": given, "left": max(GIFTS_PER_WEEK - given, 0), "cap": GIFTS_PER_WEEK,
-                              "logged": g["logged"], "manual": manual, "quests": g["quests"], "times": g["times"]}})
+                              "logged": g["logged"], "manual": manual, "quests": g["quests"], "times": g["times"],
+                              "auto": auto, "source": "manual" if manual is not None else source,
+                              "export": n_export, "sinceExport": since_export}})
     return {"trainers": out, "picked": picked, "cap": GIFTS_PER_WEEK,
             "week": {"start": start.isoformat(), "end": end.isoformat(), "rule": WEEK_RESET_RULE, "tz": WEEK_RESET_TZ, "logs": logs_read},
+            "giftsExport": {"used": export_ok, "at": local_iso(export_at) if export_at else None, "why": export_why},
             "sources": {"character": head, "storage": items_head}, "cdnVersion": cdn_version()}
 
 

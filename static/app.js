@@ -2576,9 +2576,10 @@ function renderCombatView() {
   const figs = [];
   if (n.inFight) figs.push({ lb: '<span class="livedot" aria-hidden="true"></span>Per second now · live', val: perSec(n.dps), sub: `this fight · ${secs(n.sec)} · last ${c.nowSec} s: ${fmt(n.recent)}/s`, readout: true });
   else figs.push({ lb: 'Per second, last fight', val: perSec(lastF ? lastF.dps : 0), sub: lastF ? `${lastF.start.slice(9, 14)} · ${secs(lastF.dur)}` : 'none yet', readout: true });
-  figs.push({ lb: 'Damage', val: fmt(t.dmg || 0), sub: t.dmg ? `you ${pctOf(t.me, t.dmg)} · pets ${pctOf(t.pet, t.dmg)}` : 'none yet' });
+  figs.push({ lb: 'Damage', val: fmt(t.dmg || 0), sub: t.dmg ? `you ${pctOf(t.me, t.dmg)} · pets ${pctOf(t.pet, t.dmg)}${t.share != null ? ` · ${sharePct(t.share)} of what your enemies took` : ''}` : 'none yet' });
   figs.push({ lb: 'Fights', val: fmt(t.fights || 0), sub: t.fights ? `${secs(t.activeSec)} fighting${t.best ? ` · best ${fmt(t.best.dps)}/s at ${t.best.start.slice(9, 14)}` : ''}` : 'none yet' });
   figs.push({ lb: 'Kills', val: fmt((t.kills || 0) + (t.petKills || 0)), sub: t.petKills ? `${fmt(t.petKills)} by your pets` : (t.kills ? 'all yours' : 'none yet') });
+  if (t.dropStacks) figs.push({ lb: 'Loot from your kills', val: `${COIN}${fmt(t.dropValue || 0)}`, sub: `${plural(t.dropStacks, 'stack')}${t.dropsByMob?.[0] ? ` · most from ${t.dropsByMob[0].mob}` : ''} · vendor value` });
   figs.push({ lb: 'Damage taken', val: fmt(t.taken || 0), sub: t.deaths ? plural(t.deaths, 'death') + (t.instakills ? `, ${t.instakills === 1 ? 'one' : t.instakills} to a kill mechanic` : '') : 'no deaths' });
   glance.html = figs.map((f, i) => `<div class="fig${i ? '' : ' lead'}"><div class="lb">${f.lb}</div><div class="val${f.readout ? ' readout' : ''}">${f.val}</div><div class="sub">${esc(f.sub)}</div></div>`).join('');
   setFoot('w-d-glance', left, fix);
@@ -2626,7 +2627,8 @@ function fightRow(f, sel) {
   const kills = f.kills + f.petKills;
   const took = !f.dmg && f.taken ? `<span class="small">took ${fmt(f.taken)}</span>` : '';
   const fought = f.top ? `${esc(f.top)}${f.targetCount > 1 ? ` <span class="small">+${fmt(f.targetCount - 1)} more</span>` : ''}${took ? ' · ' + took : ''}` : took;
-  const line2 = [secs(f.dur), `${fmt(f.dmg)} damage`, kills ? plural(kills, 'kill') : '', f.deaths ? plural(f.deaths, 'death') : ''].filter(Boolean).join(' · ');
+  const loot = f.dropStacks ? ` <span class="small dim" title="${esc(`${plural(f.dropStacks, 'stack')} looted from this fight's mobs`)}">· ${COIN}${fmt(f.dropValue || 0)}</span>` : '';
+  const line2 = [secs(f.dur), `${fmt(f.dmg)} damage`, kills ? plural(kills, 'kill') : '', f.deaths ? plural(f.deaths, 'death') : '', f.dropStacks ? `loot ${fmt(f.dropValue || 0)}` : ''].filter(Boolean).join(' · ');
   return `<tr class="row selectable" tabindex="0" data-fight="${esc(f.id)}" aria-selected="${sel}">
     <td class="m1"><span class="nm">${time}</span>${f.open ? ' <span class="tag">now</span>' : ''}${fought ? `<span class="small m-only"> · ${fought}</span>` : ''}</td>
     <td class="num">${secs(f.dur)}</td>
@@ -2635,7 +2637,7 @@ function fightRow(f, sel) {
     <td class="num">${fmt(f.me)}</td>
     <td class="num">${f.pet ? fmt(f.pet) : ''}</td>
     <td class="num">${kills ? fmt(kills) : ''}</td>
-    <td>${fought}</td>
+    <td>${fought}${loot}</td>
     <td class="m-line2">${esc(line2)}</td>
   </tr>`;
 }
@@ -2705,6 +2707,14 @@ function renderByEnemy(f) {
   const more = rows.length > ENEMY_SHOW ? `<p style="margin:8px 0 0"><button type="button" class="linkbtn" data-eall aria-expanded="${dUI.enemiesAll}" style="text-decoration:underline">${dUI.enemiesAll ? `Show the top ${ENEMY_SHOW}` : `Show all ${fmt(rows.length)} ${left ? 'listed' : 'enemies'}`}</button></p>` : '';
   return `<div style="margin-top:16px"><h3 class="small dim">By enemy</h3><table class="tbl resp-plain by-enemy"><thead><tr><th scope="col">Enemy</th><th scope="col" class="num">You</th><th scope="col" class="num">Pets</th><th scope="col" class="num">Damage over time</th><th scope="col" class="num d-only">Not yours</th><th scope="col" class="num">Total</th></tr></thead><tbody>${tr}</tbody></table>${more}</div>`;
 }
+/* "46%": a fight's share of the damage its enemies took (server: share 0..1). */
+const sharePct = x => `${Math.round(x * 100)}%`;
+/* Loot from this fight's corpses (AddItem FromEntityId → the mob's id; server drops[] by item, value-sorted). */
+function renderDrops(f) {
+  if (!f.drops?.length) return '';
+  const rows = f.drops.map(d => `<li><span>${iconImg(d.icon ?? S.icons?.byName?.[d.name], 20, '', (d.name || '?')[0])} ${esc(d.name)}${d.count > 1 ? ` <span class="dim">×${fmt(d.count)}</span>` : ''} <span class="dim small">${esc(joinNames(d.from))}</span></span><span class="n">${d.value ? `${COIN}${fmt(d.value)}` : '<span class="dim small">no price</span>'}</span></li>`).join('');
+  return `<div style="margin-top:16px"><h3 class="small dim">Loot from this fight</h3><ul class="list">${rows}</ul></div>`;
+}
 /* The By-enemy sentence, first under "How this is counted". */
 function byEnemyNote(f) {
   if (!enemyRows(f)?.length) return '';
@@ -2726,6 +2736,8 @@ function renderBreakdown(c, f) {
   if (f.pet) figs.push({ lb: 'Pets', val: fmt(f.pet), sub: `${fmt(f.dpsPet)}/s · ${pctOf(f.pet, f.dmg)} of the fight` });
   if (f.taken || f.takenPet) figs.push({ lb: 'Taken', val: fmt(f.taken), sub: f.takenPet ? `your pets took ${fmt(f.takenPet)}` : f.indirectMe ? `${fmt(f.indirectMe)} of it indirect` : plural(f.takenHits, 'hit') });
   if (f.kills + f.petKills) figs.push({ lb: 'Kills', val: fmt(f.kills + f.petKills), sub: f.petKills ? `${fmt(f.petKills)} by your pets` : 'all yours' });
+  if (f.share != null) figs.push({ lb: 'Your share', val: sharePct(f.share), sub: `of the ${fmt(f.dmg + f.unnamed)} your enemies took` });
+  if (f.dropStacks) figs.push({ lb: 'Loot', val: `${COIN}${fmt(f.dropValue || 0)}`, sub: `${plural(f.dropStacks, 'stack')} · vendor value` });
   if (f.deaths) figs.push({ lb: 'Deaths', val: fmt(f.deaths), sub: f.instakills ? 'to a kill mechanic' : '' });
   const glance = `<div class="glance">${figs.map((x, i) => `<div class="fig${i ? '' : ' lead'}"><div class="lb">${x.lb}</div><div class="val">${x.val}</div>${x.sub ? `<div class="sub">${esc(x.sub)}</div>` : ''}</div>`).join('')}</div>`;
   const max = f.abilities[0]?.dmg || 1;
@@ -2738,9 +2750,11 @@ function renderBreakdown(c, f) {
   // The caveats, six sentences at most, under one disclosure (open state in dUI.how, not persisted).
   const how = [];
   const be = byEnemyNote(f); if (be) how.push(be);
+  if (f.share != null) how.push(`Your share: your and your pets' ${fmt(f.dmg)} against ${fmt(f.unnamed)} more that the enemies you hit took with no source named. Other players' hits reach your log only that way; your own unnamed ticks land there too, so the share can read a little low.`);
+  if (f.dropStacks) how.push(`Loot: what you took from the corpses of this fight's enemies, matched by the enemy's id. It needs Log non-combat-related gameplay for tools (on by default since the 16 Nov update). Value is the game's vendor price.`);
   if (f.dotMe || f.dotPet) how.push(`Damage over time (${fmt((f.dotMe || 0) + (f.dotPet || 0))}) is every tick on an enemy after you or a pet first hit it, from your log; the game doesn't name a tick's source, so a party member's DoT on the same enemy is in it too.`);
   if (f.indirectUnattributed) how.push(`Ticks on enemies before you hit them, not counted: ${fmt(f.indirectUnattributed)}${f.party?.length ? ` (likely ${esc(joinNames(f.party))}'s)` : f.shared ? ' (others nearby)' : ''}.`);
-  how.push("Party members' hits are never in your log. Your party, above, puts their copies' numbers beside yours.");
+  how.push("Party members' hits never carry their names in your log. Your party, above, puts their copies' numbers beside yours.");
   if (f.party?.length) how.push(`In a party with ${esc(joinNames(f.party))}, per the chat log.`);
   else if (f.inParty) how.push("In a party, per the chat log, with members it hasn't named yet (they show up when they speak or leave).");
   if (c.unclassified?.length) how.push(`Not placed: ${esc(joinNames(c.unclassified))}. ${c.unclassified.length === 1 ? 'It hit things you never fought and nothing you fought hit it, so the meter can\'t tell a pet from a stranger; if it is your pet, its damage is missing above.' : 'They hit things you never fought and nothing you fought hit them, so the meter can\'t tell pets from strangers; if any is your pet, its damage is missing above.'}`);
@@ -2750,7 +2764,7 @@ function renderBreakdown(c, f) {
     ? `<div class="chart spark" id="d-spark" data-key="${esc(`${f.id}|${f.dur}|${f.dmg}`)}"><svg role="img" aria-label="Damage a second over this fight" tabindex="0"></svg><div class="tip" hidden></div></div>
       <table class="sr"><caption>Damage a second over this fight</caption><tbody>${tl.map(([sec, me, pet]) => `<tr><td>${tsec(sec)}</td><td>${fmt(me + pet)}</td></tr>`).join('')}</tbody></table>`
     : '';
-  box.html = `${glance}${spark}<div class="grid2" style="margin-top:12px"><div><h3 class="small dim">By ability</h3>${bars}</div><div><h3 class="small dim">What hit you</h3>${taken}</div></div>${renderByEnemy(f)}${note}`;
+  box.html = `${glance}${spark}<div class="grid2" style="margin-top:12px"><div><h3 class="small dim">By ability</h3>${bars}</div><div><h3 class="small dim">What hit you</h3>${taken}</div></div>${renderByEnemy(f)}${renderDrops(f)}${note}`;
   if (spark) drawFightSpark(f);
 }
 
@@ -6272,7 +6286,8 @@ async function refreshStatehelm() {
   if (!d) return sysLine('error', S.down ? `The dashboard server isn't answering. ${fixText('server')}` : `Couldn't read the trainers: ${shUI.err?.message || 'no answer'}`);
   const c = shCounts(d);
   const logs = d.week?.logs?.length || 0;
-  sysLine('status', `${plural(c.logged, 'gift')} logged this week in ${plural(logs, 'chat log')}${d.sources?.storage ? `, items from the storage export of ${hhmm(parseUtc(d.sources.storage.timestamp))}` : ', no storage export to match items against'}. ${plural(c.left, 'gift')} left across ${plural(c.picked, 'picked trainer')}.`);
+  const gx = d.giftsExport?.used && parseIso(d.giftsExport.at);
+  sysLine('status', `${gx ? `Gift counts from the character export of ${hhmm(gx)}, plus what the chat log shows since` : `${plural(c.logged, 'gift')} logged this week in ${plural(logs, 'chat log')}`}${d.sources?.storage ? `, items from the storage export of ${hhmm(parseUtc(d.sources.storage.timestamp))}` : ', no storage export to match items against'}. ${plural(c.left, 'gift')} left across ${plural(c.picked, 'picked trainer')}.`);
 }
 function shPicked(d) { return (d?.trainers || []).filter(t => t.picked); }
 function shCounts(d) {
@@ -6310,6 +6325,23 @@ function shFootHtml() {
   const right = S.statehelmOld ? `Statehelm needs a newer ${APP_NAME}` : srcFix(src, missing ? '' : src === 'storage-export' ? 'After gifting or storing:' : 'After gifting:');
   return [left, right];
 }
+/* Where a trainer's count comes from: the character export's GiftsThisWeek (since the 16 Nov update) plus gifts logged
+   after it, else the favor gains logged in Statehelm this week, or the player's own number. */
+function shCountNote(t, d) {
+  const g = t.gifts;
+  const auto = g.auto ?? g.logged;
+  const fromExport = g.export != null;
+  const autoWord = fromExport ? "the export's count" : "the chat log's count";
+  if (g.manual != null) return `set by you${auto !== g.given ? ` · <button type="button" class="linkbtn" data-shlog="${esc(t.npc)}" style="text-decoration:underline">use ${autoWord}, ${fmt(auto)}</button>` : ''}`;
+  if (fromExport) {
+    const at = parseIso(d.giftsExport?.at);
+    return `${fmt(g.export)} in the character export${at ? ` of ${hhmm(at)}` : ''}${g.sinceExport ? ` + ${fmt(g.sinceExport)} logged since` : ''}`;
+  }
+  const why = d.giftsExport?.why;
+  const hint = why === 'last week' ? ' · a character export this week gives the game\'s own count'
+    : why === 'before the update' ? ' · a new character export gives the game\'s own count' : '';
+  return `${plural(g.logged, 'favor gain')} logged in Statehelm ${esc(shWeekLabel(d))}${g.quests ? `, ${plural(g.quests, 'quest turn-in')} left out` : ''}${hint}`;
+}
 function shTrainerHtml(t, d) {
   const g = t.gifts, cap = d.cap || 5;
   const done = g.left === 0;
@@ -6317,12 +6349,11 @@ function shTrainerHtml(t, d) {
   const id = 'sh-' + t.npc.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   const skills = t.skills.length ? t.skills.join(', ') : 'trainer';
   const prodigy = t.prodigyReady ? '<span class="tag">Close Friends reached</span>' : `<span class="small dim">${esc(favorLabel(t.prodigyAt))} unlocks Prodigy Potential</span>`;
-  const manual = g.manual != null;
   const counter = `<div class="shcount" role="group" aria-label="Gifts to ${esc(t.name)} this week">
       <button type="button" class="btn icon-only" data-shdec="${esc(t.npc)}" aria-label="One gift fewer" ${g.given <= 0 ? 'disabled' : ''}>−</button>
       <span class="shnum${done ? ' done' : ''}"><b>${fmt(g.given)}</b> of ${cap}</span>
       <button type="button" class="btn icon-only" data-shinc="${esc(t.npc)}" aria-label="One gift more" ${g.given >= 99 ? 'disabled' : ''}>+</button>
-      <span class="small dim shcount-note">${done ? 'done for the week' : `${plural(g.left, 'gift')} left`} · ${manual ? `set by you${g.logged !== g.given ? ` · <button type="button" class="linkbtn" data-shlog="${esc(t.npc)}" style="text-decoration:underline">use the chat log's ${fmt(g.logged)}</button>` : ''}` : `${plural(g.logged, 'favor gain')} logged in Statehelm ${esc(shWeekLabel(d))}`}${!manual && g.quests ? `, ${plural(g.quests, 'quest turn-in')} left out` : ''}</span>
+      <span class="small dim shcount-note">${done ? 'done for the week' : `${plural(g.left, 'gift')} left`} · ${shCountNote(t, d)}</span>
     </div>`;
   const items = t.items;
   let body;
@@ -6446,7 +6477,7 @@ function initStatehelm() {
       return;
     }
     const log = e.target.closest('[data-shlog]');
-    if (log && d) { const t = d.trainers.find(x => x.npc === log.dataset.shlog); saveStatehelm({ npc: log.dataset.shlog, count: null }, () => `${t?.name || ''}: back to the chat log's count.`); return; }
+    if (log && d) { const t = d.trainers.find(x => x.npc === log.dataset.shlog); saveStatehelm({ npc: log.dataset.shlog, count: null }, () => `${t?.name || ''}: back to ${t?.gifts?.export != null ? "the export's" : "the chat log's"} count.`); return; }
     const un = e.target.closest('[data-shunpick]');
     if (un && d) { const picked = (d.picked || []).filter(k => k !== un.dataset.shunpick); const t = d.trainers.find(x => x.npc === un.dataset.shunpick); saveStatehelm({ picked }, () => `${t?.name || ''} removed. ${plural(picked.length, 'trainer')} tracked.`); return; }
     const fold = e.target.closest('[data-shfold]');
