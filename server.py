@@ -89,6 +89,32 @@ FAVOR_GAIN_RE = re.compile(r"^\[Status\] You gained ([\d.,]+) favor with (.+?)[.
 SEARCH_RE = re.compile(r"^\[Status\] Searching your storage for")
 SAVED_RE = re.compile(r"Saved report to (.+?)\s*$")
 CHANNEL_RE = re.compile(r"^\[([^\]:]+)\] ")
+# Gameplay lines `[JSON:<Type>] {json}` (Thanksgiving Update, 16 Nov 2026; docs/DATA-SOURCES.md -> "JSON lines in the
+# chat log"), written beside the old text lines while Settings -> V.I.P. "Log non-combat-related gameplay for tools"
+# (LogMiscNoncombatData) is on. AddItem and EarnedXP are exact twins of the text loot and XP lines (20 Nov: 168 of 168
+# stacks, the same XP per skill), so the text lines stay the counted source: they also cover pre-update logs, Anatomy
+# XP and the level-ups that get no JSON line. The JSON lines add what the text lacks (FromEntityId, TypeId, Flags, ...).
+JSON_RE = re.compile(r"^\[JSON:(\w+)\] (.*)$")
+
+
+def json_line(msg):
+    """(type, dict) for a [JSON:<Type>] line; None for any other line or a body that isn't a JSON object."""
+    m = JSON_RE.match(msg)
+    if not m:
+        return None
+    try:
+        d = json.loads(m.group(2))
+    except ValueError:
+        return None
+    return (m.group(1), d) if isinstance(d, dict) else None
+
+
+def channel_of(msg):
+    """The chat channel a line belongs to; gameplay lines are "JSON" (CHANNEL_RE stops at the colon), others "System"."""
+    if msg.startswith("[JSON:"):
+        return "JSON"
+    cm = CHANNEL_RE.match(msg)
+    return cm.group(1) if cm else "System"
 # Death tracker (docs/DATA-SOURCES.md). Any attack/ability line:
 # "[Combat] <att>[ #id]: <ability> on <vic>[ #id]<! | (CRIT!) >[Dmg: <dmg>][. (FATALITY!)]"
 # <ability> may be empty, "(CRIT!)" replaces the "!", Dmg is absent on buff lines and " none" on misses.
@@ -3582,8 +3608,7 @@ def parse_session(path, scope="day", selected=None):
     xp_timeline = []  # (ts, total) for sparkline
     total_xp = 0
     for ts, msg in lines:
-        cm = CHANNEL_RE.match(msg)
-        channels[cm.group(1) if cm else "System"] += 1
+        channels[channel_of(msg)] += 1
         if m := LOGIN_RE.match(msg):
             character, server = m.groups()
             events.append({"ts": ts, "at": chat_iso(ts), "kind": "login", "character": character, "server": server})
@@ -3720,7 +3745,9 @@ def log_summary(path):
         return hit[1]
     s = {"logins": [], "logouts": [], "areas": [], "sales": [], "favor": [], "searches": [],
          "loot": [], "saved": [], "activity": [], "councils": [], "first": None, "last": None,
-         "lines": 0, "loginLine": None}   # lines: timestamped lines; loginLine: the count at the last login line
+         "lines": 0, "loginLine": None,   # lines: timestamped lines; loginLine: the count at the last login line
+         "json": 0, "jsonLast": None, "jsonAtLogin": 0, "jsonTypes": {}}   # gameplay lines: count, last ts, count at the last login line, per type
+    json_types = Counter()
     tracker = CombatTracker(resolve=lambda: last_login_before(path)[0])  # deaths/kills; see CombatTracker
     gaming = []  # Gaming XP datetimes; the councils receipts are flagged against them after the loop
     with path.open(encoding="utf-8", errors="replace") as f:
@@ -3733,9 +3760,16 @@ def log_summary(path):
             s["last"] = ts
             s["lines"] += 1
             tracker.feed(ts, msg)
+            if msg.startswith("[JSON:"):
+                if jl := json_line(msg):   # a body that doesn't parse is skipped quietly
+                    s["json"] += 1
+                    s["jsonLast"] = ts
+                    json_types[jl[0]] += 1
+                continue
             if lm := LOGIN_RE.match(msg):
                 s["logins"].append((ts, lm.group(1), lm.group(2)))
                 s["loginLine"] = s["lines"]
+                s["jsonAtLogin"] = s["json"]
             elif LOGOUT_RE.match(msg):
                 s["logouts"].append(ts)
             elif am := AREA_RE.match(msg):
@@ -3761,6 +3795,7 @@ def log_summary(path):
                 if not s["activity"] or s["activity"][-1] != ts[:14]:
                     s["activity"].append(ts[:14])
     s["combat"] = tracker.result()  # "deaths" is the event list here; /api/session reports its length
+    s["jsonTypes"] = dict(json_types)
     # (ts, kind, amount, who, gaming); "sales" keeps its (ts, amount) shape but holds only non-zero receipts
     # that are not casino wins, so the character-export evidence and the after-selling moment skip gambling.
     flags = iter(gaming_flags(gaming, [(chat_dt(ts), n) for ts, kind, n, who in s["councils"] if kind == "received"]))
@@ -3800,7 +3835,8 @@ def read_settings():
             if len(parts) < 3:
                 continue
             key, val = parts[1], parts[-1].strip()
-            if key in ("LogChat", "GUI_ChatLogs", "AutoExportCharacterOnLogout", "VIP_CombatLogging", "LogNonAttacks"):
+            if key in ("LogChat", "GUI_ChatLogs", "AutoExportCharacterOnLogout", "VIP_CombatLogging", "LogNonAttacks",
+                       "LogMiscNoncombatData"):
                 out[key] = int(val) if val.lstrip("-").isdigit() else val
             elif key.startswith("combatLog_"):
                 combat[key[10:]] = int(val) if val.lstrip("-").isdigit() else val
@@ -4292,6 +4328,42 @@ def health(character=None):
         add("combat-lines", "info", "Combat lines", ev, views=["combat"], server_only=True,
             evidence_data={"combatLines": 0, "lines": log_lines if today_log else 0, "sinceLogin": since_login if today_log else 0,
                            "loggedInMin": int(in_min) if in_min is not None else None})
+
+    # gameplay logging: Settings -> V.I.P. "Log non-combat-related gameplay for tools" (LogMiscNoncombatData, added by the
+    # 16 Nov 2026 update and on by default; the label and its place beside "Log non-damaging abilities" are the client's
+    # strings, docs/DATA-SOURCES.md). It writes the [JSON:<Type>] lines. Warn when it reads 0, or when it reads 1 and
+    # the loot picked up since the login came with no gameplay line (every text loot line has a JSON twin, 20 Nov).
+    # Listed on Session only while nothing else reads these lines; loot per kill will add Combat (ROADMAP step 5).
+    if settings.get("readable"):
+        gl = settings.get("LogMiscNoncombatData")
+        jsum = newest_sum if today_log else None
+        n_json = jsum["json"] if jsum else 0
+        json_since_login = (n_json - jsum["jsonAtLogin"]) if (jsum and jsum["loginLine"]) else n_json
+        login_ts = last_in[0] if (logged_in and last_in) else None
+        loot_since_login = sum(1 for ts, _ in jsum["loot"] if login_ts and ts >= login_ts) if jsum else 0
+        last_json = chat_dt(jsum["jsonLast"]).astimezone() if (jsum and jsum["jsonLast"]) else None
+        label = "Log non-combat-related gameplay for tools"
+        ed = {"setting": gl, "jsonLines": n_json, "sinceLogin": json_since_login, "lootSinceLogin": loot_since_login,
+              "lastJsonAt": local_iso(last_json) if last_json else None, "types": jsum["jsonTypes"] if jsum else {}}
+        if gl == 0:
+            add("gameplay-logging", "warn", "Gameplay logging",
+                f"{label} is off, so the log has no loot sources, crafting, quest or favor lines.",
+                "gameplay-logging", views=["session"], server_only=True, evidence_data=ed)
+        elif gl is None:
+            add("gameplay-logging", "info", "Gameplay logging",
+                f"The game hasn't saved {label} yet. It came with the 16 Nov update and is on by default.",
+                views=[], server_only=True, evidence_data=ed)
+        elif loot_since_login >= 5 and json_since_login == 0:
+            add("gameplay-logging", "warn", "Gameplay logging",
+                f"{label} reads on, but none of the {plural(loot_since_login, 'stack')} you picked up since you logged in "
+                "came with a gameplay line.", "gameplay-logging", views=["session"], server_only=True, evidence_data=ed)
+        elif n_json:
+            add("gameplay-logging", "ok", "Gameplay logging",
+                f"On · {n_json:,} gameplay lines today, last {last_json.strftime('%H:%M')}.",
+                views=[], at=last_json, server_only=True, evidence_data=ed)
+        else:
+            add("gameplay-logging", "info", "Gameplay logging", "On. No gameplay line yet today.",
+                views=[], server_only=True, evidence_data=ed)
 
     # live game events
     found = player_log_events()

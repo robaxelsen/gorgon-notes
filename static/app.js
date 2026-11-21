@@ -264,7 +264,8 @@ function isNetworkError(e) { return e instanceof TypeError || (e && e.status >= 
 /* ---------- fix wording (one source of truth) ---------- */
 /* In-game labels allowed in copy (nothing else, until ROADMAP's in-game check closes): "Save Chat Logs", the "Chat Logs" section,
    "Settings → V.I.P. → Save Chat Logs" (user, 27 Oct), "Settings → V.I.P. → Combat Logging", the seven "Log when…" rows,
-   "Log non-damaging abilities", "VIP menu → Export Character JSON / Export Storage JSON". */
+   "Log non-damaging abilities", "VIP menu → Export Character JSON / Export Storage JSON", "Log non-combat-related gameplay for tools"
+   (Settings → V.I.P.; the client's own label, defined right after "Log non-damaging abilities", 20 Nov). */
 const NEEDS_NEWER = `Needs a newer ${APP_NAME}.`;
 /* Numbered steps for the Setup window rows (A-FINAL §1.4). Game labels sit in <em class="t">; {offNow} in combat-logging
    step 2 is replaced by ' <span class="dim">Off now: …</span>' (the COMBAT_ROW_LABEL names joined by " · ") or ''. */
@@ -305,6 +306,7 @@ function fixText(key, args = {}, opts = {}) {
     'auto-export': ['Nothing to do.'],
     // The numbered steps live in the Setup row; this is the one-line form for footers and the margin.
     'combat-logging': [COMBAT_LOGGING_FIX(), `Next time you're in game: ${COMBAT_LOGGING_FIX()}`],
+    'gameplay-logging': ['Settings → V.I.P. → tick Log non-combat-related gameplay for tools', "Next time you're in game: Settings → V.I.P. → tick Log non-combat-related gameplay for tools"],
     'player-log': ['Nothing to do. Exports cover it.'],
     'vip': ['Exports and Combat Logging live on the V.I.P. tab. Check your VIP status in game.'],
     'server': [`Start ${APP_NAME} again.`],
@@ -338,6 +340,7 @@ function plaqueFor(key, where = 'margin') {
     'export-storage': ['Export Storage JSON', inGame ? 'In game: VIP menu' : "Next time you're in game: VIP menu"],
     'chat-logging': ['Save Chat Logs', 'In game: Settings → V.I.P. → Save Chat Logs, then log out and back in'],
     'combat-logging': ['Combat Logging', 'In game: Settings → V.I.P. → Combat Logging'],
+    'gameplay-logging': ['Gameplay logging', 'In game: Settings → V.I.P. → Log non-combat-related gameplay for tools'],
     'vault-size': ['Type in the vault size', `${storageMissing() ? 'After a storage export: check' : 'Check'} it in game, then enter it in the Slots column${S.view === 'storage' ? '' : ' on Storage'}`],
   };
   return map[key] || null;
@@ -528,7 +531,7 @@ const PHONE_MQ = window.matchMedia('(max-width: 767px)');
 const FOLD_NAME = { 'game': 'game state', 'chat-log': 'chat log', 'character-export': 'character export', 'storage-export': 'storage export', 'partial-export': 'partial exports',
   'auto-export': 'logout export setting', 'vault-sizes': 'vault sizes', 'alt-stale': 'alts', 'alt-missing': 'alts', 'combat-logging': 'combat logging', 'player-log': 'live game events',
   'vip': 'VIP', 'server': 'server', 'cdn': 'game data', 'selected-export': 'picked export', 'party-sharing': 'private room',
-  'combat-lines': 'combat lines', 'everyone-feed': "everyone's fights" };
+  'combat-lines': 'combat lines', 'everyone-feed': "everyone's fights", 'gameplay-logging': 'gameplay logging' };
 function foldLabel(v) {
   const n = FOLD_NAME[v.source] || v.source;
   if (v.source === 'everyone-feed') {
@@ -1078,7 +1081,11 @@ const CHAN_COLOR = {
   'Emotes': 'var(--chat-emote)', 'Action Emotes': 'var(--chat-emote)', 'Error': 'var(--chat-error)', 'Status': '#FFBA7C',
 };
 const CHAN_RE = /^\[([^\]:]+)\] /;
-const chanOf = msg => { const m = CHAN_RE.exec(msg); return m ? m[1] : 'System'; };
+/* Gameplay lines "[JSON:AddItem] {…}" (16 Nov update) are the JSON channel, off by default: each one repeats a text line
+   beside it. Their body keeps the type ("AddItem {…}"). */
+const JSON_LINE_RE = /^\[JSON:(\w+)\] /;
+const chanOf = msg => { if (msg.startsWith('[JSON:')) return 'JSON'; const m = CHAN_RE.exec(msg); return m ? m[1] : 'System'; };
+const chanBody = (msg, c) => c === 'JSON' ? msg.replace(JSON_LINE_RE, '$1 ') : msg.replace(CHAN_RE, '');
 
 const sessUI = {
   lootSort: (store.json('pgdash.sort', {}).loot) || { key: 'count', dir: 'desc' },
@@ -1747,7 +1754,7 @@ function updateChipMore() {
 function lineHtml(l) {
   const c = chanOf(l.msg);
   let body = l.msg, tag = '';
-  if (c !== 'System') { tag = `<span class="ch" style="color:${CHAN_COLOR[c] || 'var(--text)'}">[${esc(c)}]</span>`; body = body.replace(CHAN_RE, ''); }
+  if (c !== 'System') { tag = `<span class="ch" style="color:${CHAN_COLOR[c] || 'var(--text)'}">[${esc(c)}]</span>`; body = chanBody(body, c); }
   let cls = '';
   if (/reached level/.test(body)) cls = 'lvl';
   else if (c === 'Error') cls = 'err';
@@ -4982,7 +4989,7 @@ function logLineHtml(l, q) {
   if (!l.ts) return `<div class="lline cont${jumped}${hit}" data-n="${l.n}">${num}<span class="ts"></span><span class="msg">${mark(l.msg)}</span></div>`;
   const c = chanOf(l.msg);
   let body = l.msg, tag = '';
-  if (c !== 'System') { tag = `<span class="ch" style="color:${CHAN_COLOR[c] || 'var(--text)'}">[${esc(c)}]</span>`; body = body.replace(CHAN_RE, ''); }
+  if (c !== 'System') { tag = `<span class="ch" style="color:${CHAN_COLOR[c] || 'var(--text)'}">[${esc(c)}]</span>`; body = chanBody(body, c); }
   const cls = /reached level/.test(body) ? ' lvl' : c === 'Error' ? ' err' : '';
   return `<div class="lline${cls}${jumped}${hit}" data-n="${l.n}">${num}<span class="ts">${esc(l.ts.slice(9))}</span><span class="msg">${tag}${mark(body)}</span></div>`;
 }
